@@ -1,0 +1,16 @@
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/_test-concept/
+/.vs/
+/.idea/
+*.csproj
+*.sln
+*.user
+*.pidb
+*.booproj
+*.suo
+*.tmp
