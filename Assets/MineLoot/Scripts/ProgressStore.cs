@@ -5,27 +5,38 @@ namespace MineLoot
 {
     public static class ProgressStore
     {
-        private const string Key = "MineLoot.Demo.Progress.v1";
+        public const string Key = "MineLoot.Progress.v2";
+        private const string LegacyKey = "MineLoot.Demo.Progress.v1";
 
-        public static MineGame Load()
+        public static MineGame Load(string key = Key)
         {
-            if (!PlayerPrefs.HasKey(Key)) return new MineGame();
-            try
+            string[] candidates = key == Key ? new[] { key, key + ".backup", LegacyKey } : new[] { key, key + ".backup" };
+            foreach (string candidate in candidates)
             {
-                var data = JsonUtility.FromJson<MineProgress>(PlayerPrefs.GetString(Key));
-                if (data == null || data.version != 1) throw new FormatException("Unknown save version");
-                return new MineGame(data);
+                if (!PlayerPrefs.HasKey(candidate)) continue;
+                try
+                {
+                    var data = Decode(PlayerPrefs.GetString(candidate));
+                    return new MineGame(data);
+                }
+                catch (Exception) { Debug.LogWarning("Lucky Pickaxe: invalid save; trying backup."); }
             }
-            catch (Exception e)
-            {
-                Debug.LogWarning("Mine Loot: invalid local save. Starting a fresh demo. " + e.Message);
-                return new MineGame();
-            }
+            return new MineGame();
         }
 
-        public static void Save(MineGame game)
+        public static MineProgress Decode(string json)
         {
-            PlayerPrefs.SetString(Key, JsonUtility.ToJson(game.Progress));
+            var data = JsonUtility.FromJson<MineProgress>(json);
+            if (data == null || data.version < 1 || data.version > 2) throw new FormatException("Unknown save version");
+            return data;
+        }
+
+        public static void Save(MineGame game, string key = Key)
+        {
+            // Both copies contain a complete transaction, including rewards already resolved by the model.
+            string json = JsonUtility.ToJson(game.Progress);
+            PlayerPrefs.SetString(key + ".backup", json);
+            PlayerPrefs.SetString(key, json);
             PlayerPrefs.Save();
         }
     }

@@ -3,6 +3,7 @@ using System.Collections;
 using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 namespace MineLoot
 {
@@ -30,12 +31,27 @@ namespace MineLoot
             Canvas.ForceUpdateCanvases();
             Capture("unity-clicker.png");
             yield return new WaitForEndOfFrame();
-            Check(demo.Game.Progress.coins == 1240, "Initial wallet");
-            for (int i = 0; i < 5; i++) Click("Mine rock");
-            Check(demo.Game.Progress.coins == 1365 && demo.Game.Progress.tickets == 4, "Clicker and ticket");
+            Check(demo.Game.Progress.coins == 80, "Initial wallet");
+            for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
+            Check(demo.Game.Progress.coins == 176 && demo.Game.Progress.tickets == 3, "Clicker and ticket");
             Click("Upgrade pickaxe");
-            Check(demo.Game.ClickPower == 35 && demo.Game.Progress.coins == 1015, "Upgrade button");
+            Check(demo.Game.ClickPower == 12 && demo.Game.Progress.coins == 56, "Upgrade button");
+            for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
+            Click("Upgrade forge");
+            Check(demo.Game.Progress.forgeLevel == 1 && demo.Game.Progress.coins == 20, "Forge button");
+            Button rockButton = null;
+            foreach (var button in GetComponentsInChildren<Button>()) if (button.name == "Mine rock") rockButton = button;
+            long heldStart = demo.Game.Progress.totalClicks;
+            var pointer = new PointerEventData(EventSystem.current);
+            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
+            yield return new WaitForSecondsRealtime(.65f);
+            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
+            rockButton.onClick.Invoke();
+            long heldCount = demo.Game.Progress.totalClicks - heldStart;
+            Check(heldCount >= 2 && heldCount <= 4, "Hold repeats at controlled rate without release bonus");
+            Click("Toggle sound"); Check(GetComponent<GameAudio>().Muted, "Mute sound");
             Click("РУЛЕТКА ШАХТЁРА");
+            Click("Toggle speed"); Check(demo.FastRoll, "Fast animation mode");
             yield return null;
             Capture("unity-roulette.png");
             yield return new WaitForEndOfFrame();
@@ -47,6 +63,7 @@ namespace MineLoot
             float deadline = Time.realtimeSinceStartup + 8;
             while (demo.IsBusy && Time.realtimeSinceStartup < deadline) yield return null;
             Check(!demo.IsBusy, "Animation completes");
+            yield return new WaitForSecondsRealtime(.2f);
             for (int i = 0; i < 5; i++) Check(demo.Game.Progress.depths[i] == committed[i] && committed[i] > 0, "Depth retained");
             Click("ШАНСЫ И ПРАВИЛА");
             yield return null;
@@ -54,7 +71,31 @@ namespace MineLoot
             Click("ПОНЯТНО");
             yield return null;
             Capture("unity-roll-result.png");
+            demo.Game.Progress.totalBlocks = 25;
+            // Refresh via changing the sound setting, then test the ready contract action.
+            Click("Toggle sound"); long previousCoins = demo.Game.Progress.coins;
+            Click("Claim contract");
+            Check(demo.Game.Progress.claimedContracts == 1 && demo.Game.Progress.coins == previousCoins + 100, "Claim once");
             yield return new WaitForSecondsRealtime(.3f);
+            // Exercise a later biome and partial block damage in the same built player.
+            demo.Game.Progress.stratum = 4;
+            Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
+            demo.Spin();
+            while (demo.IsBusy) yield return null;
+            yield return new WaitForSecondsRealtime(.25f);
+            Capture("unity-crystal-shaft.png");
+            demo.Game.Progress.stratum = 7; demo.Game.Progress.tickets = 1;
+            Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
+            demo.Spin();
+            while (demo.IsBusy) yield return null;
+            yield return new WaitForSecondsRealtime(.25f);
+            Capture("unity-ember-shaft.png");
+            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.4f);
+                CheckLayout();
+                Capture("unity-" + size.x + "x" + size.y + ".png");
+            }
             Screen.SetResolution(960, 540, false);
             yield return new WaitForSecondsRealtime(.6f);
             Capture("unity-landscape.png");
@@ -62,6 +103,16 @@ namespace MineLoot
             File.WriteAllText(Path.Combine(output, "runtime-check.json"), "{\"result\":\"" + (errors == 0 ? "PASS" : "FAIL") + "\",\"errors\":" + errors + ",\"unity\":\"" + Application.unityVersion + "\"}");
             Debug.Log("MINE_LOOT_RUNTIME_CHECK: " + (errors == 0 ? "PASS" : "FAIL"));
             Application.Quit(errors == 0 ? 0 : 1);
+        }
+
+        private void CheckLayout()
+        {
+            var corners = new Vector3[4];
+            foreach (var button in GetComponentsInChildren<Button>(false))
+            {
+                button.GetComponent<RectTransform>().GetWorldCorners(corners);
+                Check(corners[0].x >= -1 && corners[2].x <= Screen.width + 1 && corners[0].y >= -1 && corners[2].y <= Screen.height + 1, "Control inside viewport: " + button.name);
+            }
         }
 
         private void Check(bool condition, string label)
