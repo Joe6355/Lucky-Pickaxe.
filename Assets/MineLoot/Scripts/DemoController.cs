@@ -8,7 +8,7 @@ namespace MineLoot
 {
     public sealed partial class DemoController : MonoBehaviour
     {
-        private static readonly Color Back = Hex("0b1521"), Panel = Hex("192a3a"), Muted = Hex("8fa6b8"), Ink = Hex("e6eff4"), Lime = Hex("e8c78b");
+        private static readonly Color Back = Hex("514a3e"), Panel = Hex("c6cbc0"), Muted = Hex("535d4b"), Ink = Hex("29362c");
         private static readonly string[][] Layers = { new[] { "grass", "stone", "iron", "gold", "diamond" }, new[] { "stone", "iron", "diamond", "stone", "diamond" }, new[] { "stone", "ember", "iron", "ember", "gold" } };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[,] blocks = new Image[5, 5];
@@ -30,7 +30,7 @@ namespace MineLoot
         private int lastWidth, lastHeight;
         private Rect lastSafe;
         private GameAudio sounds;
-        private Image mineBackdrop, rollBackdrop, mineGlow, rockCrack, boardFill;
+        private Image mineBackdrop, rollBackdrop, boardFill;
         private Image clickPick;
         private Text forgeLabel, contractLabel, soundLabel, veinLabel, floorHint;
         private Button forgeButton, contractButton;
@@ -62,7 +62,6 @@ namespace MineLoot
             rock.localScale = Vector3.one * (1 - rockPulse * .065f);
             rock.localEulerAngles = new Vector3(0, 0, -4 + rockPulse * 7);
             clickPick.rectTransform.localEulerAngles = new Vector3(0, 0, -24 + rockPulse * 45);
-            mineGlow.color = new Color(.55f, .91f, .73f, .55f + Mathf.Sin(Time.unscaledTime * 1.4f) * .08f);
             if (holding && Time.unscaledTime >= nextHold)
             {
                 holdRepeated = true; nextHold = Time.unscaledTime + .16f; Mine();
@@ -84,7 +83,7 @@ namespace MineLoot
             lastMineTime = Time.unscaledTime;
             bool ticket = game.Mine(); rockPulse = 1;
             mineStatus.text = "+" + game.ClickPower + " монет" + (ticket ? "   /   +1 жетон!" : "");
-            rockCrack.color = new Color(1, 1, 1, game.Progress.hits / (float)MineGame.HitsPerTicket);
+            stage.Hit();
             sounds.Play(ticket ? "reward" : "hit");
             if (effects < 8) StartCoroutine(FloatReward("+" + game.ClickPower, minePage.transform, 210, 120));
             Persist(); Refresh();
@@ -125,11 +124,12 @@ namespace MineLoot
             if (busy) return;
             holding = false;
             roulette = showRoulette; minePage.SetActive(!roulette); rollPage.SetActive(roulette);
-            mineTab.image.color = roulette ? Hex("152332") : Hex("203d48");
-            rollTab.image.color = roulette ? Hex("203d48") : Hex("152332");
-            mineTab.GetComponentInChildren<Text>().color = roulette ? Muted : Hex("8be1d3");
-            rollTab.GetComponentInChildren<Text>().color = roulette ? Hex("8be1d3") : Muted;
+            mineTab.image.color = roulette ? Panel : Hex("a4c975");
+            rollTab.image.color = roulette ? Hex("a4c975") : Panel;
+            mineTab.GetComponentInChildren<Text>().color = Ink;
+            rollTab.GetComponentInChildren<Text>().color = Ink;
             mineNavMark.enabled = !roulette; rollNavMark.enabled = roulette;
+            stage.gameObject.SetActive(!roulette);
         }
 
         public void Spin()
@@ -249,30 +249,30 @@ namespace MineLoot
         {
             coinLabel.text = (displayedCoins >= 0 ? displayedCoins : game.Progress.coins).ToString("N0");
             // Long values reduce their font size inside their existing bounds.
-            coinLabel.resizeTextForBestFit = true; coinLabel.resizeTextMinSize = 13; coinLabel.resizeTextMaxSize = 25;
+            coinLabel.resizeTextForBestFit = true; coinLabel.resizeTextMinSize = 16; coinLabel.resizeTextMaxSize = 28;
             ticketLabel.text = game.Progress.tickets.ToString("N0");
-            ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 12; ticketLabel.resizeTextMaxSize = 21;
+            ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
             powerLabel.text = "+" + game.ClickPower + " за удар";
             progressLabel.text = game.Progress.hits + " / " + MineGame.HitsPerTicket;
             ticketFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360 * game.Progress.hits / MineGame.HitsPerTicket);
             upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0") + " монет";
-            upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 10; upgradeLabel.resizeTextMaxSize = 13;
+            upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
             pickDetail.text = "Ур. " + (game.Progress.upgradeLevel + 1) + " · +4 за удар";
             upgradeHint.text = "Реликвий: " + game.Relics;
             upgradeButton.interactable = !busy && game.CanUpgrade;
             forgeButton.interactable = !busy && game.CanForge;
             forgeLabel.text = game.Progress.forgeLevel == MineGame.MaxForge ? "Максимум" : game.ForgeCost.ToString("N0") + " монет";
-            forgeDetail.text = "Ур. " + game.Progress.forgeLevel + " · редкость кирок";
+            forgeDetail.text = "Ур. " + game.Progress.forgeLevel + " · удача+";
             contractLabel.text = game.CanClaim ? "Забрать" : "В работе";
-            contractDetail.text = ShortAmount(System.Math.Min(game.Progress.totalBlocks, game.ContractTarget)) + " / " + ShortAmount(game.ContractTarget) + " · +" + ShortAmount(game.ContractReward) + " и жетон";
+            contractDetail.text = ShortAmount(System.Math.Min(game.Progress.totalBlocks, game.ContractTarget)) + "/" + ShortAmount(game.ContractTarget) + " · +" + ShortAmount(game.ContractReward);
             contractFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 240 * Mathf.Clamp01((game.Progress.totalBlocks - game.Progress.claimedContracts * 25) / 25f));
             contractButton.interactable = !busy && game.CanClaim;
-            contractButton.image.color = game.CanClaim ? Hex("e8c580") : Hex("2b3f50");
-            contractLabel.color = game.CanClaim ? Hex("362d24") : Muted;
-            upgradeButton.image.color = game.CanUpgrade ? Hex("6fcbbb") : Hex("2b3f50");
-            upgradeLabel.color = game.CanUpgrade ? Hex("16382f") : Hex("b3c4d0");
-            forgeButton.image.color = game.CanForge ? Hex("e5c488") : Hex("2b3f50");
-            forgeLabel.color = game.CanForge ? Hex("3a3020") : Hex("b3c4d0");
+            contractButton.image.color = game.CanClaim ? Hex("b3d17a") : Hex("a9ada3");
+            contractLabel.color = game.CanClaim ? Ink : Muted;
+            upgradeButton.image.color = game.CanUpgrade ? Hex("b2d27b") : Hex("a9ada3");
+            upgradeLabel.color = game.CanUpgrade ? Ink : Muted;
+            forgeButton.image.color = game.CanForge ? Hex("e7cf89") : Hex("a9ada3");
+            forgeLabel.color = game.CanForge ? Ink : Muted;
             soundLabel.text = sounds.Muted ? "♪×" : "♪";
             spinButton.interactable = !busy;
             spinButton.GetComponentInChildren<Text>().text = busy ? "Кирки в работе…" : game.Progress.tickets == 0 ? "Добыть новые жетоны →" : game.IsComplete ? "Открыть новый пласт · 1 жетон" : "Отправить кирки · 1 жетон";
@@ -281,7 +281,7 @@ namespace MineLoot
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;
             veinLabel.text = biome; stageBadge.text = "ПЛАСТ " + game.Progress.stratum.ToString("00");
             floorHint.text = "Прочность " + game.Hardness;
-            mineBackdrop.color = rollBackdrop.color = new[] { Color.white, new Color(.8f, .96f, 1), new Color(1, .8f, .7f) }[game.Biome];
+            stage.SetBiome(game.Biome);
             clickPick.sprite = art.Get(game.Progress.upgradeLevel < 2 ? "pick1" : game.Progress.upgradeLevel < 5 ? "pick2" : "pick4");
         }
 

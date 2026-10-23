@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
@@ -29,8 +30,24 @@ namespace MineLoot
             Screen.SetResolution(480, 960, false);
             yield return new WaitForSecondsRealtime(.8f);
             Canvas.ForceUpdateCanvases();
-            Check(Resources.Load<Texture2D>("Art/mine-cavern-v3") != null && Resources.Load<Texture2D>("Art/ore-hero-v3") != null && Resources.Load<Texture2D>("Art/items-atlas-v3") != null, "Illustrations packaged");
-            Check(Resources.Load<Font>("Fonts/Manrope").HasCharacter('Д') && Resources.Load<Font>("Fonts/Manrope-Semibold").HasCharacter('Я'), "Cyrillic fonts packaged");
+            Check(Resources.Load<Texture2D>("Art/mine-cavern-v3") == null && Resources.Load<Texture2D>("Art/ore-hero-v3") == null && Resources.Load<Texture2D>("Art/items-atlas-v3") == null, "Painted assets excluded");
+            Check(Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Д') && Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Я'), "Pixel Cyrillic font packaged");
+            var stage = FindObjectOfType<VoxelStage>();
+            Check(stage != null && stage.Target != null && stage.Target.IsCreated() && stage.StaticBatches < 24 && stage.OreVertices == 24, "Voxel scene renders in material batches");
+            stage.RenderNow();
+            var previousTarget = RenderTexture.active;
+            RenderTexture.active = stage.Target;
+            var scenePixels = new Texture2D(stage.Target.width,stage.Target.height,TextureFormat.RGB24,false);
+            scenePixels.ReadPixels(new Rect(0,0,stage.Target.width,stage.Target.height),0,0); scenePixels.Apply();
+            int greenPixels=0, neutralPixels=0;
+            for(int y=0;y<scenePixels.height;y+=8) for(int x=0;x<scenePixels.width;x+=8)
+            {
+                Color c=scenePixels.GetPixel(x,y);
+                if(c.g>c.r*1.2f && c.g>c.b*1.15f) greenPixels++;
+                if(Mathf.Abs(c.r-c.g)<.08f && Mathf.Abs(c.g-c.b)<.08f && c.grayscale>.15f) neutralPixels++;
+            }
+            Check(greenPixels>200 && neutralPixels>50, "Rendered terrain and ore are visible");
+            Destroy(scenePixels); RenderTexture.active=previousTarget;
             CheckLayout();
             Capture("unity-clicker.png");
             yield return new WaitForEndOfFrame();
@@ -44,6 +61,9 @@ namespace MineLoot
             Check(demo.Game.Progress.forgeLevel == 1 && demo.Game.Progress.coins == 20, "Forge button");
             Button rockButton = null;
             foreach (var button in GetComponentsInChildren<Button>()) if (button.name == "Mine rock") rockButton = button;
+            var raycastPointer = new PointerEventData(EventSystem.current) { position = RectTransformUtility.WorldToScreenPoint(null, rockButton.GetComponent<RectTransform>().position) };
+            var raycastHits = new List<RaycastResult>(); EventSystem.current.RaycastAll(raycastPointer, raycastHits);
+            Check(raycastHits.Count > 0 && raycastHits[0].gameObject == rockButton.gameObject, "Visible ore receives pointer input");
             long heldStart = demo.Game.Progress.totalClicks;
             var pointer = new PointerEventData(EventSystem.current);
             ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
@@ -54,6 +74,7 @@ namespace MineLoot
             Check(heldCount >= 2 && heldCount <= 4, "Hold repeats at controlled rate without release bonus");
             Click("Toggle sound"); Check(GetComponent<GameAudio>().Muted, "Mute sound");
             Click("РУЛЕТКА ШАХТЁРА");
+            Check(!stage.gameObject.activeSelf, "Voxel camera stops on roulette screen");
             Click("Toggle speed"); Check(demo.FastRoll, "Fast animation mode");
             yield return null;
             Capture("unity-roulette.png");
@@ -133,6 +154,7 @@ namespace MineLoot
         private void Capture(string file)
         {
             var canvas = GetComponentInChildren<Canvas>();
+            var stage = FindObjectOfType<VoxelStage>(); if (stage != null) stage.RenderNow();
             var camera = Camera.main;
             var target = new RenderTexture(Screen.width, Screen.height, 24);
             var previous = RenderTexture.active;
