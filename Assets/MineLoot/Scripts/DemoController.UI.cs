@@ -11,6 +11,12 @@ namespace MineLoot
         private static Font interfaceFont, interfaceBold;
         private Text contractDetail, pickDetail, forgeDetail, stageBadge;
         private Image contractFill, mineNavMark, rollNavMark;
+        private Text levelLabel, pickTitle, nextUpgrade, noticeTitle, noticeDetail;
+        private Image experienceFill, oreFill, workshopPick;
+        private readonly Image[] oreSlots = new Image[5], oreIcons = new Image[5], reels = new Image[5];
+        private readonly Text[] oreNames = new Text[5];
+        private RectTransform noticeRect;
+        private CanvasGroup noticeGroup;
         private VoxelStage stage;
 
         private void BuildInterface()
@@ -64,6 +70,11 @@ namespace MineLoot
             mineTab.name = "КЛИКЕР"; rollTab.name = "РУЛЕТКА ШАХТЁРА";
             mineNavMark = PanelAt(shell, "Mine selected", Hex("d8ed88"), 91, 940, 86, 3);
             rollNavMark = PanelAt(shell, "Roll selected", Hex("d8ed88"), 299, 940, 86, 3);
+            var notice = Card(shell, "Progress notification", 24, 10, 374, 76, Hex("cfdfa1"));
+            noticeRect = notice.rectTransform; noticeGroup = notice.gameObject.AddComponent<CanvasGroup>();
+            noticeGroup.alpha = 0; noticeGroup.blocksRaycasts = false; noticeGroup.interactable = false;
+            noticeTitle = Label(notice.transform, "", 10, 4, 354, 28, 22, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
+            noticeDetail = Label(notice.transform, "", 10, 32, 354, 40, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
             if (FindObjectOfType<EventSystem>() == null)
             {
                 var events = new GameObject("Event System", typeof(EventSystem), typeof(StandaloneInputModule)); events.transform.SetParent(transform, false);
@@ -74,48 +85,64 @@ namespace MineLoot
         private void BuildMine(Transform page)
         {
             var sceneTitle = Card(page, "Scene header", 24, 0, 432, 50, Hex("76975d"));
-            veinLabel = Label(page, "", 38, 10, 301, 29, 24, Hex("f2f6dc"), FontStyle.Bold);
-            var badge = Card(page, "Stage badge", 353, 14, 103, 28, Panel);
-            stageBadge = Label(badge.transform, "", 0, 0, 103, 28, 16, Hex("293721"), FontStyle.Bold, TextAnchor.MiddleCenter);
-            mineBackdrop = Hero(page, "Mine illustration", 24, 58, 432, 300);
+            levelLabel = Label(page, "", 38, 4, 242, 30, 22, Hex("f2f6dc"), FontStyle.Bold);
+            stageBadge = Label(page, "", 280, 7, 160, 25, 16, Hex("eef5d9"), FontStyle.Normal, TextAnchor.MiddleRight);
+            PanelAt(page, "Experience track", Hex("35432a"), 38, 39, 404, 5);
+            experienceFill = PanelAt(page, "Experience progress", Hex("c5ed77"), 38, 39, 0, 5);
+            mineBackdrop = Hero(page, "Mine illustration", 24, 58, 432, 280);
             var hero = mineBackdrop.transform.parent;
-            Card(hero, "Power badge", 295, 12, 124, 29, Hex("c4dc9d"));
-            powerLabel = Label(hero, "", 295, 12, 124, 29, 18, Hex("24452d"), FontStyle.Bold, TextAnchor.MiddleCenter);
-            var rockButton = ButtonAt(hero, "", 92, 66, 215, 208, () => { if (!holdRepeated) Mine(); holdRepeated = false; }, Color.clear, Ink);
+            Card(hero, "Ore badge", 12, 12, 190, 29, Hex("d4dfc5"));
+            veinLabel = Label(hero, "", 12, 12, 190, 29, 18, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
+            PanelAt(hero, "Ore health track", Hex("3c4935"), 18, 44, 178, 6);
+            oreFill = PanelAt(hero, "Ore health", Hex("d7c990"), 18, 44, 178, 6);
+            Card(hero, "Power badge", 281, 12, 138, 29, Hex("c4dc9d"));
+            powerLabel = Label(hero, "", 281, 12, 138, 29, 18, Hex("24452d"), FontStyle.Bold, TextAnchor.MiddleCenter);
+            var rockButton = ButtonAt(hero, "", 82, 63, 215, 180, () => { if (!holdRepeated) Mine(); holdRepeated = false; }, Color.clear, Ink);
             rockButton.name = "Mine rock"; rockButton.transition = Selectable.Transition.None;
             // Keep a near-transparent graphic so the hit target survives Canvas transparent-mesh culling.
             rockButton.image.sprite = null; rockButton.image.type = Image.Type.Simple; rockButton.image.color = new Color(1,1,1,.001f);
-            rock = rockButton.GetComponent<RectTransform>(); rock.pivot = new Vector2(.5f, .5f); rock.anchoredPosition += new Vector2(107.5f, -104);
+            rock = rockButton.GetComponent<RectTransform>(); rock.pivot = new Vector2(.5f, .5f); rock.anchoredPosition += new Vector2(107.5f, -90);
             var trigger = rock.gameObject.AddComponent<EventTrigger>();
             AddPointer(trigger, EventTriggerType.PointerDown, () => { holding = true; holdRepeated = false; nextHold = Time.unscaledTime + .28f; });
             AddPointer(trigger, EventTriggerType.PointerUp, () => holding = false);
             AddPointer(trigger, EventTriggerType.PointerExit, () => { holding = false; holdRepeated = false; });
             clickPick = Icon(hero, "pick4", 264, 115, 96, 96);
-            Card(hero, "Tap hint", 40, 260, 352, 29, new Color(.2f,.24f,.18f,.9f));
-            mineStatus = Label(hero, "Нажимай или удерживай блок", 40, 260, 352, 29, 18, Hex("eff5dc"), FontStyle.Normal, TextAnchor.MiddleCenter);
+            clickPick.rectTransform.pivot = new Vector2(.2f, .12f);
+            clickPick.rectTransform.anchoredPosition += new Vector2(19.2f, -84.48f);
+            pickHome = clickPick.rectTransform.anchoredPosition;
+            Card(hero, "Tap hint", 12, 240, 408, 29, new Color(.2f,.24f,.18f,.92f));
+            mineStatus = Label(hero, "Нажимай или удерживай блок", 12, 240, 408, 29, 17, Hex("eff5dc"), FontStyle.Normal, TextAnchor.MiddleCenter);
 
-            Card(page, "Next ticket", 24, 370, 432, 60, Hex("c5c7b8"));
-            Icon(page, "ticket", 35, 382, 32, 30);
-            Label(page, "Следующий жетон", 80, 376, 228, 27, 20, Ink);
-            progressLabel = Label(page, "", 315, 378, 127, 24, 18, Muted, FontStyle.Normal, TextAnchor.MiddleRight);
-            PanelAt(page, "Ticket track", Hex("4d5449"), 80, 411, 360, 9);
-            ticketFill = PanelAt(page, "Ticket progress", Hex("7dc844"), 80, 411, 0, 9);
+            for (int i = 0; i < 5; i++)
+            {
+                int x = 24 + i * 87;
+                oreSlots[i] = Card(page, "Ore collection " + i, x, 346, 84, 46, Panel);
+                oreIcons[i] = Icon(page, "tile-" + MineGame.OreKeyAt(i), x + 30, 351, 24, 18);
+                oreNames[i] = Label(page, "", x + 2, 371, 80, 20, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
+            }
 
-            Label(page, "УЛУЧШЕНИЯ", 24, 443, 220, 28, 24, Ink, FontStyle.Bold);
-            upgradeHint = Label(page, "", 243, 446, 213, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleRight);
-            Card(page, "Pick workshop card", 24, 480, 211, 106, Panel);
-            Icon(page, "pick2", 36, 488, 37, 37);
-            Label(page, "Кирка", 83, 482, 138, 27, 22, Ink, FontStyle.Bold);
-            pickDetail = Label(page, "+4 монеты / удар", 83, 510, 141, 22, 16, Muted);
-            upgradeButton = ButtonAt(page, "", 36, 539, 187, 35, Upgrade, Hex("6fcbbb"), Hex("16382f"));
+            Card(page, "Next ticket", 24, 400, 432, 48, Hex("c5c7b8"));
+            Icon(page, "ticket", 35, 407, 32, 30);
+            Label(page, "Следующий жетон", 80, 400, 228, 27, 20, Ink);
+            progressLabel = Label(page, "", 315, 403, 127, 24, 18, Muted, FontStyle.Normal, TextAnchor.MiddleRight);
+            PanelAt(page, "Ticket track", Hex("4d5449"), 80, 433, 360, 7);
+            ticketFill = PanelAt(page, "Ticket progress", Hex("7dc844"), 80, 433, 0, 7);
+
+            Label(page, "УЛУЧШЕНИЯ", 24, 458, 220, 28, 24, Ink, FontStyle.Bold);
+            upgradeHint = Label(page, "", 243, 461, 213, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleRight);
+            Card(page, "Pick workshop card", 24, 492, 211, 94, Panel);
+            workshopPick = Icon(page, "pick1", 36, 500, 37, 37);
+            pickTitle = Label(page, "Кирка", 83, 493, 138, 27, 20, Ink, FontStyle.Bold);
+            pickDetail = Label(page, "", 83, 519, 141, 22, 16, Muted);
+            upgradeButton = ButtonAt(page, "", 36, 548, 187, 30, Upgrade, Hex("6fcbbb"), Hex("16382f"));
             upgradeButton.name = "Upgrade pickaxe"; upgradeLabel = upgradeButton.GetComponentInChildren<Text>();
-            Card(page, "Forge workshop card", 245, 480, 211, 106, Panel);
-            Icon(page, "forge", 257, 488, 37, 37);
-            Label(page, "Кузница", 304, 482, 136, 27, 22, Ink, FontStyle.Bold);
-            forgeDetail = Label(page, "", 304, 510, 140, 22, 16, Muted);
-            forgeButton = ButtonAt(page, "", 257, 539, 187, 35, Forge, Hex("e5c488"), Hex("3a3020"));
+            Card(page, "Forge workshop card", 245, 492, 211, 94, Panel);
+            Icon(page, "forge", 257, 500, 37, 37);
+            Label(page, "Кузница", 304, 493, 136, 27, 22, Ink, FontStyle.Bold);
+            forgeDetail = Label(page, "", 304, 519, 140, 22, 16, Muted);
+            forgeButton = ButtonAt(page, "", 257, 548, 187, 30, Forge, Hex("e5c488"), Hex("3a3020"));
             forgeButton.name = "Upgrade forge"; forgeLabel = forgeButton.GetComponentInChildren<Text>();
-            Label(page, "3 пласта = реликвия и +1 к добыче", 24, 597, 432, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+            nextUpgrade = Label(page, "", 24, 596, 432, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
         }
 
         private void BuildRoll(Transform page)
@@ -130,7 +157,7 @@ namespace MineLoot
             for (int column = 0; column < 5; column++)
             {
                 int x = 41 + column * 81;
-                Card(page, "Reel " + column, x, 81, 74, 73, Hex("cdd0c6"));
+                reels[column] = Card(page, "Reel " + column, x, 81, 74, 73, Hex("cdd0c6"));
                 picks[column] = Icon(page, "pick1", x + 9, 83, 48, 48); picks[column].preserveAspect = true;
                 powers[column] = Label(page, "1 сила", x, 131, 74, 20, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
                 for (int row = 0; row < 5; row++) blocks[column, row] = Icon(page, "tile-" + layers[row], x, 165 + row * 44, 74, 41);
@@ -194,18 +221,20 @@ namespace MineLoot
             var entry = new EventTrigger.Entry { eventID = type }; entry.callback.AddListener(_ => action()); trigger.triggers.Add(entry);
         }
 
-        private IEnumerator FloatReward(string value, Transform parent, float x, float y)
+        private IEnumerator FloatReward(Transform parent, float x, float y)
         {
-            effects++;
-            var label = Label(parent, value, x, y, 110, 30, 22, Hex("f2d69d"), FontStyle.Bold, TextAnchor.MiddleCenter);
+            var label = Label(parent, "", x, y, 180, 54, 19, Hex("fff0b8"), FontStyle.Bold, TextAnchor.MiddleCenter);
+            label.name = "Mining rewards"; miningGain = label;
+            var outline = label.gameObject.AddComponent<Outline>(); outline.effectColor = Hex("273422"); outline.effectDistance = new Vector2(1, -1);
             float elapsed = 0;
             while (elapsed < .65f)
             {
                 elapsed += Time.unscaledDeltaTime;
-                label.rectTransform.anchoredPosition = new Vector2(x, -y + elapsed * 70);
-                label.color = new Color(1, .88f, .61f, 1 - elapsed / .65f); yield return null;
+                label.text = "+" + ShortAmount(gainCoins) + " монет\n+" + gainExperience + " опыта";
+                label.rectTransform.anchoredPosition = new Vector2(x, -y + (1 - Mathf.Pow(1 - elapsed / .65f, 3)) * 54);
+                label.color = new Color(1, .94f, .72f, Mathf.Clamp01((.65f - elapsed) / .23f)); yield return null;
             }
-            Destroy(label.gameObject); effects--;
+            Destroy(label.gameObject); miningGain = null;
         }
 
         private static Color Hex(string hex) { ColorUtility.TryParseHtmlString("#" + hex, out var c); return c; }

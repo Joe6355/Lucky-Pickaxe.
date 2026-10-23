@@ -5,7 +5,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 2;
+        public int version = 3;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -18,6 +18,10 @@ namespace MineLoot
         public int claimedContracts;
         public long totalClicks;
         public int totalRolls;
+        public long experience;
+        public long oresMined;
+        public int oreKind;
+        public int oreDamage;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -28,8 +32,34 @@ namespace MineLoot
         public const int HitsPerTicket = 12;
         public const int MaxForge = 10;
         public const int MaxUpgrade = 100;
+        public const int MaxMinerLevel = 50;
         public const long CoinLimit = 1000000000000L;
+        private static readonly int[] OreLevels = { 1, 2, 4, 7, 10 };
+        private static readonly int[] OreHealths = { 6, 9, 12, 16, 20 };
+        private static readonly int[] OreRewards = { 12, 28, 55, 95, 150 };
+        private static readonly string[] OreKeys = { "coal", "iron", "gold", "diamond", "emerald" };
+        private static readonly int[] OreCycle = { 0, 1, 0, 2, 1, 0, 3, 1, 2, 0, 4, 2 };
         public MineProgress Progress { get; }
+        public MineHit LastHit { get; private set; }
+        public int MinerLevel => LevelForExperience(Progress.experience);
+        public long LevelExperience => Progress.experience - ExperienceForLevel(MinerLevel);
+        public long LevelGoal => MinerLevel == MaxMinerLevel ? 0 : ExperienceForLevel(MinerLevel + 1) - ExperienceForLevel(MinerLevel);
+        public int UnlockedOres { get { int count = 1; while (count < OreLevels.Length && MinerLevel >= OreLevels[count]) count++; return count; } }
+        public string OreKey => OreKeys[Progress.oreKind];
+        public int OreHealth => OreHealths[Progress.oreKind];
+        public int OreReward => OreRewards[Progress.oreKind];
+        public int MiningDamage => 1 + Progress.upgradeLevel / 5;
+        public int PickTier => Progress.upgradeLevel >= 20 ? 4 : Progress.upgradeLevel >= 12 ? 3 : Progress.upgradeLevel >= 5 ? 2 : Progress.upgradeLevel >= 2 ? 1 : 0;
+        public int NextPickUpgrade => PickTier == 4 ? MaxUpgrade : new[] { 2, 5, 12, 20 }[PickTier];
+        public static string OreKeyAt(int kind) => OreKeys[kind];
+        public static int OreUnlockLevel(int kind) => OreLevels[kind];
+        public static long ExperienceForLevel(int level) { long l = Math.Max(1, Math.Min(MaxMinerLevel, level)); return (l - 1) * (l + 2) * 10; }
+        public static int LevelForExperience(long experience)
+        {
+            int level = 1;
+            while (level < MaxMinerLevel && experience >= ExperienceForLevel(level + 1)) level++;
+            return level;
+        }
         public int Relics => Math.Min(333333, (Progress.stratum - 1 + (IsComplete ? 1 : 0)) / 3);
         public int ClickPower => 8 + Progress.upgradeLevel * 4 + Relics;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
@@ -57,7 +87,8 @@ namespace MineLoot
 
         private void Sanitize()
         {
-            Progress.version = 2;
+            bool legacy = Progress.version < 3;
+            Progress.version = 3;
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
             Progress.tickets = Math.Max(0, Math.Min(1000000, Progress.tickets));
             Progress.hits = Math.Max(0, Math.Min(HitsPerTicket - 1, Progress.hits));
@@ -75,17 +106,48 @@ namespace MineLoot
             Progress.claimedContracts = Math.Max(0, Math.Min((int)(Progress.totalBlocks / 25), Progress.claimedContracts));
             Progress.totalClicks = Math.Max(0, Math.Min(CoinLimit, Progress.totalClicks));
             Progress.totalRolls = Math.Max(0, Math.Min(10000000, Progress.totalRolls));
+            // Old clicks count toward the new level; migration never pays historical level rewards.
+            Progress.experience = Math.Max(0, Math.Min(ExperienceForLevel(MaxMinerLevel), legacy ? Progress.totalClicks : Progress.experience));
+            Progress.oresMined = Math.Max(0, Math.Min(CoinLimit, Progress.oresMined));
+            Progress.oreKind = Math.Max(0, Math.Min(UnlockedOres - 1, Progress.oreKind));
+            Progress.oreDamage = Math.Max(0, Math.Min(OreHealth - 1, Progress.oreDamage));
         }
 
         public bool Mine()
         {
-            AddCoins(ClickPower);
+            var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = ClickPower, experience = 1 };
+            int previousLevel = MinerLevel;
+            int previousUnlocks = UnlockedOres;
+            Progress.oreDamage += MiningDamage;
+            if (Progress.oreDamage >= OreHealth)
+            {
+                hit.broken = true;
+                hit.coins += OreReward;
+                hit.experience += 6 + Progress.oreKind * 4;
+                Progress.oresMined = Math.Min(CoinLimit, Progress.oresMined + 1);
+                Progress.oreDamage = 0;
+            }
+            hit.coins += GainExperience(hit.experience, out hit.tickets);
+            hit.levels = MinerLevel - previousLevel;
+            if (hit.broken)
+                Progress.oreKind = UnlockedOres > previousUnlocks ? UnlockedOres - 1 : Math.Min(UnlockedOres - 1, OreCycle[Progress.oresMined % OreCycle.Length]);
+            AddCoins(hit.coins);
             Progress.totalClicks = Math.Min(CoinLimit, Progress.totalClicks + 1);
             Progress.hits++;
-            if (Progress.hits < HitsPerTicket) return false;
-            Progress.hits = 0;
-            Progress.tickets = Math.Min(1000000, Progress.tickets + 1);
-            return true;
+            bool ticket = Progress.hits == HitsPerTicket;
+            if (ticket) { Progress.hits = 0; hit.tickets++; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
+            LastHit = hit;
+            return ticket;
+        }
+
+        private int GainExperience(int amount, out int tickets)
+        {
+            int before = MinerLevel, coins = 0;
+            Progress.experience = Math.Min(ExperienceForLevel(MaxMinerLevel), Progress.experience + amount);
+            tickets = MinerLevel - before;
+            for (int level = before + 1; level <= MinerLevel; level++) coins += 40 * level;
+            Progress.tickets = Math.Min(1000000, Progress.tickets + tickets);
+            return coins;
         }
 
         public bool Upgrade()
@@ -126,6 +188,7 @@ namespace MineLoot
             if (Progress.tickets <= 0) return null;
             if (random == null) throw new ArgumentNullException(nameof(random));
             var result = new RollResult();
+            result.levelBefore = MinerLevel;
             // Obtain all draws before mutating progress, including failures of an injected random source.
             for (int i = 0; i < Columns; i++)
             {
@@ -171,11 +234,20 @@ namespace MineLoot
                 result.reward += FloorReward;
                 Progress.tickets = Math.Min(1000000, Progress.tickets + 1);
             }
+            result.levelCoins = GainExperience(result.broken, out result.levelTickets);
+            result.levelAfter = MinerLevel;
+            result.reward += result.levelCoins;
             AddCoins(result.reward);
             return result;
         }
 
         private void AddCoins(long value) => Progress.coins = Math.Min(CoinLimit, Progress.coins + value);
+    }
+
+    public struct MineHit
+    {
+        public int ore, damage, coins, experience, levels, tickets;
+        public bool broken;
     }
 
     public sealed class RollResult
@@ -193,5 +265,6 @@ namespace MineLoot
         public int chests;
         public bool newStratum;
         public bool completed;
+        public int levelBefore, levelAfter, levelCoins, levelTickets;
     }
 }

@@ -5,6 +5,7 @@ namespace MineLoot
 {
     public static class ProgressStore
     {
+        // The storage key stays stable so v1/v2 installations are upgraded in place.
         public const string Key = "MineLoot.Progress.v2";
         private const string LegacyKey = "MineLoot.Demo.Progress.v1";
 
@@ -27,7 +28,7 @@ namespace MineLoot
         public static MineProgress Decode(string json)
         {
             var data = JsonUtility.FromJson<MineProgress>(json);
-            if (data == null || data.version < 1 || data.version > 2) throw new FormatException("Unknown save version");
+            if (data == null || data.version < 1 || data.version > 3) throw new FormatException("Unknown save version");
             return data;
         }
 

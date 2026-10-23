@@ -28,7 +28,7 @@ public static class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.4.0";
+        PlayerSettings.bundleVersion = "0.5.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -52,8 +52,8 @@ public static class DemoTools
         }
         var game = new MineGame();
         for (int i = 0; i < 11; i++) Check(!game.Mine(), "No premature ticket");
-        Check(game.Mine() && game.Progress.tickets == 3 && game.Progress.hits == 0 && game.Progress.coins == 176, "Twelve hits grant one ticket");
-        Check(game.Upgrade() && game.ClickPower == 12 && game.UpgradeCost == 154 && game.Progress.coins == 56, "Upgrade transaction");
+        Check(game.Mine() && game.Progress.tickets == 3 && game.Progress.hits == 0 && game.Progress.coins == 200, "Twelve hits grant one ticket and two coal rewards");
+        Check(game.Upgrade() && game.ClickPower == 12 && game.UpgradeCost == 154 && game.Progress.coins == 80, "Upgrade transaction");
         Check(!new MineGame(new MineProgress { coins = 0 }).Upgrade(), "Insufficient coins");
         Check(MineGame.PickPower(0) == 1 && MineGame.PickPower(.54999) == 1 && MineGame.PickPower(.55) == 2 && MineGame.PickPower(.89999) == 2 && MineGame.PickPower(.9) == 4, "Rarity boundaries");
         game = new MineGame(new MineProgress { tickets = 7, coins = 0 });
@@ -67,7 +67,7 @@ public static class DemoTools
         Check(game.CanClaim && game.ClaimContract() && !game.ClaimContract(), "Contract cannot pay twice");
         Check(game.Progress.coins == 650 && game.Progress.tickets == 4 && game.ContractTarget == 50, "Contract advances");
         var next = game.Roll(() => .99);
-        Check(next.newStratum && game.Progress.stratum == 2 && next.reward == 160 && !game.IsComplete, "Next stratum scales rewards");
+        Check(next.newStratum && game.Progress.stratum == 2 && next.reward == 240 && next.levelCoins == 80 && next.levelTickets == 1 && !game.IsComplete, "Next stratum and level rewards are atomic");
         game = new MineGame(new MineProgress { depths = new[] { 5, 0, 0, 0, 0 }, coins = 0 });
         var scrap = game.Roll(() => 0);
         Check(scrap.reward == 26 && scrap.scrap == 2 && scrap.chests == 0, "Completed columns pay scrap, not chest");
@@ -94,7 +94,51 @@ public static class DemoTools
         game.Roll(() => 0);
         Check(game.Relics == 1 && game.ClickPower == 9, "Three floors grant permanent relic");
         var legacy = new MineGame(ProgressStore.Decode("{\"version\":1,\"coins\":1240,\"tickets\":3,\"hits\":4,\"upgradeLevel\":2,\"stratum\":4,\"depths\":[1,2,3,4,5]}"));
-        Check(legacy.Progress.version == 2 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress");
+        Check(legacy.Progress.version == 3 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress");
+        game = new MineGame();
+        for (int i = 0; i < 5; i++) game.Mine();
+        Check(game.Progress.oreDamage == 5 && game.Progress.oresMined == 0 && game.Progress.experience == 5, "Ore accumulates damage and click experience");
+        game.Mine();
+        Check(game.LastHit.broken && game.LastHit.coins == 20 && game.LastHit.experience == 7 && game.Progress.coins == 140 && game.Progress.experience == 12, "Coal break pays exactly once");
+        Check(game.Progress.oreDamage == 0 && game.Progress.oresMined == 1, "New block starts intact");
+        game = new MineGame(new MineProgress { coins = 0, experience = 39 }); game.Mine();
+        Check(game.MinerLevel == 2 && game.Progress.coins == 88 && game.Progress.tickets == 3 && game.UnlockedOres == 2, "Level unlocks iron, grants coins and ticket");
+        game.Mine();
+        Check(game.Progress.coins == 96 && game.Progress.tickets == 3 && game.LastHit.levels == 0, "Level reward cannot repeat");
+        for (int kind = 0; kind < 5; kind++)
+        {
+            game = new MineGame(new MineProgress { experience = MineGame.ExperienceForLevel(MineGame.OreUnlockLevel(kind)), oreKind = kind });
+            Check(game.UnlockedOres == kind + 1 && game.OreKey == MineGame.OreKeyAt(kind), "Ore unlock boundary " + kind);
+            if (kind > 0)
+            {
+                game = new MineGame(new MineProgress { experience = MineGame.ExperienceForLevel(MineGame.OreUnlockLevel(kind)) - 1, oreKind = kind });
+                Check(game.UnlockedOres == kind && game.Progress.oreKind < kind, "Locked ore rejected " + kind);
+            }
+        }
+        int[] tiers = { 0, 2, 5, 12, 20 };
+        for (int i = 0; i < tiers.Length; i++) Check(new MineGame(new MineProgress { upgradeLevel = tiers[i] }).PickTier == i, "Pick material milestone " + i);
+        game = new MineGame(new MineProgress { coins = 10000, upgradeLevel = 4 });
+        Check(game.MiningDamage == 1 && game.Upgrade() && game.MiningDamage == 2, "Fifth upgrade increases ore damage");
+        for (int i = 0; i < 3; i++) game.Mine();
+        Check(game.Progress.oresMined == 1 && game.Progress.oreDamage == 0, "Stronger pick breaks coal in three hits");
+        game = new MineGame(new MineProgress { upgradeLevel = 100, experience = long.MaxValue, oreKind = 4, oreDamage = int.MaxValue });
+        Check(game.MinerLevel == 50 && game.LevelGoal == 0 && game.Progress.oreDamage == 19, "Level and ore damage caps");
+        game.Mine();
+        Check(game.Progress.oresMined == 1 && game.LastHit.levels == 0 && game.LastHit.coins == game.ClickPower + 150, "Capped level has no repeated rewards");
+        game = new MineGame(new MineProgress { experience = 200, oreKind = 2, oreDamage = 8, oresMined = 17 });
+        restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        Check(restored.Progress.oreKind == 2 && restored.Progress.oreDamage == 8 && restored.Progress.experience == 200 && restored.Progress.oresMined == 17, "v3 restores ore damage and experience");
+        var old = new MineGame(ProgressStore.Decode("{\"version\":2,\"coins\":543,\"tickets\":8,\"totalClicks\":180,\"upgradeLevel\":6}"));
+        Check(old.MinerLevel == 4 && old.Progress.coins == 543 && old.Progress.tickets == 8 && old.Progress.upgradeLevel == 6, "v2 clicks migrate without paying historical rewards");
+        var sequenceA = new MineGame(new MineProgress { experience = 1080 });
+        var sequenceB = new MineGame(new MineProgress { experience = 1080 });
+        bool[] seen = new bool[5];
+        for (int i = 0; i < 180; i++)
+        {
+            sequenceA.Mine(); sequenceB.Mine(); seen[sequenceA.Progress.oreKind] = true;
+            if (sequenceA.Progress.oreKind != sequenceB.Progress.oreKind) throw new Exception("Non-deterministic ore cycle");
+        }
+        Check(Array.TrueForAll(seen, value => value), "Unlocked cycle includes every ore");
         string testKey = "LuckyPickaxe.Tests." + Guid.NewGuid().ToString("N");
         try
         {
@@ -113,9 +157,9 @@ public static class DemoTools
     public static void SimulateBalance()
     {
         const int runs = 100;
-        var rows = new System.Text.StringBuilder("seed,minute,floor,pick_level,forge_level,coins,rolls,blocks\n");
+        var rows = new System.Text.StringBuilder("seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks\n");
         int[] checkpoints = { 60, 300, 600, 1200 };
-        var sums = new double[4, 3];
+        var sums = new double[4, 5];
         for (int seed = 0; seed < runs; seed++)
         {
             var rng = new System.Random(seed);
@@ -133,18 +177,19 @@ public static class DemoTools
                 }
                 for (int i = 0; i < checkpoints.Length; i++) if (second == checkpoints[i])
                 {
-                    rows.AppendLine($"{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks}");
+                    rows.AppendLine($"{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks}");
                     sums[i, 0] += game.Progress.stratum; sums[i, 1] += game.Progress.upgradeLevel; sums[i, 2] += game.Progress.forgeLevel;
+                    sums[i, 3] += game.MinerLevel; sums[i, 4] += game.Progress.oresMined;
                 }
             }
-            if (game.Progress.stratum < 10 || game.Progress.coins < 0 || game.Progress.tickets < 0) throw new Exception("Balance regression seed " + seed);
+            if (game.Progress.stratum < 10 || game.Progress.coins < 0 || game.Progress.tickets < 0 || game.UnlockedOres != 5 || game.Progress.oreDamage >= game.OreHealth) throw new Exception("Balance regression seed " + seed);
         }
         Directory.CreateDirectory("Logs"); Directory.CreateDirectory("Docs");
         File.WriteAllText("Logs/balance-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии\n\n100 воспроизводимых прогонов, seed 0–99, 20 минут каждый. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. Это проверка экономики, не оценка поведения реальных игроков.\n\n| Минута | Средний пласт | Средний уровень кирки | Средний уровень кузницы |\n|---|---:|---:|---:|\n");
-        for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} |", checkpoints[i] / 60, sums[i, 0] / runs, sums[i, 1] / runs, sums[i, 2] / runs));
+        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.5\n\n100 воспроизводимых прогонов, seed 0–99, 20 минут каждый. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. Учтены опыт, бонусы уровней и разрушение руд. Это проверка экономики, не оценка поведения реальных игроков.\n\n| Минута | Средний пласт | Уровень кирки | Кузница | Уровень шахтёра | Разрушено руд |\n|---|---:|---:|---:|---:|---:|\n");
+        for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} |", checkpoints[i] / 60, sums[i, 0] / runs, sums[i, 1] / runs, sums[i, 2] / runs, sums[i, 3] / runs, sums[i, 4] / runs));
         doc.Append("\nФормулы и шансы находятся в `Assets/MineLoot/Scripts/MineGame.cs`. Сырые результаты: `Logs/balance-runs.csv` после запуска меню Mine Loot → Simulate balance. Прочность растёт каждые 3 пласта до 4, награды растут до 100-го пласта. Для проверки удержания и удобства нужен плейтест.\n");
-        File.WriteAllText("Docs/Balance.md", doc.ToString());
+        File.WriteAllText("Docs/Balance.md", doc.ToString().Replace("\r\n", "\n"));
         Debug.Log("LUCKY_PICKAXE_BALANCE: PASS (100 seeded runs)");
     }
 
@@ -153,7 +198,7 @@ public static class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.4.0";
+        PlayerSettings.bundleVersion = "0.5.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");

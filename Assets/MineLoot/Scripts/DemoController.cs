@@ -10,6 +10,9 @@ namespace MineLoot
     {
         private static readonly Color Back = Hex("514a3e"), Panel = Hex("c6cbc0"), Muted = Hex("535d4b"), Ink = Hex("29362c");
         private static readonly string[][] Layers = { new[] { "grass", "stone", "iron", "gold", "diamond" }, new[] { "stone", "iron", "diamond", "stone", "diamond" }, new[] { "stone", "ember", "iron", "ember", "gold" } };
+        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд" };
+        private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная" };
+        private static readonly string[] PickSprites = { "pick1", "pick-stone", "pick2", "pick-gold", "pick4" };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[,] blocks = new Image[5, 5];
         private readonly Image[] cracks = new Image[5];
@@ -36,14 +39,20 @@ namespace MineLoot
         private Button forgeButton, contractButton;
         private bool dirty, holding, holdRepeated;
         private float nextHold, lastMineTime = -1, nextSave;
-        private int effects;
+        private Text miningGain;
+        private long gainCoins;
+        private int gainExperience;
         private long displayedCoins = -1;
+        private Vector2 pickHome;
+        private float visualHealth = 1, visualExperience, visualTicket, upgradePulse, noticeTime;
+        private int previousLevel, previousOre = -1;
         public bool FastRoll { get; private set; }
         public MineGame Game => game;
         public bool IsBusy => busy;
 
         private void Awake()
         {
+            if (SmokeMode) Application.runInBackground = true;
             game = SmokeMode ? new MineGame() : ProgressStore.Load();
             random = new System.Random();
             sounds = gameObject.AddComponent<GameAudio>();
@@ -58,10 +67,28 @@ namespace MineLoot
         private void Update()
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
-            rockPulse = Mathf.MoveTowards(rockPulse, 0, Time.unscaledDeltaTime * 6);
-            rock.localScale = Vector3.one * (1 - rockPulse * .065f);
-            rock.localEulerAngles = new Vector3(0, 0, -4 + rockPulse * 7);
-            clickPick.rectTransform.localEulerAngles = new Vector3(0, 0, -24 + rockPulse * 45);
+            float dt = Time.unscaledDeltaTime;
+            rockPulse = Mathf.MoveTowards(rockPulse, 0, dt * 4.5f);
+            upgradePulse = Mathf.MoveTowards(upgradePulse, 0, dt * 2);
+            float strike = rockPulse * rockPulse, follow = Mathf.Sin((1 - rockPulse) * Mathf.PI) * rockPulse;
+            clickPick.rectTransform.localEulerAngles = new Vector3(0, 0, -24 + strike * 58 + follow * 30);
+            clickPick.rectTransform.anchoredPosition = pickHome + new Vector2(-16 * strike, -8 * strike);
+            float celebrate = Mathf.Sin(upgradePulse * Mathf.PI);
+            clickPick.rectTransform.localScale = Vector3.one * (1 + celebrate * .15f);
+            workshopPick.rectTransform.localScale = Vector3.one * (1 + celebrate * .12f);
+            visualHealth = Mathf.MoveTowards(visualHealth, 1 - game.Progress.oreDamage / (float)game.OreHealth, dt * 4);
+            visualExperience = Mathf.MoveTowards(visualExperience, game.LevelGoal == 0 ? 1 : game.LevelExperience / (float)game.LevelGoal, dt * 2);
+            visualTicket = Mathf.MoveTowards(visualTicket, game.Progress.hits / (float)MineGame.HitsPerTicket, dt * 4);
+            oreFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 178 * visualHealth);
+            experienceFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 404 * visualExperience);
+            ticketFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360 * visualTicket);
+            if (noticeTime > 0)
+            {
+                noticeTime = Mathf.Max(0, noticeTime - dt);
+                float age = 2.7f - noticeTime;
+                noticeGroup.alpha = Mathf.Min(Mathf.Clamp01(age / .12f), Mathf.Clamp01(noticeTime / .25f));
+                noticeRect.anchoredPosition = new Vector2(24, -10 - 10 * (1 - Mathf.SmoothStep(0, 1, age / .2f)));
+            }
             if (holding && Time.unscaledTime >= nextHold)
             {
                 holdRepeated = true; nextHold = Time.unscaledTime + .16f; Mine();
@@ -81,18 +108,30 @@ namespace MineLoot
         {
             if (busy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
             lastMineTime = Time.unscaledTime;
-            bool ticket = game.Mine(); rockPulse = 1;
-            mineStatus.text = "+" + game.ClickPower + " монет" + (ticket ? "   /   +1 жетон!" : "");
-            stage.Hit();
-            sounds.Play(ticket ? "reward" : "hit");
-            if (effects < 8) StartCoroutine(FloatReward("+" + game.ClickPower, minePage.transform, 210, 120));
-            Persist(); Refresh();
+            game.Mine(); var hit = game.LastHit; rockPulse = 1;
+            mineStatus.text = hit.broken ? OreNames[hit.ore] + " добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
+            if (hit.tickets > 0) mineStatus.text += " · +" + hit.tickets + " жетон";
+            stage.Hit(hit.broken);
+            sounds.Play(hit.levels > 0 ? "level" : hit.broken ? "break" : hit.ore >= 3 ? "crystal" : hit.ore > 0 ? "metal" : "hit");
+            if (miningGain == null)
+            {
+                gainCoins = hit.coins; gainExperience = hit.experience;
+                StartCoroutine(FloatReward(minePage.transform, 104, 186));
+            }
+            else { gainCoins += hit.coins; gainExperience += hit.experience; }
+            if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel);
+            if (game.Progress.hits == 0) visualTicket = 0;
+            Persist(); if (hit.broken || hit.levels > 0) Flush(); Refresh();
         }
 
         public void Upgrade()
         {
-            if (busy || !game.Upgrade()) return;
+            if (busy) return;
+            int tier = game.PickTier;
+            if (!game.Upgrade()) return;
             mineStatus.text = "Кирка улучшена! +" + game.ClickPower + " за удар";
+            upgradePulse = 1;
+            if (game.PickTier != tier) Notice(PickNames[game.PickTier].ToUpperInvariant() + " КИРКА", "+4 монеты за удар\nУрон по блоку: " + game.MiningDamage);
             sounds.Play("upgrade");
             Persist(); Refresh();
         }
@@ -100,14 +139,30 @@ namespace MineLoot
         public void Forge()
         {
             if (busy || !game.Forge()) return;
-            sounds.Play("upgrade"); mineStatus.text = "Кузница улучшена! Кирки стали сильнее";
+            sounds.Play("upgrade"); mineStatus.text = "Кузница: алмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus;
             Persist(); Refresh();
         }
 
         public void ClaimContract()
         {
-            if (busy || !game.ClaimContract()) return;
-            sounds.Play("reward"); Persist(); Flush(); Refresh();
+            if (busy) return;
+            int reward = game.ContractReward;
+            if (!game.ClaimContract()) return;
+            sounds.Play("reward"); Notice("КОНТРАКТ ВЫПОЛНЕН", "+" + reward + " монет · +1 жетон"); Persist(); Flush(); Refresh();
+        }
+
+        private void Notice(string title, string detail)
+        {
+            noticeTitle.text = title; noticeDetail.text = detail; noticeTime = 2.7f;
+            noticeRect.SetAsLastSibling();
+        }
+
+        private void LevelNotice(int before, int after)
+        {
+            string unlock = ""; int coins = 0;
+            for (int i = 1; i < OreNames.Length; i++) if (MineGame.OreUnlockLevel(i) > before && MineGame.OreUnlockLevel(i) <= after) unlock = "Открыто: " + OreNames[i] + "\n";
+            for (int level = before + 1; level <= after; level++) coins += level * 40;
+            Notice("ШАХТЁР · УРОВЕНЬ " + after, unlock + "+" + coins + " монет · +" + (after - before) + " жетон");
         }
 
         public void ToggleSpeed()
@@ -152,29 +207,59 @@ namespace MineLoot
         {
             rollStatus.text = "Какие кирки пойдут в шахту?";
             float speed = FastRoll ? .5f : 1;
-            for (int frame = 0; frame < 9; frame++)
+            for (int frame = 0; frame < 16; frame++)
             {
                 for (int c = 0; c < 5; c++)
                 {
-                    int power = new[] { 1, 2, 4 }[(frame + c) % 3];
-                    picks[c].sprite = art.Get("pick" + power);
-                    picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, frame % 2 == 0 ? -12 : 12);
-                    powers[c].text = "· · ·";
+                    int stop = 6 + c * 2;
+                    if (frame < stop)
+                    {
+                        int type = new[] { 1, 2, 4 }[(frame + c) % 3];
+                        picks[c].sprite = art.Get("pick" + type);
+                        picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, frame % 2 == 0 ? -10 : 10);
+                        picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -83 + (frame % 2 == 0 ? 5 : -5));
+                        powers[c].text = "· · ·"; powers[c].color = Muted;
+                        reels[c].color = Panel;
+                    }
+                    else
+                    {
+                        picks[c].sprite = art.Get("pick" + result.types[c]);
+                        picks[c].rectTransform.localEulerAngles = Vector3.zero;
+                        picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -83);
+                        picks[c].rectTransform.localScale = Vector3.one * (frame == stop ? 1.18f : 1);
+                        powers[c].text = result.powers[c] + " силы";
+                        powers[c].color = result.types[c] == 4 ? Hex("1b6658") : Ink;
+                        reels[c].color = result.types[c] == 4 ? Hex("addbc0") : result.types[c] == 2 ? Hex("d9e0d5") : Hex("d1c6a8");
+                        if (frame == stop) sounds.Play("tick");
+                    }
                 }
-                sounds.Play("tick"); yield return new WaitForSecondsRealtime(.065f * speed);
-            }
-            for (int c = 0; c < 5; c++)
-            {
-                picks[c].sprite = art.Get("pick" + result.types[c]);
-                picks[c].rectTransform.localEulerAngles = Vector3.zero;
-                powers[c].text = result.powers[c] + " силы";
-                yield return new WaitForSecondsRealtime(.07f * speed);
+                yield return new WaitForSecondsRealtime((.04f + frame * .003f) * speed);
             }
             int earned = 0;
+            var origins = new Vector2[5]; var targets = new Vector2[5];
             int maxPower = 0; foreach (int power in result.powers) maxPower = Math.Max(maxPower, power);
             for (int step = 0; step < maxPower; step++)
             {
                 bool changes = false;
+                for (int c = 0; c < 5; c++)
+                {
+                    origins[c] = picks[c].rectTransform.anchoredPosition;
+                    targets[c] = new Vector2(48 + c * 81, -(136 + shownDepths[c] * 44));
+                    if (step < result.powers[c] && shownDepths[c] < 5) changes = true;
+                }
+                if (!changes) continue;
+                float approach = 0;
+                while (approach < 1)
+                {
+                    approach = Mathf.Min(1, approach + Time.unscaledDeltaTime / (.11f * speed));
+                    float ease = approach * approach;
+                    for (int c = 0; c < 5; c++) if (step < result.powers[c] && shownDepths[c] < 5)
+                    {
+                        picks[c].rectTransform.anchoredPosition = Vector2.Lerp(origins[c], targets[c], ease);
+                        picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(16, -35, ease));
+                    }
+                    yield return null;
+                }
                 for (int c = 0; c < 5; c++)
                 {
                     if (step >= result.powers[c] || shownDepths[c] >= 5) continue;
@@ -185,21 +270,23 @@ namespace MineLoot
                         shownDamage[c] = 0; shownDepths[c]++; earned += game.BlockReward;
                         if (shownDepths[c] == 5) earned += game.ChestReward;
                         SpawnDebris(c, row);
+                        if (shownDepths[c] == 5) chests[c].rectTransform.localScale = Vector3.one * 1.2f;
                     }
                     picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -(136 + row * 44));
                     picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, -24);
                 }
-                if (!changes) continue;
                 sounds.Play("break"); DrawBoard(); rollStatus.text = "Добываем… +" + earned + " монет";
                 coinLabel.text = Math.Min(MineGame.CoinLimit, displayedCoins + earned).ToString("N0");
-                yield return new WaitForSecondsRealtime(.16f * speed);
-                for (int c = 0; c < 5; c++) picks[c].rectTransform.localEulerAngles = Vector3.zero;
-                yield return new WaitForSecondsRealtime(.06f * speed);
+                yield return new WaitForSecondsRealtime(.08f * speed);
+                for (int c = 0; c < 5; c++) { picks[c].rectTransform.localEulerAngles = Vector3.zero; chests[c].rectTransform.localScale = Vector3.one; }
+                yield return new WaitForSecondsRealtime(.03f * speed);
             }
             for (int c = 0; c < 5; c++) picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -83);
             Array.Copy(result.after, shownDepths, 5); Array.Copy(result.damageAfter, shownDamage, 5); DrawBoard();
             rollStatus.text = result.completed ? "Пласт пройден! +" + result.reward + " монет / +1 жетон" : result.reward == 0 ? "Урон сохранён · продолжай добычу" : "+" + result.reward + " монет" + (result.scrap > 0 ? " · включая лом +" + result.scrap : result.chests > 0 ? " · сундуков: " + result.chests : " · копаем дальше");
             sounds.Play(result.chests > 0 || result.completed ? "reward" : "hit");
+            if (result.levelAfter > result.levelBefore) { sounds.Play("level"); LevelNotice(result.levelBefore, result.levelAfter); }
+            else if (result.completed) Notice("ПЛАСТ ПРОЙДЕН!", "+" + result.reward + " монет · +1 жетон\nСледующий пласт готов к добыче");
             displayedCoins = -1; busy = false; Refresh();
         }
 
@@ -254,15 +341,30 @@ namespace MineLoot
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
             powerLabel.text = "+" + game.ClickPower + " за удар";
             progressLabel.text = game.Progress.hits + " / " + MineGame.HitsPerTicket;
-            ticketFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360 * game.Progress.hits / MineGame.HitsPerTicket);
+            levelLabel.text = "ШАХТЁР · УР. " + game.MinerLevel;
+            stageBadge.text = game.LevelGoal == 0 ? "МАКС. УРОВЕНЬ" : game.LevelExperience + "/" + game.LevelGoal + " ОПЫТА";
+            if (previousLevel != game.MinerLevel) { previousLevel = game.MinerLevel; visualExperience = 0; }
+            if (previousOre != game.Progress.oreKind || game.LastHit.broken) { previousOre = game.Progress.oreKind; visualHealth = 1; }
+            veinLabel.text = OreNames[game.Progress.oreKind] + " · " + (game.OreHealth - game.Progress.oreDamage) + "/" + game.OreHealth;
+            oreFill.color = game.Progress.oreKind >= 3 ? Hex("80e3bb") : Hex("e1ce82");
+            for (int i = 0; i < 5; i++)
+            {
+                bool unlocked = i < game.UnlockedOres;
+                oreIcons[i].color = unlocked ? Color.white : new Color(.35f, .4f, .38f, .7f);
+                oreSlots[i].color = i == game.Progress.oreKind ? Hex("c9dd9c") : unlocked ? Panel : Hex("858e83");
+                oreNames[i].text = unlocked ? OreNames[i] : "Ур. " + MineGame.OreUnlockLevel(i);
+                oreNames[i].color = unlocked ? Ink : Hex("e7e8d7");
+            }
             upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0") + " монет";
             upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
-            pickDetail.text = "Ур. " + (game.Progress.upgradeLevel + 1) + " · +4 за удар";
+            pickTitle.text = PickNames[game.PickTier];
+            pickDetail.text = "+4/удар · урон " + game.MiningDamage;
+            nextUpgrade.text = game.PickTier == 4 ? "Алмазная кирка · ур. " + (game.Progress.upgradeLevel + 1) + " · реликвий " + game.Relics : "След.: " + PickNames[game.PickTier + 1].ToLowerInvariant() + " кирка · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
             upgradeHint.text = "Реликвий: " + game.Relics;
             upgradeButton.interactable = !busy && game.CanUpgrade;
             forgeButton.interactable = !busy && game.CanForge;
             forgeLabel.text = game.Progress.forgeLevel == MineGame.MaxForge ? "Максимум" : game.ForgeCost.ToString("N0") + " монет";
-            forgeDetail.text = "Ур. " + game.Progress.forgeLevel + " · удача+";
+            forgeDetail.text = "Алмаз " + game.DiamondChance + "% · +" + game.PowerBonus;
             contractLabel.text = game.CanClaim ? "Забрать" : "В работе";
             contractDetail.text = ShortAmount(System.Math.Min(game.Progress.totalBlocks, game.ContractTarget)) + "/" + ShortAmount(game.ContractTarget) + " · +" + ShortAmount(game.ContractReward);
             contractFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 240 * Mathf.Clamp01((game.Progress.totalBlocks - game.Progress.claimedContracts * 25) / 25f));
@@ -279,10 +381,10 @@ namespace MineLoot
             mineTab.interactable = rollTab.interactable = !busy;
             string biome = new[] { "Мшистые штольни", "Кристальный грот", "Угольные недра" }[game.Biome];
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;
-            veinLabel.text = biome; stageBadge.text = "ПЛАСТ " + game.Progress.stratum.ToString("00");
             floorHint.text = "Прочность " + game.Hardness;
             stage.SetBiome(game.Biome);
-            clickPick.sprite = art.Get(game.Progress.upgradeLevel < 2 ? "pick1" : game.Progress.upgradeLevel < 5 ? "pick2" : "pick4");
+            stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
+            clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
         }
 
         public static bool SmokeMode => Array.IndexOf(Environment.GetCommandLineArgs(), "-demoSmokeTest") >= 0;

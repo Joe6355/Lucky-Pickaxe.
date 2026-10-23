@@ -17,6 +17,8 @@ namespace MineLoot
             Create("hit", 130, .055f, false); Create("tick", 440, .035f, false);
             Create("reward", 660, .3f, true); Create("upgrade", 330, .22f, true);
             Create("break", 90, .09f, false);
+            Create("metal", 240, .06f, false); Create("crystal", 740, .075f, false);
+            Create("level", 520, .45f, true);
         }
         public void Toggle()
         {

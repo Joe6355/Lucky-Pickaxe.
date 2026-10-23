@@ -36,10 +36,13 @@ namespace MineLoot
             {
                 string body = kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
                 ColorUtility.TryParseHtmlString(body, out var baseColor);
-                var rng = new System.Random(313 + kind.Length * 47);
+                int seed = 313; foreach (char letter in kind) seed = unchecked(seed * 31 + letter);
+                var rng = new System.Random(seed);
+                var shades = new float[8, 8];
+                for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) shades[x, y] = .86f + (float)rng.NextDouble() * .25f;
                 for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++)
                 {
-                    float shade = .8f + (float)rng.NextDouble() * .34f;
+                    float shade = shades[x / 2, y / 2] + (float)rng.NextDouble() * .04f;
                     if (kind == "wood") shade = .75f + (x % 4) * .1f + (float)rng.NextDouble() * .12f;
                     if (kind == "planks" && y % 4 == 0) shade = .64f;
                     Color c = baseColor * shade; c.a = 1; t.SetPixel(x, y, c);
@@ -48,19 +51,25 @@ namespace MineLoot
                 {
                     R(0, 0, 16, 3, "#80b64b"); R(0, 3, 3, 2, "#70a247"); R(6, 3, 4, 2, "#70a247"); R(13, 3, 3, 1, "#70a247");
                 }
-                if (kind == "iron" || kind == "gold" || kind == "diamond" || kind == "ember")
+                if (kind == "coal" || kind == "iron" || kind == "gold" || kind == "diamond" || kind == "emerald" || kind == "ember")
                 {
-                    string ore = kind == "iron" ? "#d3c7b8" : kind == "gold" ? "#f4d25b" : kind == "ember" ? "#f19a58" : "#5be1db";
-                    string dark = kind == "diamond" ? "#329d9e" : kind == "gold" ? "#b28c32" : "#71665e";
-                    foreach (var a in new[] { new Vector2Int(2, 3), new Vector2Int(10, 2), new Vector2Int(7, 9), new Vector2Int(2, 12), new Vector2Int(12, 11) })
-                    { R(a.x, a.y, 3, 3, dark); R(a.x, a.y, 2, 2, ore); }
+                    string ore = kind == "coal" ? "#313944" : kind == "iron" ? "#dbb69a" : kind == "gold" ? "#f4d25b" : kind == "emerald" ? "#55d67b" : kind == "ember" ? "#f19a58" : "#5be1db";
+                    string dark = kind == "coal" ? "#22272f" : kind == "diamond" ? "#298e98" : kind == "gold" ? "#b28c32" : kind == "emerald" ? "#27824e" : "#79695c";
+                    string shine = kind == "coal" ? "#505964" : kind == "iron" ? "#f1d1b7" : kind == "gold" ? "#fff0a6" : kind == "emerald" ? "#a4f7ae" : "#c1fff0";
+                    for (int i = 0; i < 5; i++)
+                    {
+                        int x = 1 + (i * 7 + kind.Length) % 11, y = 1 + i * 3 % 12;
+                        R(x, y, 4, 3, dark); R(x, y, 3, 2, ore);
+                        if (kind == "emerald") R(x + 1, y - 1, 2, 4, ore);
+                        R(x, y, 2, 1, shine);
+                    }
                 }
                 if (kind == "stone")
                     foreach (var a in new[] { new Vector2Int(2, 5), new Vector2Int(9, 10), new Vector2Int(4, 14) }) R(a.x, a.y, 4, 1, "#777e83");
             }
             else if (name.StartsWith("pick"))
             {
-                string metal = name == "pick4" ? "#53e7dc" : name == "pick2" ? "#e1e5e8" : "#bf985b";
+                string metal = name == "pick4" ? "#53e7dc" : name == "pick-gold" ? "#f4cd57" : name == "pick2" ? "#e1e5e8" : name == "pick-stone" ? "#a2abb2" : "#bf985b";
                 for (int k = 0; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
                 R(4, 2, 18, 5, "#263c40"); R(10, 6, 17, 5, "#263c40"); R(22, 10, 7, 9, "#263c40"); R(26, 17, 4, 5, "#263c40");
                 R(4, 2, 16, 3, metal); R(10, 5, 15, 4, metal); R(22, 9, 5, 7, metal); R(26, 16, 2, 5, metal); R(7, 2, 12, 1, "#edfff5");
@@ -86,7 +95,13 @@ namespace MineLoot
             }
             else if (name.StartsWith("crack"))
             {
-                for (int i=0;i<21;i++) { R(14 + i%4, 3+i, 2, 2, "#28313aca"); if(i>6) R(16-(i-6), 7+i/2, 2, 2, "#28313aca"); }
+                int depth = name == "crack1" ? 1 : name == "crack3" ? 3 : 2;
+                for (int i = 0; i < 7 + depth * 6; i++)
+                {
+                    R(13 + i % 4, 3 + i, 2, 2, "#222c32e0");
+                    if (i > 6) R(16 - (i - 6), 7 + i / 2, 2, 2, "#222c32e0");
+                    if (depth == 3 && i > 10) R(15 + (i - 10), 9 + i / 2, 2, 2, "#222c32e0");
+                }
             }
             else if (name == "shadow")
             {

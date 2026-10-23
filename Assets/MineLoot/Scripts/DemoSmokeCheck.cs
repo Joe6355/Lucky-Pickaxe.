@@ -52,13 +52,31 @@ namespace MineLoot
             Capture("unity-clicker.png");
             yield return new WaitForEndOfFrame();
             Check(demo.Game.Progress.coins == 80, "Initial wallet");
-            for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
-            Check(demo.Game.Progress.coins == 176 && demo.Game.Progress.tickets == 3, "Clicker and ticket");
+            for (int i = 0; i < 12; i++)
+            {
+                Click("Mine rock");
+                if (i == 5) Check(stage.IsReplacing && demo.Game.LastHit.broken, "Destruction triggers replacement animation");
+                yield return new WaitForSecondsRealtime(.085f);
+                if (i == 4)
+                {
+                    Check(stage.CrackVisible, "Damage appears on the 3D block");
+                    int rewards = 0;
+                    foreach (var text in GetComponentsInChildren<Text>(false)) if (text.name == "Mining rewards") rewards++;
+                    Check(rewards == 1, "Fast clicks aggregate into one readable reward");
+                    Capture("unity-ore-damage.png");
+                }
+                if (i == 5) Capture("unity-ore-break.png");
+            }
+            Check(demo.Game.Progress.coins == 200 && demo.Game.Progress.tickets == 3 && demo.Game.Progress.oresMined == 2, "Clicker, ore rewards and ticket");
             Click("Upgrade pickaxe");
-            Check(demo.Game.ClickPower == 12 && demo.Game.Progress.coins == 56, "Upgrade button");
+            Check(demo.Game.ClickPower == 12 && demo.Game.Progress.coins == 80, "Upgrade button");
             for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
             Click("Upgrade forge");
-            Check(demo.Game.Progress.forgeLevel == 1 && demo.Game.Progress.coins == 20, "Forge button");
+            Check(demo.Game.Progress.forgeLevel == 1 && demo.Game.Progress.coins == 148, "Forge button");
+            Check(demo.Game.MinerLevel == 2 && demo.Game.UnlockedOres == 2 && demo.Game.Progress.tickets == 5, "Level unlock and reward through UI clicks");
+            yield return new WaitForSecondsRealtime(.3f);
+            Check(stage.DisplayedOre == "tex-iron", "Newly unlocked iron appears after block replacement");
+            Capture("unity-level-up.png");
             Button rockButton = null;
             foreach (var button in GetComponentsInChildren<Button>()) if (button.name == "Mine rock") rockButton = button;
             var raycastPointer = new PointerEventData(EventSystem.current) { position = RectTransformUtility.WorldToScreenPoint(null, rockButton.GetComponent<RectTransform>().position) };
@@ -79,11 +97,12 @@ namespace MineLoot
             yield return null;
             Capture("unity-roulette.png");
             yield return new WaitForEndOfFrame();
+            int ticketsBeforeSpin = demo.Game.Progress.tickets;
             Click("ЗАПУСТИТЬ КИРКИ");
-            Check(demo.IsBusy && demo.Game.Progress.tickets == 3, "Spin starts once");
+            Check(demo.IsBusy && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Spin starts once");
             int[] committed = (int[])demo.Game.Progress.depths.Clone();
             demo.Spin();
-            Check(demo.Game.Progress.tickets == 3, "Double spin blocked");
+            Check(demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Double spin blocked");
             float deadline = Time.realtimeSinceStartup + 8;
             while (demo.IsBusy && Time.realtimeSinceStartup < deadline) yield return null;
             Check(!demo.IsBusy, "Animation completes");
@@ -116,6 +135,30 @@ namespace MineLoot
             while (demo.IsBusy) yield return null;
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-ember-shaft.png");
+            demo.ShowPage(false);
+            demo.Game.Progress.experience = MineGame.ExperienceForLevel(10);
+            demo.Game.Progress.upgradeLevel = 12;
+            demo.Game.Progress.oreKind = 4; demo.Game.Progress.oreDamage = 10;
+            demo.ToggleSound();
+            yield return new WaitForSecondsRealtime(2.9f);
+            Check(stage.DisplayedOre == "tex-emerald" && stage.CrackVisible && demo.Game.PickTier == 3 && demo.Game.MiningDamage == 3, "Emerald and golden pick are presented with damage");
+            CheckLayout(); Capture("unity-progression.png");
+            long minedBefore = demo.Game.Progress.oresMined;
+            var frameTimes = new System.Text.StringBuilder();
+            for (int frame = 0; frame < 36; frame++)
+            {
+                if (frame == 2 || frame == 6 || frame == 10 || frame == 14) Click("Mine rock");
+                frameTimes.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+                Capture("unity-animation-" + frame.ToString("00") + ".png");
+                yield return new WaitForSecondsRealtime(.04f);
+            }
+            File.WriteAllText(Path.Combine(output, "animation-times.txt"), frameTimes.ToString());
+            Check(demo.Game.Progress.oresMined == minedBefore + 1, "Upgraded pick breaks the damaged emerald");
+            demo.Game.Progress.upgradeLevel = 19; demo.Game.Progress.coins = demo.Game.UpgradeCost;
+            demo.ToggleSound(); Click("Upgrade pickaxe");
+            Check(demo.Game.PickTier == 4 && demo.Game.MiningDamage == 5, "Twentieth upgrade unlocks diamond pick and damage milestone");
+            yield return new WaitForSecondsRealtime(.3f);
+            Capture("unity-diamond-pick.png");
             demo.Game.Progress.totalBlocks = 25000000; demo.Game.Progress.claimedContracts = 999999;
             demo.ToggleSound();
             foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
@@ -123,6 +166,8 @@ namespace MineLoot
                 Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.4f);
                 CheckLayout();
                 Capture("unity-" + size.x + "x" + size.y + ".png");
+                demo.ShowPage(true); yield return null; CheckLayout();
+                demo.ShowPage(false); yield return null;
             }
             Screen.SetResolution(960, 540, false);
             yield return new WaitForSecondsRealtime(.6f);
