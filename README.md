@@ -1,4 +1,4 @@
-# Кирка удачи / Lucky Pickaxe — 0.2
+# Кирка удачи / Lucky Pickaxe — 0.3
 
 Unity **2022.3.47f1** (`88c277b85d21`). Игра находится в корне репозитория.
 
@@ -42,7 +42,7 @@ Unity **2022.3.47f1** (`88c277b85d21`). Игра находится в корн�
 
 ## Графика, звук и сохранения
 
-Три пиксельных окружения, освещение, частицы, трещины на породе, движения кирки и всплывающий доход. Графика генерируется `PixelArt`, короткие звуки — `GameAudio`; внешних арт- и аудиоассетов нет.
+Новый интерфейс: иллюстрированная шахта, объёмная руда, атлас предметов, отдельные карточки мастерской, компактный контракт и нижняя навигация. Типографика — статические начертания Manrope с кириллицей. Фон, руда и предметы хранятся в `Assets/MineLoot/Resources/Art`, панели и блоки создаются `PixelArt`. Происхождение арта, исходные запросы и лицензия шрифта описаны в [Docs/Art.md](Docs/Art.md). Короткие звуки генерируются `GameAudio`.
 
 Прогресс хранится локально через JSON/PlayerPrefs, с резервной копией. Сохранения версии 0.1 читаются автоматически: монеты, жетоны, уровни и глубина сохраняются, применяются новые правила баланса. Старые идентификаторы компании и приложения сохранены ради совместимости с установленной демкой. Обычные клики записываются пачкой раз в 3 секунды и при потере фокуса; розыгрыши и контракты сохраняются сразу. При аварийном завершении возможна потеря последних нескольких кликов. Результат рулетки фиксируется до анимации.
 
@@ -51,18 +51,18 @@ Unity **2022.3.47f1** (`88c277b85d21`). Игра находится в корн�
 Меню **Mine Loot → Verify game rules**, **Simulate balance**, **Build Windows demo**.
 
 ```powershell
-& 'C:\Program Files\Unity\Hub\Editor\2022.3.47f1\Editor\Unity.exe' -batchmode -nographics -quit -projectPath $PWD.Path -executeMethod DemoTools.VerifyAndBuild -logFile "$PWD\Logs\build.log"
+& 'C:\Program Files\Unity\Hub\Editor\2022.3.47f1\Editor\Unity.exe' -batchmode -quit -projectPath $PWD.Path -executeMethod DemoTools.VerifyAndBuild -logFile "$PWD\Logs\build.log"
 Start-Process '.\Builds\Windows\MineLoot.exe' -ArgumentList '-demoSmokeTest', '-demoOutput', "$PWD\Logs", '-logFile', "$PWD\Logs\runtime.log" -WindowStyle Hidden -Wait
 ```
 
 Проверочный запуск использует отдельный прогресс и не меняет сохранения игрока. Проверяются кнопки, кошелёк, улучшения, контракты, розыгрыш, блокировка повторного запуска и размещение кнопок в разных размерах окна. Артефакты проверки: `Logs/rules-check.json`, `Logs/build-summary.json`, `Logs/runtime-check.json`, `Logs/balance-runs.csv`, `Logs/unity-*.png`.
 
-Результаты проверки версии 0.2: [Docs/Verification.md](Docs/Verification.md).
+Результаты проверки версии 0.3: [Docs/Verification.md](Docs/Verification.md).
 
 ## Файлы
 
 - `Assets/MineLoot/Scripts/MineGame.cs` — экономика и прогрессия без зависимостей от сцены.
-- `DemoController.cs` — интерфейс, управление и эффекты.
+- `DemoController.cs` — управление и эффекты; `DemoController.UI.cs` — компоновка экранов, типографика и оформление контролов того же компонента.
 - `PixelArt.cs`, `GameAudio.cs` — графика и звук.
 - `ProgressStore.cs` — сохранение, миграция и резервная копия.
 - `DemoSmokeCheck.cs` — проверка собранного приложения по флагу.

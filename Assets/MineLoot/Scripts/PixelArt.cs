@@ -12,8 +12,21 @@ namespace MineLoot
         public Sprite Get(string name)
         {
             if (sprites.TryGetValue(name, out var cached)) return cached;
+            string resource = name == "hero-ore" ? "ore-hero-v3" : name == "hero-cave" ? "mine-cavern-v3" : null;
+            int cell = name == "pick1" ? 0 : name == "pick2" ? 1 : name == "pick4" ? 2 : name == "chest" ? 3 : name == "chest-open" ? 4 : name == "coin" ? 5 : name == "ticket" ? 6 : name == "forge" ? 7 : -1;
+            if (resource != null || cell >= 0)
+            {
+                var asset = Resources.Load<Texture2D>("Art/" + (resource ?? "items-atlas-v3"));
+                if (asset != null)
+                {
+                    Rect area = resource != null ? new Rect(0, 0, asset.width, asset.height) : new Rect((cell % 4) * asset.width / 4f, (1 - cell / 4) * asset.height / 2f, asset.width / 4f, asset.height / 2f);
+                    var imported = Sprite.Create(asset, area, new Vector2(.5f, .5f), 100, 0, SpriteMeshType.FullRect);
+                    imported.name = name; sprites.Add(name, imported); return imported;
+                }
+            }
             bool cave = name.StartsWith("cave");
-            int width = cave ? 256 : name == "glow" ? 64 : 32;
+            bool ui = name.StartsWith("ui-"), tile = name.StartsWith("tile-");
+            int width = cave ? 256 : ui ? 96 : tile || name == "glow" ? 64 : 32;
             int height = cave ? 384 : width;
             var t = new Texture2D(width, height, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, name = name };
             t.SetPixels(new Color[width * height]);
@@ -24,7 +37,44 @@ namespace MineLoot
                     for (int b = y; b < y + h; b++)
                         if (a >= 0 && b >= 0 && a < width && b < height) t.SetPixel(a, height - 1 - b, c);
             }
-            if (cave)
+            if (ui)
+            {
+                t.filterMode = FilterMode.Bilinear;
+                float radius = name == "ui-pill" ? 44 : 18;
+                for (int y = 0; y < height; y++) for (int x = 0; x < width; x++)
+                {
+                    float dx = Mathf.Max(0, Mathf.Abs(x - 47.5f) - (48 - radius));
+                    float dy = Mathf.Max(0, Mathf.Abs(y - 47.5f) - (48 - radius));
+                    float a = Mathf.Clamp01(radius - Mathf.Sqrt(dx * dx + dy * dy));
+                    float shade = .91f + .09f * y / 95f;
+                    t.SetPixel(x, y, new Color(shade, shade, shade, a));
+                }
+            }
+            else if (tile)
+            {
+                t.filterMode = FilterMode.Bilinear;
+                string kind = name.Substring(5);
+                ColorUtility.TryParseHtmlString(kind == "gold" ? "#615339" : kind == "diamond" ? "#2b4a60" : kind == "ember" ? "#503b46" : kind == "grass" ? "#435144" : "#415361", out var body);
+                for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++)
+                {
+                    float dx = Mathf.Max(0, Mathf.Abs(x - 31.5f) - 26), dy = Mathf.Max(0, Mathf.Abs(y - 31.5f) - 26);
+                    float a = Mathf.Clamp01(6 - Mathf.Sqrt(dx * dx + dy * dy));
+                    float light = .74f + y / 63f * .3f + x / 63f * .06f;
+                    if (y > 58) light += .12f;
+                    if (y < 5 || x > 59) light *= .65f;
+                    Color c = body * light; c.a = a; t.SetPixel(x, y, c);
+                }
+                if (kind == "grass") { Rect(5, 3, 54, 5, "#8b9f6a"); Rect(7, 8, 50, 3, "#607b52"); }
+                if (kind != "stone" && kind != "grass")
+                {
+                    ColorUtility.TryParseHtmlString(kind == "gold" ? "#eccb7c" : kind == "iron" ? "#bfbbc0" : kind == "ember" ? "#ed9c7b" : "#75dce0", out var ore);
+                    foreach (var point in new[] { new Vector2(17, 21), new Vector2(45, 37), new Vector2(28, 48) })
+                        for (int y = -6; y <= 6; y++) for (int x = -7; x <= 7; x++)
+                            if (Mathf.Abs(x) / 7f + Mathf.Abs(y) / 6f < 1)
+                                t.SetPixel((int)point.x + x, (int)point.y + y, ore * (y > x ? 1 : .68f));
+                }
+            }
+            else if (cave)
             {
                 string[] colors = name == "cave1" ? new[] { "#112332", "#193b4b", "#24545e", "#5be1da" } : name == "cave2" ? new[] { "#241a29", "#382439", "#55374a", "#ffa25d" } : new[] { "#172a2b", "#203d3b", "#32564a", "#a7d885" };
                 Rect(0, 0, width, height, colors[0]);
@@ -138,7 +188,7 @@ namespace MineLoot
                 }
             }
             t.Apply();
-            var sprite = Sprite.Create(t, new Rect(0, 0, width, height), new Vector2(.5f, .5f), name == "frame" ? 100 : 32, 0, SpriteMeshType.FullRect, name == "frame" ? new Vector4(6, 6, 6, 6) : Vector4.zero);
+            var sprite = Sprite.Create(t, new Rect(0, 0, width, height), new Vector2(.5f, .5f), ui || name == "frame" ? 100 : 32, 0, SpriteMeshType.FullRect, ui ? new Vector4(45, 45, 45, 45) : name == "frame" ? new Vector4(6, 6, 6, 6) : Vector4.zero);
             sprite.name = name;
             textures.Add(t); sprites.Add(name, sprite);
             return sprite;

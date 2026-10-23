@@ -29,6 +29,9 @@ namespace MineLoot
             Screen.SetResolution(480, 960, false);
             yield return new WaitForSecondsRealtime(.8f);
             Canvas.ForceUpdateCanvases();
+            Check(Resources.Load<Texture2D>("Art/mine-cavern-v3") != null && Resources.Load<Texture2D>("Art/ore-hero-v3") != null && Resources.Load<Texture2D>("Art/items-atlas-v3") != null, "Illustrations packaged");
+            Check(Resources.Load<Font>("Fonts/Manrope").HasCharacter('Д') && Resources.Load<Font>("Fonts/Manrope-Semibold").HasCharacter('Я'), "Cyrillic fonts packaged");
+            CheckLayout();
             Capture("unity-clicker.png");
             yield return new WaitForEndOfFrame();
             Check(demo.Game.Progress.coins == 80, "Initial wallet");
@@ -68,6 +71,8 @@ namespace MineLoot
             Click("ШАНСЫ И ПРАВИЛА");
             yield return null;
             Check(GameObject.Find("Rules modal") != null, "Rules modal");
+            CheckLayout();
+            Capture("unity-rules.png");
             Click("ПОНЯТНО");
             yield return null;
             Capture("unity-roll-result.png");
@@ -90,6 +95,8 @@ namespace MineLoot
             while (demo.IsBusy) yield return null;
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-ember-shaft.png");
+            demo.Game.Progress.totalBlocks = 25000000; demo.Game.Progress.claimedContracts = 999999;
+            demo.ToggleSound();
             foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
             {
                 Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.4f);
@@ -113,6 +120,8 @@ namespace MineLoot
                 button.GetComponent<RectTransform>().GetWorldCorners(corners);
                 Check(corners[0].x >= -1 && corners[2].x <= Screen.width + 1 && corners[0].y >= -1 && corners[2].y <= Screen.height + 1, "Control inside viewport: " + button.name);
             }
+            foreach (var text in GetComponentsInChildren<Text>(false))
+                if (!text.resizeTextForBestFit) Check(text.preferredHeight <= text.rectTransform.rect.height + 2, "Text fits height: " + text.text);
         }
 
         private void Check(bool condition, string label)

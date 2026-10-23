@@ -28,7 +28,7 @@ public static class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.2.0";
+        PlayerSettings.bundleVersion = "0.3.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -153,7 +153,16 @@ public static class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.2.0";
+        PlayerSettings.bundleVersion = "0.3.0";
+        foreach (string file in Directory.GetFiles("Assets/MineLoot/Resources/Art", "*.png"))
+        {
+            var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as TextureImporter;
+            if (importer == null) continue;
+            importer.textureType = TextureImporterType.Default; importer.alphaIsTransparency = true;
+            importer.mipmapEnabled = false; importer.filterMode = FilterMode.Bilinear;
+            importer.maxTextureSize = 2048; importer.npotScale = TextureImporterNPOTScale.None;
+            importer.SaveAndReimport();
+        }
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
