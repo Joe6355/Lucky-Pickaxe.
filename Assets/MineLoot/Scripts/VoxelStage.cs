@@ -5,7 +5,7 @@ namespace MineLoot
 {
     // A real, self-contained block diorama. Static faces are batched by material.
     // The UI consumes its camera texture; no background artwork or network assets.
-    public sealed class VoxelStage : MonoBehaviour
+    public sealed partial class VoxelStage : MonoBehaviour
     {
         private const int Layer = 30;
         private readonly Dictionary<string, Material> materials = new Dictionary<string, Material>();
@@ -18,8 +18,8 @@ namespace MineLoot
         private Material oreMaterial;
         private MeshRenderer crackRenderer;
         private Material crackMaterial;
-        private readonly float[] particleAge = new float[24], particleLife = new float[24];
-        private readonly Vector3[] particleOrigin = new Vector3[24], particleVelocity = new Vector3[24];
+        private readonly float[] particleAge = new float[48], particleLife = new float[48];
+        private readonly Vector3[] particleOrigin = new Vector3[48], particleVelocity = new Vector3[48];
         private MaterialPropertyBlock particleProperties;
         private float hit, flash, clock, replacement = -1, damageFraction;
         private int particleCursor;
@@ -32,19 +32,29 @@ namespace MineLoot
         public bool CrackVisible => crackRenderer != null && crackRenderer.enabled;
         public string DisplayedOre => oreMaterial.mainTexture.name;
         public bool IsReplacing => replacement >= 0;
+        public bool IsExpedition { get; private set; }
 
-        public void Initialize(PixelArt art)
+        public void Initialize(PixelArt art, bool expedition = false)
         {
             this.art = art;
+            IsExpedition = expedition;
+            if (expedition) transform.localPosition = Vector3.right * 1000;
             particleProperties = new MaterialPropertyBlock();
             gameObject.layer = Layer;
-            Target = new RenderTexture(864, 560, 24) { name = "Block world view", filterMode = FilterMode.Point, antiAliasing = 1 };
+            Target = new RenderTexture(864, expedition ? 764 : 560, 24) { name = "Block world view", filterMode = FilterMode.Point, antiAliasing = 1 };
             var cameraObject = new GameObject("Diorama camera", typeof(Camera)); cameraObject.transform.SetParent(transform, false);
             view = cameraObject.GetComponent<Camera>(); view.orthographic = true; view.orthographicSize = 3.4f;
             view.clearFlags = CameraClearFlags.SolidColor; view.backgroundColor = ColorOf("8fcaea"); view.cullingMask = 1 << Layer;
             view.nearClipPlane = .1f; view.farClipPlane = 100; view.targetTexture = Target; view.depth = -10;
             view.transform.localPosition = new Vector3(8.3f, 6.4f, -10.8f); view.transform.LookAt(transform.position + new Vector3(0, .8f, 1));
             Camera.main.cullingMask &= ~(1 << Layer);
+            if (expedition)
+            {
+                view.orthographicSize = 4.25f;
+                view.transform.localPosition = new Vector3(3, 6, -21);
+                view.transform.LookAt(transform.position);
+                BuildExpedition(); InitializeChips(); SetBiome(0); return;
+            }
             BuildTerrain();
             var shadowMaterial = new Material(Resources.Load<Shader>("VoxelShadow")) { mainTexture = art.Texture("shadow") };
             materials.Add("ore shadow", shadowMaterial);
@@ -59,12 +69,17 @@ namespace MineLoot
             materials.Add("Mining cracks", crackMaterial);
             var crack = MakeMesh("Progressive cracks", crackGeometry, crackMaterial); crack.transform.SetParent(ore, false);
             crackRenderer = crack.GetComponent<MeshRenderer>(); crackRenderer.enabled = false;
+            InitializeChips();
+            SetBiome(0);
+        }
+
+        private void InitializeChips()
+        {
             for (int i = 0; i < particleAge.Length; i++)
             {
                 var chip = new Geometry(); AddCube(chip, Vector3.zero, Vector3.one * .13f, .16f);
                 var item = MakeMesh("Ore chip", chip, GetMaterial("coal")); item.SetActive(false); pieces.Add(item);
             }
-            SetBiome(0);
         }
 
         private void BuildTerrain()
@@ -144,50 +159,59 @@ namespace MineLoot
             // Finish the prior replacement if a stronger pick already breaks the next block.
             if (replacement >= 0) { oreMaterial.mainTexture = art.Texture("tex-" + desiredOre); replacement = -1; }
             hit = flash = 1;
-            int count = broken ? 16 : 4;
+            EmitChips(ore.localPosition + (broken ? Vector3.up * .2f : new Vector3(.55f, .1f, -.8f)), oreMaterial.mainTexture, broken ? 16 : 4, broken);
+            if (broken) { replacement = 0; crackRenderer.enabled = false; }
+        }
+
+        private void EmitChips(Vector3 origin, Texture texture, int count, bool broken)
+        {
+            particleProperties.Clear();
             for (int i = 0; i < count; i++)
             {
                 int p = particleCursor++ % pieces.Count;
                 float angle = particleCursor * 2.399963f;
                 particleAge[p] = 0; particleLife[p] = broken ? .6f : .32f;
-                particleOrigin[p] = ore.localPosition + (broken ? Vector3.up * .2f : new Vector3(.55f, .1f, -.8f));
+                particleOrigin[p] = origin;
                 float force = broken ? 2.8f : 1.35f;
                 particleVelocity[p] = new Vector3(Mathf.Cos(angle) * force, 1.7f + i % 4 * .35f, Mathf.Sin(angle) * force);
-                particleProperties.SetTexture("_MainTex", oreMaterial.mainTexture);
+                particleProperties.SetTexture("_MainTex", texture);
                 pieces[p].GetComponent<MeshRenderer>().SetPropertyBlock(particleProperties);
                 pieces[p].SetActive(true);
             }
-            if (broken) { replacement = 0; crackRenderer.enabled = false; }
         }
         public void SetBiome(int index)
         {
             if (biome == index) return; biome = index;
+            if (IsExpedition) { SetExpeditionBiome(index); return; }
             view.backgroundColor = index == 0 ? ColorOf("8fcaea") : index == 1 ? ColorOf("a8d9ee") : ColorOf("efcc9b");
         }
         private void Update()
         {
-            if (ore == null) return;
             clock += Time.unscaledDeltaTime;
-            hit = Mathf.MoveTowards(hit, 0, Time.unscaledDeltaTime * 6);
-            flash = Mathf.MoveTowards(flash, 0, Time.unscaledDeltaTime * 10);
-            float scale = 1 - hit * .06f;
-            if (replacement >= 0)
+            if (IsExpedition) UpdateExpedition();
+            else
             {
-                replacement += Time.unscaledDeltaTime;
-                if (replacement < .08f) scale = 1 - replacement / .08f;
-                else
+                hit = Mathf.MoveTowards(hit, 0, Time.unscaledDeltaTime * 6);
+                flash = Mathf.MoveTowards(flash, 0, Time.unscaledDeltaTime * 10);
+                float scale = 1 - hit * .06f;
+                if (replacement >= 0)
                 {
-                    oreMaterial.mainTexture = art.Texture("tex-" + desiredOre);
-                    float t = Mathf.Clamp01((replacement - .08f) / .16f) - 1;
-                    scale = 1 + 2.70158f * t * t * t + 1.70158f * t * t;
+                    replacement += Time.unscaledDeltaTime;
+                    if (replacement < .08f) scale = 1 - replacement / .08f;
+                    else
+                    {
+                        oreMaterial.mainTexture = art.Texture("tex-" + desiredOre);
+                        float t = Mathf.Clamp01((replacement - .08f) / .16f) - 1;
+                        scale = 1 + 2.70158f * t * t * t + 1.70158f * t * t;
+                    }
+                    if (replacement >= .24f) replacement = -1;
                 }
-                if (replacement >= .24f) replacement = -1;
+                ore.localScale = Vector3.one * Mathf.Max(.001f, scale);
+                ore.localPosition = new Vector3(-.4f + Mathf.Sin(hit * 24) * hit * .055f, .95f, -.8f);
+                ore.localEulerAngles = new Vector3(hit * 4, -8, hit * 3);
+                oreMaterial.color = Color.white * (1 + flash * .3f);
+                crackRenderer.enabled = damageFraction > 0 && replacement < 0;
             }
-            ore.localScale = Vector3.one * Mathf.Max(.001f, scale);
-            ore.localPosition = new Vector3(-.4f + Mathf.Sin(hit * 24) * hit * .055f, .95f, -.8f);
-            ore.localEulerAngles = new Vector3(hit * 4, -8, hit * 3);
-            oreMaterial.color = Color.white * (1 + flash * .3f);
-            crackRenderer.enabled = damageFraction > 0 && replacement < 0;
             for(int i=0;i<pieces.Count;i++)
             {
                 if (!pieces[i].activeSelf) continue;
@@ -205,6 +229,7 @@ namespace MineLoot
         {
             if(materials.TryGetValue(key,out var material)) return material;
             material=new Material(Resources.Load<Shader>("VoxelWorld")) { name="Voxel "+key };
+            material.SetFloat("_Shade", IsExpedition ? .53f : .68f);
             string tex = key=="black" ? "stone" : key=="flower" ? "gold" : key=="cloud" ? "stone" : key=="torch" ? "gold" : key;
             material.mainTexture=art.Texture("tex-"+tex);
             if(key=="black") material.color=ColorOf("20262d");

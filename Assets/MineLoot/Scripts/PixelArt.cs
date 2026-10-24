@@ -31,10 +31,20 @@ namespace MineLoot
                 R(0, 0, 12, 12, "#25282aff"); R(1, 1, 10, 10, "#b7bbc0");
                 R(1, 1, 10, 1, "#f5f8fb"); R(1, 1, 1, 10, "#f5f8fb");
                 R(2, 10, 9, 1, "#626870"); R(10, 2, 1, 9, "#626870");
+                if (name == "ui-timber" || name == "ui-brass")
+                {
+                    bool brass = name == "ui-brass";
+                    R(0, 0, 12, 12, "#231f1b"); R(1, 1, 10, 10, brass ? "#ba8d45" : "#775133");
+                    R(1, 1, 10, 1, brass ? "#f6d98c" : "#c59b66"); R(1, 2, 1, 8, brass ? "#dfbb69" : "#ab7c4c");
+                    R(2, 10, 9, 1, brass ? "#77532c" : "#422e24"); R(10, 2, 1, 9, brass ? "#77532c" : "#422e24");
+                    R(3, 3, 6, 6, brass ? "#d2ad63" : "#493c30");
+                    foreach (int x in new[] { 1, 9 }) foreach (int y in new[] { 1, 9 })
+                    { R(x, y, 2, 2, "#362b21"); R(x, y, 1, 1, "#e4c788"); }
+                }
             }
             else if (tile)
             {
-                string body = kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
+                string body = kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
                 ColorUtility.TryParseHtmlString(body, out var baseColor);
                 int seed = 313; foreach (char letter in kind) seed = unchecked(seed * 31 + letter);
                 var rng = new System.Random(seed);
@@ -43,7 +53,7 @@ namespace MineLoot
                 for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++)
                 {
                     float shade = shades[x / 2, y / 2] + (float)rng.NextDouble() * .04f;
-                    if (kind == "wood") shade = .75f + (x % 4) * .1f + (float)rng.NextDouble() * .12f;
+                    if (kind == "wood" || kind == "beam") shade = .75f + (x % 4) * .1f + (float)rng.NextDouble() * .12f;
                     if (kind == "planks" && y % 4 == 0) shade = .64f;
                     Color c = baseColor * shade; c.a = 1; t.SetPixel(x, y, c);
                 }
@@ -64,7 +74,7 @@ namespace MineLoot
                         R(x, y, 2, 1, shine);
                     }
                 }
-                if (kind == "stone")
+                if (kind == "stone" || kind == "slate")
                     foreach (var a in new[] { new Vector2Int(2, 5), new Vector2Int(9, 10), new Vector2Int(4, 14) }) R(a.x, a.y, 4, 1, "#777e83");
             }
             else if (name.StartsWith("pick"))
@@ -101,6 +111,15 @@ namespace MineLoot
                     R(13 + i % 4, 3 + i, 2, 2, "#222c32e0");
                     if (i > 6) R(16 - (i - 6), 7 + i / 2, 2, 2, "#222c32e0");
                     if (depth == 3 && i > 10) R(15 + (i - 10), 9 + i / 2, 2, 2, "#222c32e0");
+                }
+            }
+            else if (name == "torch-glow")
+            {
+                for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++)
+                {
+                    float distance = Mathf.Abs(x - 15.5f) / 16 + Mathf.Abs(y - 15.5f) / 16;
+                    float alpha = distance < .35f ? .2f : distance < .65f ? .1f : distance < .95f ? .045f : 0;
+                    t.SetPixel(x, y, new Color(1, .65f, .22f, alpha));
                 }
             }
             else if (name == "shadow")

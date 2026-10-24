@@ -33,6 +33,9 @@ namespace MineLoot
             Check(Resources.Load<Texture2D>("Art/mine-cavern-v3") == null && Resources.Load<Texture2D>("Art/ore-hero-v3") == null && Resources.Load<Texture2D>("Art/items-atlas-v3") == null, "Painted assets excluded");
             Check(Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Д') && Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Я'), "Pixel Cyrillic font packaged");
             var stage = FindObjectOfType<VoxelStage>();
+            VoxelStage shaft = null;
+            foreach (var candidate in GetComponentsInChildren<VoxelStage>(true)) if (candidate.IsExpedition) shaft = candidate;
+            Check(shaft != null && !shaft.gameObject.activeSelf && shaft.VisibleBlocks == 25, "Voxel shaft is prepared and sleeps on mining page");
             Check(stage != null && stage.Target != null && stage.Target.IsCreated() && stage.StaticBatches < 24 && stage.OreVertices == 24, "Voxel scene renders in material batches");
             stage.RenderNow();
             var previousTarget = RenderTexture.active;
@@ -93,6 +96,9 @@ namespace MineLoot
             Click("Toggle sound"); Check(GetComponent<GameAudio>().Muted, "Mute sound");
             Click("РУЛЕТКА ШАХТЁРА");
             Check(!stage.gameObject.activeSelf, "Voxel camera stops on roulette screen");
+            yield return null;
+            Check(shaft.gameObject.activeSelf && shaft.Target.IsCreated(), "Dedicated shaft camera starts on roulette page");
+            CheckLayout();
             Click("Toggle speed"); Check(demo.FastRoll, "Fast animation mode");
             yield return null;
             Capture("unity-roulette.png");
@@ -104,8 +110,16 @@ namespace MineLoot
             demo.Spin();
             Check(demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Double spin blocked");
             float deadline = Time.realtimeSinceStartup + 8;
-            while (demo.IsBusy && Time.realtimeSinceStartup < deadline) yield return null;
+            int settled = 0;
+            while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
+            {
+                Check(demo.SettledReels >= settled, "Reels stop in one direction"); settled = demo.SettledReels;
+                yield return null;
+            }
             Check(!demo.IsBusy, "Animation completes");
+            Check(demo.SettledReels == 5 && demo.RollPhase == "result", "All five reels settle before final reward");
+            int remaining = 25; foreach (int depth in committed) remaining -= depth;
+            Check(shaft.VisibleBlocks == remaining, "3D blocks match committed depths");
             yield return new WaitForSecondsRealtime(.2f);
             for (int i = 0; i < 5; i++) Check(demo.Game.Progress.depths[i] == committed[i] && committed[i] > 0, "Depth retained");
             Click("ШАНСЫ И ПРАВИЛА");
@@ -135,6 +149,27 @@ namespace MineLoot
             while (demo.IsBusy) yield return null;
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-ember-shaft.png");
+            // Record a complete full-speed expedition, including the last chest and the next-floor action.
+            demo.Game.Progress.stratum = 1; demo.Game.Progress.tickets = 2;
+            int previousForge = demo.Game.Progress.forgeLevel; demo.Game.Progress.forgeLevel = 10;
+            Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
+            Click("Toggle speed"); Check(!demo.FastRoll, "Normal-speed expedition");
+            demo.Spin();
+            int rollFrame = 0; var rollTimes = new System.Text.StringBuilder();
+            deadline = Time.realtimeSinceStartup + 10;
+            while ((demo.IsBusy || rollFrame < 8) && Time.realtimeSinceStartup < deadline)
+            {
+                rollTimes.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+                Capture("unity-roulette-animation-" + (rollFrame++).ToString("000") + ".png");
+                yield return new WaitForSecondsRealtime(.04f);
+            }
+            File.WriteAllText(Path.Combine(output, "roulette-animation-times.txt"), rollTimes.ToString());
+            Check(!demo.IsBusy && demo.Game.IsComplete && shaft.VisibleBlocks == 0 && shaft.OpenChests == 5, "Five 3D chests open and floor completes");
+            yield return new WaitForSecondsRealtime(.4f);
+            CheckLayout(); Capture("unity-roulette-complete.png");
+            demo.Game.Progress.forgeLevel = previousForge;
+            demo.Spin(); while (demo.IsBusy) yield return null;
+            Check(demo.Game.Progress.stratum == 2 && shaft.VisibleBlocks > 0 && shaft.OpenChests < 5, "Next floor restores shaft geometry and closes chests");
             demo.ShowPage(false);
             demo.Game.Progress.experience = MineGame.ExperienceForLevel(10);
             demo.Game.Progress.upgradeLevel = 12;
@@ -199,7 +234,7 @@ namespace MineLoot
         private void Capture(string file)
         {
             var canvas = GetComponentInChildren<Canvas>();
-            var stage = FindObjectOfType<VoxelStage>(); if (stage != null) stage.RenderNow();
+            foreach (var stage in GetComponentsInChildren<VoxelStage>(false)) stage.RenderNow();
             var camera = Camera.main;
             var target = new RenderTexture(Screen.width, Screen.height, 24);
             var previous = RenderTexture.active;

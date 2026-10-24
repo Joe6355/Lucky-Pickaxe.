@@ -1,10 +1,12 @@
-# Кирка удачи / Lucky Pickaxe — 0.5
+# Кирка удачи / Lucky Pickaxe — 0.6
 
 Unity **2022.3.47f1** (`88c277b85d21`). Игра находится в корне репозитория.
 
 <img src="Docs/images/clicker.png" width="240" alt="Начало добычи" /> <img src="Docs/images/progression.png" width="240" alt="Изумрудная руда и золотая кирка" /> <img src="Docs/images/roulette.png" width="240" alt="Рулетка шахтёра" />
 
 [Анимация добычи из демки](Docs/images/ore-animation.gif) · [Повышение уровня](Docs/images/level-up.png).
+
+В 0.6 переработана рулетка: [анимация розыгрыша](Docs/images/roulette-animation.gif). Объёмная шахта с опорами и факелами, прокручиваемые барабаны, удары по 3D-блокам и сундуки с открывающимися крышками. Формулы наград, шансы и формат сохранений версии 0.5 сохранены.
 
 ## Запуск
 
@@ -74,14 +76,15 @@ Start-Process '.\Builds\Windows\MineLoot.exe' -ArgumentList '-demoSmokeTest', '-
 
 Проверочный запуск использует отдельный прогресс и не меняет сохранения игрока. Проверяются кнопки, кошелёк, улучшения, контракты, розыгрыш, блокировка повторного запуска и размещение кнопок в разных размерах окна. Артефакты проверки: `Logs/rules-check.json`, `Logs/build-summary.json`, `Logs/runtime-check.json`, `Logs/balance-runs.csv`, `Logs/unity-*.png`.
 
-Результаты проверки версии 0.5: [Docs/Verification.md](Docs/Verification.md).
+Результаты проверки версии 0.6: [Docs/Verification.md](Docs/Verification.md).
 
 ## Файлы
 
 - `Assets/MineLoot/Scripts/MineGame.cs` — экономика и прогрессия без зависимостей от сцены.
 - `DemoController.cs` — управление и эффекты; `DemoController.UI.cs` — компоновка экранов, типографика и оформление контролов того же компонента.
 - `PixelArt.cs`, `GameAudio.cs` — графика и звук.
-- `VoxelStage.cs`, `Resources/VoxelWorld.shader`, `Resources/VoxelShadow.shader` — 3D-диорама, группировка геометрии по текстурам и контактная тень. Камера работает только на экране добычи.
+- `VoxelStage.cs`, `Resources/VoxelWorld.shader`, `Resources/VoxelShadow.shader` — 3D-диорамы, группировка геометрии по текстурам, освещение граней и контактная тень.
+- `VoxelStage.Expedition.cs` расширяет тот же компонент для рулетки: 25 блоков, пять сундуков, освещение граней, факелы и повреждения. Работает камера только текущего экрана; миры пространственно изолированы.
 - `ProgressStore.cs` — сохранение, миграция и резервная копия.
 - `DemoSmokeCheck.cs` — проверка собранного приложения по флагу.
 - `Assets/MineLoot/Editor/DemoTools.cs` — сцена, правила, симуляция и сборка.

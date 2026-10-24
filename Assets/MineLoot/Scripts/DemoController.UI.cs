@@ -15,9 +15,12 @@ namespace MineLoot
         private Image experienceFill, oreFill, workshopPick;
         private readonly Image[] oreSlots = new Image[5], oreIcons = new Image[5], reels = new Image[5];
         private readonly Text[] oreNames = new Text[5];
+        private readonly RectTransform[] reelWindows = new RectTransform[5];
+        private readonly Image[,] reelSymbols = new Image[5, 3];
+        private Text rollGain, boardText;
         private RectTransform noticeRect;
         private CanvasGroup noticeGroup;
-        private VoxelStage stage;
+        private VoxelStage stage, shaft;
 
         private void BuildInterface()
         {
@@ -147,31 +150,39 @@ namespace MineLoot
 
         private void BuildRoll(Transform page)
         {
-            Card(page, "Expedition header", 24, 0, 432, 60, Hex("76975d"));
-            Label(page, "РУЛЕТКА ШАХТЁРА", 36, 2, 308, 34, 24, Hex("f2f6dc"), FontStyle.Bold);
-            stratumLabel = Label(page, "", 37, 34, 300, 23, 16, Hex("e1e8ce"));
-            Card(page, "Hardness badge", 340, 16, 116, 29, Panel);
-            floorHint = Label(page, "", 340, 16, 116, 29, 16, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
+            Card(page, "Expedition header", 24, 0, 432, 60, Color.white, "ui-timber");
+            Label(page, "РУЛЕТКА", 38, 2, 278, 34, 28, Hex("ffe6aa"), FontStyle.Bold);
+            stratumLabel = Label(page, "", 39, 34, 306, 23, 16, Hex("d1c5a7"));
+            Card(page, "Hardness badge", 348, 13, 96, 32, Hex("b7c4ba"));
+            floorHint = Label(page, "", 348, 13, 96, 32, 16, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
+            Card(page, "Shaft outer frame", 18, 65, 444, 393, Color.white, "ui-timber");
             rollBackdrop = Hero(page, "Expedition illustration", 24, 70, 432, 382);
-            string[] layers = { "grass", "stone", "iron", "gold", "diamond" };
             for (int column = 0; column < 5; column++)
             {
                 int x = 41 + column * 81;
-                reels[column] = Card(page, "Reel " + column, x, 81, 74, 73, Hex("cdd0c6"));
-                picks[column] = Icon(page, "pick1", x + 9, 83, 48, 48); picks[column].preserveAspect = true;
-                powers[column] = Label(page, "1 сила", x, 131, 74, 20, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
-                for (int row = 0; row < 5; row++) blocks[column, row] = Icon(page, "tile-" + layers[row], x, 165 + row * 44, 74, 41);
-                cracks[column] = Icon(page, "crack2", x, 165, 74, 41);
-                chests[column] = Icon(page, "chest", x + 11, 389, 52, 48); chests[column].preserveAspect = true;
+                reels[column] = Card(page, "Reel " + column, x, 80, 74, 78, Color.white, "ui-timber");
+                var window = PanelAt(reels[column].transform, "Reel window " + column, Hex("202a2c"), 4, 5, 66, 51);
+                window.gameObject.AddComponent<Mask>().showMaskGraphic = true; reelWindows[column] = window.rectTransform;
+                for (int symbol = 0; symbol < 3; symbol++)
+                {
+                    reelSymbols[column, symbol] = Icon(window.transform, "pick1", 9, (symbol - 1) * 52, 48, 48);
+                    reelSymbols[column, symbol].enabled = symbol == 1;
+                }
+                picks[column] = reelSymbols[column, 1];
+                powers[column] = Label(page, "1 СИЛА", x, 136, 74, 20, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
             }
-            PanelAt(page, "Board track", Hex("343e2d"), 41, 445, 398, 6);
-            boardFill = PanelAt(page, "Board completion", Hex("83c94a"), 41, 445, 0, 6);
-            Card(page, "Result panel", 24, 458, 432, 43, Hex("e4e3d4"));
-            rollStatus = Label(page, "Пять кирок. Пять сундуков.", 32, 463, 416, 34, 20, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
-            spinButton = ButtonAt(page, "ЗАПУСТИТЬ КИРКИ", 24, 515, 432, 58, Spin, Hex("b3d17a"), Hex("293e20"));
+            boardText = Label(page, "", 41, 426, 398, 22, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
+            PanelAt(page, "Board track", Hex("202b29"), 41, 449, 398, 4);
+            boardFill = PanelAt(page, "Board completion", Hex("b5c96e"), 41, 449, 0, 4);
+            Card(page, "Result panel", 24, 466, 432, 56, Color.white, "ui-timber");
+            Icon(page, "coin", 38, 478, 31, 31);
+            rollGain = Label(page, "ПЯТЬ КИРОК · ПЯТЬ СУНДУКОВ", 82, 467, 356, 29, 23, Hex("f5d88d"), FontStyle.Bold);
+            rollStatus = Label(page, "Запусти кирки и доберись до сокровищ", 82, 495, 356, 22, 16, Hex("c6c8b8"));
+            spinButton = ButtonAt(page, "КОПАТЬ · 1 ЖЕТОН", 24, 534, 432, 54, Spin, Color.white, Hex("35291c"));
+            spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 24;
             spinButton.name = "ЗАПУСТИТЬ КИРКИ";
-            ButtonAt(page, "Шансы и правила", 24, 589, 246, 34, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
-            ButtonAt(page, "Скорость ×1", 280, 589, 176, 34, ToggleSpeed, Panel, Muted).name = "Toggle speed";
+            ButtonAt(page, "Шансы и правила", 24, 596, 246, 29, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
+            ButtonAt(page, "Скорость ×1", 280, 596, 176, 29, ToggleSpeed, Panel, Muted).name = "Toggle speed";
         }
 
         private Image Hero(Transform parent, string name, float x, float y, float width, float height)
@@ -180,12 +191,14 @@ namespace MineLoot
             var mask = window.gameObject.AddComponent<Mask>(); mask.showMaskGraphic = false;
             var image = Icon(window.transform, "tex-stone", 0, 0, width, height); image.type = Image.Type.Tiled; image.pixelsPerUnitMultiplier = .4f;
             image.color = Hex("69736a");
-            if (name == "Mine illustration")
+            if (name == "Mine illustration" || name == "Expedition illustration")
             {
-                var world = new GameObject("Voxel mining world"); world.transform.SetParent(transform, false);
-                stage = world.AddComponent<VoxelStage>(); stage.Initialize(art);
+                bool expedition = name == "Expedition illustration";
+                var world = new GameObject(expedition ? "Voxel expedition shaft" : "Voxel mining world"); world.transform.SetParent(transform, false);
+                var renderer = world.AddComponent<VoxelStage>(); renderer.Initialize(art, expedition);
+                if (expedition) shaft = renderer; else stage = renderer;
                 var rect = MakeRect(window.transform, "Live block world", 0, 0, width, height);
-                var display = rect.gameObject.AddComponent<RawImage>(); display.texture = stage.Target; display.raycastTarget = false;
+                var display = rect.gameObject.AddComponent<RawImage>(); display.texture = renderer.Target; display.raycastTarget = false;
             }
             return image;
         }
@@ -211,9 +224,9 @@ namespace MineLoot
             ButtonAt(modal.transform, "Продолжить добычу", 47, 713, 386, 55, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
 
-        private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color)
+        private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")
         {
-            var image = PanelAt(parent, name, color, x, y, width, height); image.sprite = art.Get("ui-card"); image.type = Image.Type.Sliced; image.pixelsPerUnitMultiplier=.5f; return image;
+            var image = PanelAt(parent, name, color, x, y, width, height); image.sprite = art.Get(sprite); image.type = Image.Type.Sliced; image.pixelsPerUnitMultiplier=.5f; return image;
         }
 
         private static void AddPointer(EventTrigger trigger, EventTriggerType type, UnityEngine.Events.UnityAction action)

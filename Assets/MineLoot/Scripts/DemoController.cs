@@ -9,14 +9,11 @@ namespace MineLoot
     public sealed partial class DemoController : MonoBehaviour
     {
         private static readonly Color Back = Hex("514a3e"), Panel = Hex("c6cbc0"), Muted = Hex("535d4b"), Ink = Hex("29362c");
-        private static readonly string[][] Layers = { new[] { "grass", "stone", "iron", "gold", "diamond" }, new[] { "stone", "iron", "diamond", "stone", "diamond" }, new[] { "stone", "ember", "iron", "ember", "gold" } };
         private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд" };
         private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная" };
         private static readonly string[] PickSprites = { "pick1", "pick-stone", "pick2", "pick-gold", "pick4" };
         private readonly PixelArt art = new PixelArt();
-        private readonly Image[,] blocks = new Image[5, 5];
-        private readonly Image[] cracks = new Image[5];
-        private readonly Image[] picks = new Image[5], chests = new Image[5];
+        private readonly Image[] picks = new Image[5];
         private readonly Text[] powers = new Text[5];
         private readonly int[] shownDepths = new int[5];
         private readonly int[] shownDamage = new int[5];
@@ -54,7 +51,7 @@ namespace MineLoot
         {
             if (SmokeMode) Application.runInBackground = true;
             game = SmokeMode ? new MineGame() : ProgressStore.Load();
-            random = new System.Random();
+            random = SmokeMode ? new System.Random(6355) : new System.Random();
             sounds = gameObject.AddComponent<GameAudio>();
             Application.targetFrameRate = 60;
             BuildInterface();
@@ -184,17 +181,17 @@ namespace MineLoot
             mineTab.GetComponentInChildren<Text>().color = Ink;
             rollTab.GetComponentInChildren<Text>().color = Ink;
             mineNavMark.enabled = !roulette; rollNavMark.enabled = roulette;
-            stage.gameObject.SetActive(!roulette);
+            stage.gameObject.SetActive(!roulette); shaft.gameObject.SetActive(roulette);
         }
 
         public void Spin()
         {
-            if (busy) return;
-            foreach (var pick in picks) pick.transform.SetAsLastSibling();
+            if (busy || modal != null) return;
+            long walletBefore = game.Progress.coins;
             if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (MineGame.HitsPerTicket - game.Progress.hits) + " ударов"; return; }
             var result = game.Roll(() => random.NextDouble());
             if (result == null) return;
-            displayedCoins = Math.Max(0, game.Progress.coins - result.reward);
+            displayedCoins = walletBefore;
             busy = true;
             // Commit all rewards before the coroutine; UI only presents the completed transaction.
             Persist(); Flush();
@@ -203,132 +200,186 @@ namespace MineLoot
             DrawBoard(); Refresh(); StartCoroutine(AnimateRoll(result));
         }
 
+        private static readonly int[] ReelTypes = { 1, 2, 4 };
+        private static string PowerText(int power) => power + " " + (power == 1 ? "СИЛА" : power < 5 && power > 1 ? "СИЛЫ" : "СИЛ");
+        public string RollPhase { get; private set; } = "idle";
+        public int SettledReels { get; private set; }
+        private static Vector2 ReelHome(int column) => new Vector2(54 + column * 81, -85);
+
+        private Vector2 BoardPoint(int column, int row)
+        {
+            Vector2 p = shaft.BlockViewport(column, row);
+            return new Vector2(24 + p.x * 432 - 13, -(70 + (1 - p.y) * 382) + 24);
+        }
+
         private IEnumerator AnimateRoll(RollResult result)
         {
-            rollStatus.text = "Какие кирки пойдут в шахту?";
             float speed = FastRoll ? .5f : 1;
-            for (int frame = 0; frame < 16; frame++)
+            RollPhase = "reels"; SettledReels = 0;
+            rollGain.text = "КАКИЕ КИРКИ ВЫПАДУТ?";
+            rollStatus.text = "Дерево · железо · алмаз";
+            var stopped = new bool[5];
+            for (int c = 0; c < 5; c++)
             {
+                picks[c].transform.SetParent(reelWindows[c], false);
+                picks[c].rectTransform.localEulerAngles = Vector3.zero;
+                picks[c].rectTransform.localScale = Vector3.one;
+                reels[c].sprite = art.Get("ui-timber"); reels[c].color = Color.white;
+                powers[c].text = "· · ·"; powers[c].color = Hex("c7c4ae");
+                for (int i = 0; i < 3; i++) reelSymbols[c, i].enabled = true;
+            }
+            float elapsed = 0, lastTick = -1;
+            var indices = new int[5];
+            while (elapsed < 1.85f)
+            {
+                elapsed += Time.unscaledDeltaTime / speed;
                 for (int c = 0; c < 5; c++)
                 {
-                    int stop = 6 + c * 2;
-                    if (frame < stop)
+                    float duration = .95f + c * .18f;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    int destination = 11 + c * 3;
+                    float travel = destination * 52 * (1 - Mathf.Pow(1 - t, 3));
+                    int index = Mathf.FloorToInt(travel / 52);
+                    float offset = travel - index * 52;
+                    if (index != indices[c] && elapsed - lastTick >= .045f && t < 1)
+                    { sounds.Play("tick"); lastTick = elapsed; }
+                    indices[c] = index;
+                    for (int i = 0; i < 3; i++)
                     {
-                        int type = new[] { 1, 2, 4 }[(frame + c) % 3];
-                        picks[c].sprite = art.Get("pick" + type);
-                        picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, frame % 2 == 0 ? -10 : 10);
-                        picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -83 + (frame % 2 == 0 ? 5 : -5));
-                        powers[c].text = "· · ·"; powers[c].color = Muted;
-                        reels[c].color = Panel;
+                        int symbol = index + i;
+                        int type = symbol == destination + 1 ? result.types[c] : ReelTypes[(symbol + c) % 3];
+                        reelSymbols[c, i].sprite = art.Get("pick" + type);
+                        reelSymbols[c, i].rectTransform.anchoredPosition = new Vector2(9, -((i - 1) * 52 - offset));
                     }
-                    else
+                    if (t >= 1 && !stopped[c])
                     {
-                        picks[c].sprite = art.Get("pick" + result.types[c]);
-                        picks[c].rectTransform.localEulerAngles = Vector3.zero;
-                        picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -83);
-                        picks[c].rectTransform.localScale = Vector3.one * (frame == stop ? 1.18f : 1);
-                        powers[c].text = result.powers[c] + " силы";
-                        powers[c].color = result.types[c] == 4 ? Hex("1b6658") : Ink;
-                        reels[c].color = result.types[c] == 4 ? Hex("addbc0") : result.types[c] == 2 ? Hex("d9e0d5") : Hex("d1c6a8");
-                        if (frame == stop) sounds.Play("tick");
+                        stopped[c] = true; SettledReels++;
+                        sounds.Play(result.types[c] == 4 ? "rare" : "reel-stop");
+                        reels[c].sprite = art.Get(result.types[c] == 4 ? "ui-brass" : "ui-timber");
+                        powers[c].text = PowerText(result.powers[c]);
+                        powers[c].color = result.types[c] == 4 ? Hex("9ae5cb") : Hex("ead9ad");
+                    }
+                    if (stopped[c])
+                    {
+                        float settle = Mathf.Clamp01((elapsed - duration) / .14f);
+                        picks[c].rectTransform.localScale = Vector3.one * (1 + Mathf.Sin(settle * Mathf.PI) * .13f);
                     }
                 }
-                yield return new WaitForSecondsRealtime((.04f + frame * .003f) * speed);
+                yield return null;
             }
-            int earned = 0;
+            for (int c = 0; c < 5; c++)
+            {
+                reelSymbols[c, 0].enabled = reelSymbols[c, 2].enabled = false;
+                picks[c].sprite = art.Get("pick" + result.types[c]);
+                picks[c].transform.SetParent(rollPage.transform, false);
+                picks[c].rectTransform.anchoredPosition = ReelHome(c);
+                picks[c].rectTransform.localScale = Vector3.one;
+            }
+            RollPhase = "mining";
+            rollGain.text = "КИРКИ ЗА РАБОТУ!";
+            rollStatus.text = "Удары разбивают породу до сундуков";
             var origins = new Vector2[5]; var targets = new Vector2[5];
-            int maxPower = 0; foreach (int power in result.powers) maxPower = Math.Max(maxPower, power);
+            int maxPower = 0, earned = 0;
+            foreach (int power in result.powers) maxPower = Mathf.Max(maxPower, power);
+            long walletBefore = displayedCoins;
             for (int step = 0; step < maxPower; step++)
             {
-                bool changes = false;
+                bool active = false;
                 for (int c = 0; c < 5; c++)
                 {
                     origins[c] = picks[c].rectTransform.anchoredPosition;
-                    targets[c] = new Vector2(48 + c * 81, -(136 + shownDepths[c] * 44));
-                    if (step < result.powers[c] && shownDepths[c] < 5) changes = true;
+                    targets[c] = BoardPoint(c, Mathf.Min(4, shownDepths[c]));
+                    if (step < result.powers[c] && shownDepths[c] < 5) active = true;
                 }
-                if (!changes) continue;
-                float approach = 0;
-                while (approach < 1)
+                if (!active) continue;
+                float phase = 0;
+                while (phase < 1)
                 {
-                    approach = Mathf.Min(1, approach + Time.unscaledDeltaTime / (.11f * speed));
-                    float ease = approach * approach;
+                    phase = Mathf.Min(1, phase + Time.unscaledDeltaTime / (.13f * speed));
+                    float ease = phase * phase;
                     for (int c = 0; c < 5; c++) if (step < result.powers[c] && shownDepths[c] < 5)
                     {
-                        picks[c].rectTransform.anchoredPosition = Vector2.Lerp(origins[c], targets[c], ease);
-                        picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(16, -35, ease));
+                        picks[c].rectTransform.anchoredPosition = Vector2.Lerp(origins[c], targets[c], ease) + Vector2.up * (Mathf.Sin(phase * Mathf.PI) * 10);
+                        picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(18, -40, ease));
+                        picks[c].rectTransform.localScale = Vector3.one * 1.12f;
                     }
                     yield return null;
                 }
+                bool chest = false;
                 for (int c = 0; c < 5; c++)
                 {
                     if (step >= result.powers[c] || shownDepths[c] >= 5) continue;
-                    shownDamage[c]++; changes = true;
                     int row = shownDepths[c];
-                    if (shownDamage[c] >= result.hardness)
+                    bool broken = ++shownDamage[c] >= result.hardness;
+                    shaft.HitBlock(c, row, broken);
+                    if (broken)
                     {
                         shownDamage[c] = 0; shownDepths[c]++; earned += game.BlockReward;
-                        if (shownDepths[c] == 5) earned += game.ChestReward;
-                        SpawnDebris(c, row);
-                        if (shownDepths[c] == 5) chests[c].rectTransform.localScale = Vector3.one * 1.2f;
+                        if (shownDepths[c] == 5) { earned += game.ChestReward; chest = true; }
                     }
-                    picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -(136 + row * 44));
-                    picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, -24);
+                    powers[c].text = PowerText(result.powers[c] - step - 1);
                 }
-                sounds.Play("break"); DrawBoard(); rollStatus.text = "Добываем… +" + earned + " монет";
-                coinLabel.text = Math.Min(MineGame.CoinLimit, displayedCoins + earned).ToString("N0");
-                yield return new WaitForSecondsRealtime(.08f * speed);
-                for (int c = 0; c < 5; c++) { picks[c].rectTransform.localEulerAngles = Vector3.zero; chests[c].rectTransform.localScale = Vector3.one; }
-                yield return new WaitForSecondsRealtime(.03f * speed);
+                DrawBoard(); sounds.Play(chest ? "chest" : "break");
+                rollGain.text = earned > 0 ? "+ " + ShortAmount(earned) + " МОНЕТ" : "ПОРОДА ТРЕСКАЕТСЯ";
+                rollStatus.text = chest ? "Сундук открыт! Сокровища твои" : "Ещё один удар — ещё глубже";
+                coinLabel.text = Math.Min(MineGame.CoinLimit, walletBefore + earned).ToString("N0");
+                phase = 0;
+                while (phase < 1)
+                {
+                    phase = Mathf.Min(1, phase + Time.unscaledDeltaTime / (.12f * speed));
+                    for (int c = 0; c < 5; c++) if (step < result.powers[c] && origins[c] != targets[c])
+                    {
+                        picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(-40, -12, phase));
+                    }
+                    yield return null;
+                }
             }
-            for (int c = 0; c < 5; c++) picks[c].rectTransform.anchoredPosition = new Vector2(48 + c * 81, -83);
             Array.Copy(result.after, shownDepths, 5); Array.Copy(result.damageAfter, shownDamage, 5); DrawBoard();
-            rollStatus.text = result.completed ? "Пласт пройден! +" + result.reward + " монет / +1 жетон" : result.reward == 0 ? "Урон сохранён · продолжай добычу" : "+" + result.reward + " монет" + (result.scrap > 0 ? " · включая лом +" + result.scrap : result.chests > 0 ? " · сундуков: " + result.chests : " · копаем дальше");
+            for (int c = 0; c < 5; c++) origins[c] = picks[c].rectTransform.anchoredPosition;
+            float returning = 0;
+            while (returning < 1)
+            {
+                returning = Mathf.Min(1, returning + Time.unscaledDeltaTime / (.19f * speed));
+                float ease = 1 - Mathf.Pow(1 - returning, 3);
+                for (int c = 0; c < 5; c++)
+                {
+                    picks[c].rectTransform.anchoredPosition = Vector2.Lerp(origins[c], ReelHome(c), ease);
+                    picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, -12 * (1 - ease));
+                    picks[c].rectTransform.localScale = Vector3.one * Mathf.Lerp(1.12f, 1, ease);
+                }
+                yield return null;
+            }
+            for (int c = 0; c < 5; c++)
+            {
+                picks[c].transform.SetParent(reelWindows[c], false);
+                picks[c].rectTransform.anchoredPosition = new Vector2(9, 0);
+                powers[c].text = PowerText(result.powers[c]);
+            }
+            RollPhase = "reward";
+            float count = 0;
+            while (count < 1)
+            {
+                count = Mathf.Min(1, count + Time.unscaledDeltaTime / (.32f * speed));
+                float ease = 1 - Mathf.Pow(1 - count, 3);
+                displayedCoins = walletBefore + (long)Math.Round((game.Progress.coins - walletBefore) * ease);
+                coinLabel.text = displayedCoins.ToString("N0");
+                rollGain.text = "+ " + ShortAmount(earned + (long)Math.Round((result.reward - earned) * ease)) + " МОНЕТ";
+                yield return null;
+            }
+            rollGain.text = result.reward == 0 ? "УРОН СОХРАНЁН" : "+ " + ShortAmount(result.reward) + " МОНЕТ";
+            rollStatus.text = result.completed ? "Пласт пройден! +1 жетон · идём глубже" : "Блоков: " + result.broken + " · сундуков: " + result.chests + (result.scrap > 0 ? " · лом +" + result.scrap : "");
             sounds.Play(result.chests > 0 || result.completed ? "reward" : "hit");
             if (result.levelAfter > result.levelBefore) { sounds.Play("level"); LevelNotice(result.levelBefore, result.levelAfter); }
             else if (result.completed) Notice("ПЛАСТ ПРОЙДЕН!", "+" + result.reward + " монет · +1 жетон\nСледующий пласт готов к добыче");
-            displayedCoins = -1; busy = false; Refresh();
-        }
-
-        private void SpawnDebris(int column, int row)
-        {
-            var origin = new Vector2(78 + column * 81, -(185 + row * 44));
-            for (int i = 0; i < 4; i++)
-            {
-                var chip = PanelAt(rollPage.transform, "Rock chip", row > 2 ? Hex("e6c977") : Hex("a4afb1"), origin.x, -origin.y, 7, 7);
-                chip.raycastTarget = false;
-                StartCoroutine(FlyChip(chip.rectTransform, origin, new Vector2((i - 1.5f) * 80, 85 + i * 12)));
-            }
-        }
-
-        private IEnumerator FlyChip(RectTransform chip, Vector2 origin, Vector2 velocity)
-        {
-            float elapsed = 0;
-            while (elapsed < .5f)
-            {
-                elapsed += Time.unscaledDeltaTime;
-                chip.anchoredPosition = origin + velocity * elapsed + Vector2.down * (500 * elapsed * elapsed);
-                chip.localEulerAngles = new Vector3(0, 0, elapsed * 240);
-                yield return null;
-            }
-            Destroy(chip.gameObject);
+            displayedCoins = -1; busy = false; RollPhase = "result"; Refresh();
         }
 
         private void DrawBoard()
         {
-            int cleared = 0;
-            for (int c = 0; c < 5; c++)
-            {
-                for (int r = 0; r < 5; r++)
-                {
-                    blocks[c, r].sprite = art.Get("tile-" + Layers[game.Biome][r]);
-                    blocks[c, r].color = r < shownDepths[c] ? new Color(1, 1, 1, .08f) : Color.white;
-                }
-                chests[c].sprite = art.Get(shownDepths[c] == 5 ? "chest-open" : "chest");
-                cracks[c].enabled = shownDepths[c] < 5 && shownDamage[c] > 0;
-                cracks[c].rectTransform.anchoredPosition = new Vector2(41 + c * 81, -(165 + shownDepths[c] * 44));
-                cleared += shownDepths[c];
-            }
+            int cleared = 0, opened = 0;
+            for (int c = 0; c < 5; c++) { cleared += shownDepths[c]; if (shownDepths[c] == 5) opened++; }
+            shaft.SetBoard(shownDepths, shownDamage, game.Hardness, game.Biome);
+            boardText.text = cleared + " / 25 БЛОКОВ     ·     СУНДУКИ " + opened + " / 5";
             boardFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, cleared / 25f * 398);
         }
 
@@ -377,7 +428,7 @@ namespace MineLoot
             forgeLabel.color = game.CanForge ? Ink : Muted;
             soundLabel.text = sounds.Muted ? "♪×" : "♪";
             spinButton.interactable = !busy;
-            spinButton.GetComponentInChildren<Text>().text = busy ? "Кирки в работе…" : game.Progress.tickets == 0 ? "Добыть новые жетоны →" : game.IsComplete ? "Открыть новый пласт · 1 жетон" : "Отправить кирки · 1 жетон";
+            spinButton.GetComponentInChildren<Text>().text = busy ? "КИРКИ В РАБОТЕ…" : game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КОПАТЬ · 1 ЖЕТОН";
             mineTab.interactable = rollTab.interactable = !busy;
             string biome = new[] { "Мшистые штольни", "Кристальный грот", "Угольные недра" }[game.Biome];
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;

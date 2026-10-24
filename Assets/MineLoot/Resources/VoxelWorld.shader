@@ -1,6 +1,6 @@
 Shader "MineLoot/VoxelWorld"
 {
-    Properties { _MainTex ("Pixels", 2D) = "white" {} _Color ("Tint", Color) = (1,1,1,1) }
+    Properties { _MainTex ("Pixels", 2D) = "white" {} _Color ("Tint", Color) = (1,1,1,1) _Shade ("Ambient face light", Range(0,1)) = .68 }
     SubShader
     {
         Tags { "RenderType"="Opaque" }
@@ -12,12 +12,12 @@ Shader "MineLoot/VoxelWorld"
             #include "UnityCG.cginc"
             struct appdata { float4 vertex:POSITION; float3 normal:NORMAL; float2 uv:TEXCOORD0; };
             struct v2f { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; float light:TEXCOORD1; };
-            sampler2D _MainTex; fixed4 _Color;
+            sampler2D _MainTex; fixed4 _Color; float _Shade;
             v2f vert(appdata v)
             {
                 v2f o; o.pos=UnityObjectToClipPos(v.vertex); o.uv=v.uv;
                 float3 n=UnityObjectToWorldNormal(v.normal);
-                o.light=.68 + .32 * max(0,dot(n,normalize(float3(-.45,1,-.5))));
+                o.light=_Shade + (1-_Shade) * max(0,dot(n,normalize(float3(-.45,1,-.5))));
                 return o;
             }
             fixed4 frag(v2f i):SV_Target { fixed4 c=tex2D(_MainTex,i.uv)*_Color; return fixed4(c.rgb*i.light,1); }
