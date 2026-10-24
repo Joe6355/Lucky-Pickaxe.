@@ -89,13 +89,19 @@ namespace MineLoot
             var raycastHits = new List<RaycastResult>(); EventSystem.current.RaycastAll(raycastPointer, raycastHits);
             Check(raycastHits.Count > 0 && raycastHits[0].gameObject == rockButton.gameObject, "Visible ore receives pointer input");
             long heldStart = demo.Game.Progress.totalClicks;
-            var pointer = new PointerEventData(EventSystem.current);
+            var pointer = new PointerEventData(EventSystem.current) { pointerId = -7, position = raycastPointer.position };
+            // Isolate synthetic pointer events from the desktop cursor while running in a hidden window.
+            var inputModule = EventSystem.current.currentInputModule; bool inputEnabled = inputModule.enabled;
+            inputModule.enabled = false;
+            float holdStarted = Time.realtimeSinceStartup;
             ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
-            yield return new WaitForSecondsRealtime(.65f);
+            while (demo.Game.Progress.totalClicks - heldStart < 3 && Time.realtimeSinceStartup - holdStarted < 2) yield return null;
             ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
+            long beforeRelease = demo.Game.Progress.totalClicks;
             rockButton.onClick.Invoke();
+            inputModule.enabled = inputEnabled;
             long heldCount = demo.Game.Progress.totalClicks - heldStart;
-            Check(heldCount >= 2 && heldCount <= 4, "Hold repeats at controlled rate without release bonus");
+            Check(heldCount == 3 && beforeRelease == demo.Game.Progress.totalClicks && Time.realtimeSinceStartup - holdStarted >= .5f, "Hold repeats at a controlled rate without release bonus: " + heldCount);
             Click("Toggle sound"); Check(GetComponent<GameAudio>().Muted, "Mute sound");
             Click("РУЛЕТКА ШАХТЁРА");
             Check(!stage.gameObject.activeSelf, "Voxel camera stops on roulette screen");
@@ -236,6 +242,7 @@ namespace MineLoot
             Check(demo.Game.PickTier == 4 && demo.Game.MiningDamage == 5, "Twentieth upgrade unlocks diamond pick and damage milestone");
             yield return new WaitForSecondsRealtime(.3f);
             Capture("unity-diamond-pick.png");
+            yield return VerifyDevelopment(demo, stage);
             demo.Game.Progress.totalBlocks = 25000000; demo.Game.Progress.claimedContracts = 999999;
             demo.ToggleSound();
             foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
@@ -270,6 +277,60 @@ namespace MineLoot
             File.WriteAllText(Path.Combine(output, "runtime-check.json"), "{\"result\":\"" + (errors == 0 ? "PASS" : "FAIL") + "\",\"errors\":" + errors + ",\"unity\":\"" + Application.unityVersion + "\"}");
             Debug.Log("MINE_LOOT_RUNTIME_CHECK: " + (errors == 0 ? "PASS" : "FAIL"));
             Application.Quit(errors == 0 ? 0 : 1);
+        }
+
+        private IEnumerator VerifyDevelopment(DemoController demo, VoxelStage stage)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            int meshCount = stage.OwnedMeshCount;
+            int[] upgrades = { 0, 2, 5, 12, 20 }, forges = { 0, 1, 3, 6, 10 };
+            for (int i = 0; i < upgrades.Length; i++)
+            {
+                var fixture = new MineProgress { upgradeLevel = upgrades[i], forgeLevel = forges[i], coins = i == 0 ? 80 : 8000, experience = MineGame.ExperienceForLevel(MineGame.OreUnlockLevel(i)), oreKind = i };
+                demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(fixture)));
+                string loaded = JsonUtility.ToJson(demo.Game.Progress);
+                Check(stage.DevelopmentTier == i && stage.VisibleMineStructures == i && stage.ForgeStage == i && stage.VisibleForgeStructures == i, "Saved upgrade milestones restore mine and forge structures " + i);
+                Check(stage.CartVisible == (i > 0) && stage.OwnedMeshCount == meshCount, "Restored development reuses the prepared geometry " + i);
+                yield return new WaitForSecondsRealtime(.25f);
+                CheckLayout(); Capture("unity-camp-" + i + ".png");
+                Check(JsonUtility.ToJson(demo.Game.Progress) == loaded, "Decorations and their animations do not alter the economy " + i);
+            }
+            Vector3 cartBefore = stage.CartPosition;
+            yield return new WaitForSecondsRealtime(.45f);
+            Check((stage.CartPosition - cartBefore).sqrMagnitude > .00001f, "Unlocked ore cart moves along its rails");
+            Button oreButton = FindButton("Mine rock");
+            var pointer = new PointerEventData(EventSystem.current) { position = RectTransformUtility.WorldToScreenPoint(null, oreButton.GetComponent<RectTransform>().position) };
+            var hits = new List<RaycastResult>(); EventSystem.current.RaycastAll(pointer, hits);
+            Check(hits.Count > 0 && hits[0].gameObject == oreButton.gameObject, "The developed mine keeps the ore input target available");
+            for (int i = 0; i < 100; i++) stage.SetDevelopment(i % 5, i % 11, false);
+            Check(stage.OwnedMeshCount == meshCount, "Repeated development changes create no extra meshes");
+
+            // Actual upgrade buttons reveal one new mine structure and one forge structure in the recording.
+            demo.RestoreForSmoke(new MineProgress { upgradeLevel = 4, forgeLevel = 2, coins = 8000, experience = MineGame.ExperienceForLevel(4), oreKind = 2 });
+            long walletBefore = demo.Game.Progress.coins;
+            long upgradeCost = demo.Game.UpgradeCost, forgeCost = demo.Game.ForgeCost;
+            int tickets = demo.Game.Progress.tickets;
+            var times = new System.Text.StringBuilder();
+            for (int frame = 0; frame < 48; frame++)
+            {
+                if (frame == 6)
+                {
+                    Click("Upgrade pickaxe");
+                    Check(stage.DevelopmentTier == 2 && stage.VisibleMineStructures == 2 && demo.Game.Progress.coins == walletBefore - upgradeCost, "Buying the iron pick reinforces the entrance without an extra construction charge");
+                }
+                if (frame == 24)
+                {
+                    Click("Upgrade forge");
+                    Check(stage.ForgeStage == 2 && stage.VisibleForgeStructures == 2, "Third forge upgrade adds its chimney");
+                }
+                times.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+                Capture("unity-camp-animation-" + frame.ToString("000") + ".png");
+                yield return new WaitForSecondsRealtime(.05f);
+            }
+            File.WriteAllText(Path.Combine(output, "camp-animation-times.txt"), times.ToString());
+            Check(demo.Game.Progress.coins == walletBefore - upgradeCost - forgeCost && demo.Game.Progress.tickets == tickets && stage.OwnedMeshCount == meshCount, "Development preserves upgrade prices, tickets and mesh count");
+            demo.RestoreForSmoke(ProgressStore.Decode(original));
+            yield return new WaitForSecondsRealtime(.15f);
         }
 
         private void CheckLayout()

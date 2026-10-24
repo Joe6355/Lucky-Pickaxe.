@@ -55,7 +55,7 @@ namespace MineLoot
                 view.transform.LookAt(transform.position);
                 BuildExpedition(); InitializeChips(); SetBiome(0); return;
             }
-            BuildTerrain();
+            BuildTerrain(); BuildDevelopment();
             var shadowMaterial = new Material(Resources.Load<Shader>("VoxelShadow")) { mainTexture = art.Texture("shadow") };
             materials.Add("ore shadow", shadowMaterial);
             var shadow = new Geometry(); AddFace(shadow, new Vector3(-.4f,.015f,-.8f), new Vector3(3.3f,0,3.3f), 4, 1);
@@ -109,7 +109,7 @@ namespace MineLoot
                 Block(new Vector3(1.5f, .12f, z), new Vector3(.08f, .06f, 1), "iron");
                 Block(new Vector3(2.5f, .12f, z), new Vector3(.08f, .06f, 1), "iron");
             }
-            Tree(-3.7f, 1.7f); Tree(-5, 4.3f); Tree(5.4f, 4.1f);
+            Tree(-4.9f, 3.4f); Tree(-5, 4.3f); Tree(5.4f, 4.1f);
             // A squat wooden supply crate, flowers, stepped grass and little torches.
             Block(new Vector3(-2.6f, .4f, -.5f), new Vector3(.9f, .8f, .7f), "planks");
             Block(new Vector3(-2.6f, .43f, -.87f), new Vector3(.12f, .21f, .06f), "gold");
@@ -135,13 +135,14 @@ namespace MineLoot
             Block(new Vector3(x,4.25f,z),new Vector3(1.8f,.7f,1.8f),"leaves");
         }
 
-        private void Block(Vector3 center, Vector3 size, string side, string top = null)
+        private void Block(Vector3 center, Vector3 size, string side, string top = null, Dictionary<string, Geometry> batch = null)
         {
+            var target = batch ?? terrain;
             // Group each face by texture, retaining per-face shade in a small custom shader.
             for (int f = 0; f < 6; f++)
             {
                 string key = f == 4 && top != null ? top : side;
-                if (!terrain.TryGetValue(key, out var geometry)) { geometry = new Geometry(); terrain.Add(key, geometry); }
+                if (!target.TryGetValue(key, out var geometry)) { geometry = new Geometry(); target.Add(key, geometry); }
                 AddFace(geometry, center, size, f, 1);
             }
         }
@@ -191,6 +192,7 @@ namespace MineLoot
             if (IsExpedition) UpdateExpedition();
             else
             {
+                UpdateDevelopment(Time.unscaledDeltaTime);
                 hit = Mathf.MoveTowards(hit, 0, Time.unscaledDeltaTime * 6);
                 flash = Mathf.MoveTowards(flash, 0, Time.unscaledDeltaTime * 10);
                 float scale = 1 - hit * .06f;
@@ -230,11 +232,12 @@ namespace MineLoot
             if(materials.TryGetValue(key,out var material)) return material;
             material=new Material(Resources.Load<Shader>("VoxelWorld")) { name="Voxel "+key };
             material.SetFloat("_Shade", IsExpedition ? .53f : .68f);
-            string tex = key=="black" ? "stone" : key=="failure" ? "metal-dark" : key=="flower" ? "gold" : key=="cloud" ? "stone" : key=="torch" ? "gold" : key;
+            string tex = key=="black" ? "stone" : key=="failure" ? "metal-dark" : key=="flower" ? "gold" : key=="cloud" || key=="smoke" ? "stone" : key=="torch" ? "gold" : key;
             material.mainTexture=art.Texture("tex-"+tex);
             if(key=="black") material.color=ColorOf("20262d");
             if(key=="failure") material.color=ColorOf("e86b61");
             if(key=="cloud") material.color=new Color(1.35f,1.35f,1.35f,1);
+            if(key=="smoke") material.color=ColorOf("bcc0ba");
             if(key=="flower" || key=="torch") material.color=new Color(1.15f,1.05f,.8f,1);
             materials.Add(key,material); return material;
         }

@@ -12,6 +12,9 @@ namespace MineLoot
         private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд" };
         private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная" };
         private static readonly string[] PickSprites = { "pick1", "pick-stone", "pick2", "pick-gold", "pick4" };
+        private static readonly string[] CampNames = { "ЛАГЕРЬ I", "ШТОЛЬНЯ II", "РУДНИК III", "ПРИИСК IV", "АЛМАЗНЫЙ V" };
+        private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари" };
+        private static readonly string[] ForgeFeatures = { "", "Печь и наковальня", "Дымоход и стойка", "Навес мастерской", "Оснащение мастера" };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[] picks = new Image[5];
         private readonly Text[] powers = new Text[5];
@@ -67,9 +70,11 @@ namespace MineLoot
         {
             busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
             noticeTime = 0; noticeGroup.alpha = 0;
+            mineStatus.text = "Нажимай или удерживай блок";
             Array.Copy(game.Progress.depths, shownDepths, 5);
             Array.Copy(game.Progress.damage, shownDamage, 5);
             Array.Copy(game.Progress.lostColumns, shownLost, 5);
+            stage.SetDevelopment(game.PickTier, game.Progress.forgeLevel, false);
             DrawBoard(); Refresh(); ShowPage(game.HasPendingRoll);
             if (game.HasPendingRoll) EnterPickChoice();
         }
@@ -147,16 +152,18 @@ namespace MineLoot
             if (!game.Upgrade()) return;
             mineStatus.text = "Кирка улучшена! +" + game.ClickPower + " за удар";
             upgradePulse = 1;
-            if (game.PickTier != tier) Notice(PickNames[game.PickTier].ToUpperInvariant() + " КИРКА", "+4 монеты за удар\nУрон по блоку: " + game.MiningDamage);
+            if (game.PickTier != tier) Notice(CampNames[game.PickTier], CampFeatures[game.PickTier] + "\n" + PickNames[game.PickTier] + " кирка · урон " + game.MiningDamage);
             sounds.Play("upgrade");
-            Persist(); Refresh();
+            Persist(); Flush(); Refresh();
         }
 
         public void Forge()
         {
+            int previousStage = stage.ForgeStage;
             if (busy || !game.Forge()) return;
             sounds.Play("upgrade"); mineStatus.text = "Кузница: алмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus;
-            Persist(); Refresh();
+            Persist(); Flush(); Refresh();
+            if (stage.ForgeStage > previousStage) Notice("КУЗНИЦА УЛУЧШЕНА", ForgeFeatures[stage.ForgeStage] + "\nАлмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus);
         }
 
         public void ClaimContract()
@@ -589,7 +596,10 @@ namespace MineLoot
             upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
             pickTitle.text = PickNames[game.PickTier];
             pickDetail.text = "+4/удар · урон " + game.MiningDamage;
-            nextUpgrade.text = game.PickTier == 4 ? "Алмазная кирка · ур. " + (game.Progress.upgradeLevel + 1) + " · реликвий " + game.Relics : "След.: " + PickNames[game.PickTier + 1].ToLowerInvariant() + " кирка · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
+            nextUpgrade.text = game.PickTier == 4 ? "Шахта развита · урон " + game.MiningDamage + " · реликвий " + game.Relics : "Далее: " + CampFeatures[game.PickTier + 1] + " · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
+            campLabel.text = CampNames[game.PickTier];
+            for (int i = 0; i < campSteps.Length; i++) campSteps[i].color = i <= game.PickTier ? Hex("d4ed96") : Hex("455742");
+            forgeTitle.text = "Кузница " + game.Progress.forgeLevel;
             upgradeHint.text = "Реликвий: " + game.Relics;
             upgradeButton.interactable = !busy && game.CanUpgrade;
             forgeButton.interactable = !busy && game.CanForge;
@@ -623,6 +633,7 @@ namespace MineLoot
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;
             floorHint.text = "Прочность " + game.Hardness;
             stage.SetBiome(game.Biome);
+            stage.SetDevelopment(game.PickTier, game.Progress.forgeLevel);
             stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
             clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
         }

@@ -12,6 +12,8 @@ namespace MineLoot
         private Text contractDetail, pickDetail, forgeDetail, stageBadge;
         private Image contractFill, mineNavMark, rollNavMark;
         private Text levelLabel, pickTitle, nextUpgrade, noticeTitle, noticeDetail;
+        private Text campLabel, forgeTitle;
+        private readonly Image[] campSteps = new Image[5];
         private Image experienceFill, oreFill, workshopPick;
         private readonly Image[] oreSlots = new Image[5], oreIcons = new Image[5], reels = new Image[5];
         private readonly Text[] oreNames = new Text[5];
@@ -136,7 +138,8 @@ namespace MineLoot
             PanelAt(page, "Ticket track", Hex("4d5449"), 80, 433, 360, 7);
             ticketFill = PanelAt(page, "Ticket progress", Hex("7dc844"), 80, 433, 0, 7);
 
-            Label(page, "УЛУЧШЕНИЯ", 24, 458, 220, 28, 24, Ink, FontStyle.Bold);
+            campLabel = Label(page, "ЛАГЕРЬ I", 24, 458, 220, 28, 24, Ink, FontStyle.Bold);
+            for (int i = 0; i < campSteps.Length; i++) campSteps[i] = PanelAt(page, "Mine stage " + i, Hex("455742"), 24 + i * 40, 485, 36, 3);
             upgradeHint = Label(page, "", 243, 461, 213, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleRight);
             Card(page, "Pick workshop card", 24, 492, 211, 94, Panel);
             workshopPick = Icon(page, "pick1", 36, 500, 37, 37);
@@ -146,7 +149,7 @@ namespace MineLoot
             upgradeButton.name = "Upgrade pickaxe"; upgradeLabel = upgradeButton.GetComponentInChildren<Text>();
             Card(page, "Forge workshop card", 245, 492, 211, 94, Panel);
             Icon(page, "forge", 257, 500, 37, 37);
-            Label(page, "Кузница", 304, 493, 136, 27, 22, Ink, FontStyle.Bold);
+            forgeTitle = Label(page, "Кузница 0", 304, 493, 136, 27, 22, Ink, FontStyle.Bold);
             forgeDetail = Label(page, "", 304, 519, 140, 22, 16, Muted);
             forgeButton = ButtonAt(page, "", 257, 548, 187, 30, Forge, Hex("e5c488"), Hex("3a3020"));
             forgeButton.name = "Upgrade forge"; forgeLabel = forgeButton.GetComponentInChildren<Text>();

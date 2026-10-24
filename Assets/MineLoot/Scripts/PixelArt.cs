@@ -44,7 +44,7 @@ namespace MineLoot
             }
             else if (tile)
             {
-                string body = kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
+                string body = kind == "brick" ? "#9d7664" : kind == "roof" ? "#915747" : kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
                 ColorUtility.TryParseHtmlString(body, out var baseColor);
                 int seed = 313; foreach (char letter in kind) seed = unchecked(seed * 31 + letter);
                 var rng = new System.Random(seed);
@@ -60,6 +60,19 @@ namespace MineLoot
                 if (kind == "grass")
                 {
                     R(0, 0, 16, 3, "#80b64b"); R(0, 3, 3, 2, "#70a247"); R(6, 3, 4, 2, "#70a247"); R(13, 3, 3, 1, "#70a247");
+                }
+                if (kind == "brick" || kind == "roof")
+                {
+                    for (int y = 0; y < 16; y += 4)
+                    {
+                        R(0, y, 16, 1, kind == "brick" ? "#5f5b53" : "#573c34");
+                        for (int x = y % 8 == 0 ? 0 : 4; x < 16; x += 8) R(x, y, 1, 4, kind == "brick" ? "#5f5b53" : "#573c34");
+                    }
+                }
+                if (kind == "fire")
+                {
+                    R(0, 0, 16, 16, "#bd4e27"); R(2, 6, 12, 10, "#ef8c30");
+                    R(3, 3, 3, 10, "#ef8c30"); R(10, 1, 3, 13, "#ef8c30"); R(5, 9, 6, 7, "#ffdf78");
                 }
                 if (kind == "coal" || kind == "iron" || kind == "gold" || kind == "diamond" || kind == "emerald" || kind == "ember")
                 {

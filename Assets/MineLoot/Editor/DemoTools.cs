@@ -28,7 +28,7 @@ public static class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.8.0";
+        PlayerSettings.bundleVersion = "0.9.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -342,7 +342,7 @@ public static class DemoTools
         for (int s = 0; s < 2; s++) if (totalMisses[s] == 0 || totalLosses[s] == 0 || totalReroutes[s] == 0 || s == 1 && totalExchanges[s] == 0) throw new Exception("Risk simulation has no actual losses or exchanges");
         Directory.CreateDirectory("Logs"); Directory.CreateDirectory("Docs");
         File.WriteAllText("Logs/balance-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.8\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. После трёх розыгрышей без награды меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 копает без обмена. Стратегия 1 один раз меняет кирки, если алмаз можно направить на уже раскрытый обсидиан из прохода с обычной породой. Скрытые слои бот не читает.\n");
+        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.9\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. После трёх розыгрышей без награды меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 копает без обмена. Стратегия 1 один раз меняет кирки, если алмаз можно направить на уже раскрытый обсидиан из прохода с обычной породой. Скрытые слои бот не читает.\n");
         for (int s = 0; s < 2; s++)
         {
             doc.Append(s == 0 ? "\n## Без обмена\n" : "\n## Обмен перед ударом\n");
@@ -372,7 +372,7 @@ public static class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.8.0";
+        PlayerSettings.bundleVersion = "0.9.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
