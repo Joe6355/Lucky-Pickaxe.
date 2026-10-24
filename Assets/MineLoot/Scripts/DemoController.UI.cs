@@ -21,6 +21,9 @@ namespace MineLoot
         private RectTransform noticeRect;
         private CanvasGroup noticeGroup;
         private VoxelStage stage, shaft;
+        private const float ShaftWindowHeight = 417;
+        private Button abandonButton;
+        private Image rollRewardIcon;
 
         private void BuildInterface()
         {
@@ -155,8 +158,8 @@ namespace MineLoot
             stratumLabel = Label(page, "", 39, 34, 306, 23, 16, Hex("d1c5a7"));
             Card(page, "Hardness badge", 348, 13, 96, 32, Hex("b7c4ba"));
             floorHint = Label(page, "", 348, 13, 96, 32, 16, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
-            Card(page, "Shaft outer frame", 18, 65, 444, 393, Color.white, "ui-timber");
-            rollBackdrop = Hero(page, "Expedition illustration", 24, 70, 432, 382);
+            Card(page, "Shaft outer frame", 18, 65, 444, 429, Color.white, "ui-timber");
+            rollBackdrop = Hero(page, "Expedition illustration", 24, 70, 432, ShaftWindowHeight);
             for (int column = 0; column < 5; column++)
             {
                 int x = 41 + column * 81;
@@ -171,18 +174,20 @@ namespace MineLoot
                 picks[column] = reelSymbols[column, 1];
                 powers[column] = Label(page, "1 СИЛА", x, 136, 74, 20, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
             }
-            boardText = Label(page, "", 41, 426, 398, 22, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
-            PanelAt(page, "Board track", Hex("202b29"), 41, 449, 398, 4);
-            boardFill = PanelAt(page, "Board completion", Hex("b5c96e"), 41, 449, 0, 4);
-            Card(page, "Result panel", 24, 466, 432, 56, Color.white, "ui-timber");
-            Icon(page, "coin", 38, 478, 31, 31);
-            rollGain = Label(page, "ПЯТЬ КИРОК · ПЯТЬ СУНДУКОВ", 82, 467, 356, 29, 23, Hex("f5d88d"), FontStyle.Bold);
-            rollStatus = Label(page, "Запусти кирки и доберись до сокровищ", 82, 495, 356, 22, 16, Hex("c6c8b8"));
-            spinButton = ButtonAt(page, "КОПАТЬ · 1 ЖЕТОН", 24, 534, 432, 54, Spin, Color.white, Hex("35291c"));
-            spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 24;
+            boardText = Label(page, "", 41, 462, 398, 22, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
+            PanelAt(page, "Board track", Hex("202b29"), 41, 485, 398, 3);
+            boardFill = PanelAt(page, "Board completion", Hex("b5c96e"), 41, 485, 0, 3);
+            Card(page, "Result panel", 24, 500, 432, 42, Color.white, "ui-timber");
+            rollRewardIcon = Icon(page, "coin", 38, 508, 28, 28);
+            rollGain = Label(page, "ДОБЕРИСЬ ДО СУНДУКОВ", 82, 498, 356, 27, 21, Hex("f5d88d"), FontStyle.Bold);
+            rollStatus = Label(page, "Остерегайся бедрока и обсидиана", 82, 523, 356, 19, 16, Hex("c6c8b8"));
+            spinButton = ButtonAt(page, "КОПАТЬ · 1 ЖЕТОН", 24, 550, 432, 44, Spin, Color.white, Hex("35291c"));
+            spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 22;
             spinButton.name = "ЗАПУСТИТЬ КИРКИ";
-            ButtonAt(page, "Шансы и правила", 24, 596, 246, 29, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
-            ButtonAt(page, "Скорость ×1", 280, 596, 176, 29, ToggleSpeed, Panel, Muted).name = "Toggle speed";
+            ButtonAt(page, "Правила", 24, 600, 148, 25, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
+            abandonButton = ButtonAt(page, "Сменить · 1 жетон", 180, 600, 172, 25, AbandonFloor, Panel, Muted);
+            abandonButton.name = "Abandon floor"; abandonButton.GetComponentInChildren<Text>().fontSize = 16;
+            ButtonAt(page, "×1", 360, 600, 96, 25, ToggleSpeed, Panel, Muted).name = "Toggle speed";
         }
 
         private Image Hero(Transform parent, string name, float x, float y, float width, float height)
@@ -208,20 +213,29 @@ namespace MineLoot
             if (modal != null) return;
             holding = false;
             modal = MakeRect(shell, "Rules modal", 0, 0, 480, 960).gameObject;
-            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .82f), 0, 0, 480, 960); dim.raycastTarget = true;
-            Card(modal.transform, "Rules card", 24, 164, 432, 632, Panel);
-            Label(modal.transform, "Каждая кирка — шанс", 47, 185, 386, 38, 23, Ink, FontStyle.Bold);
-            Label(modal.transform, "Кузница уровня " + game.Progress.forgeLevel, 48, 230, 380, 22, 12, Muted);
+            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
+            Card(modal.transform, "Rules card", 24, 122, 432, 710, Panel);
+            Label(modal.transform, "КИРКА + ПОРОДА = ИСХОД", 47, 140, 386, 35, 23, Ink, FontStyle.Bold);
+            Label(modal.transform, "Кузница " + game.Progress.forgeLevel + " · бонус силы +" + game.PowerBonus, 48, 183, 380, 22, 16, Muted);
             int[] chances = { 100 - game.IronChance - game.DiamondChance, game.IronChance, game.DiamondChance };
             for (int i = 0; i < 3; i++)
             {
                 int x = 47 + i * 132;
-                Card(modal.transform, "Rarity " + i, x, 271, 121, 118, Hex("a8b0a1"));
-                Icon(modal.transform, "pick" + new[] { 1, 2, 4 }[i], x + 28, 282, 65, 56).preserveAspect = true;
-                Label(modal.transform, chances[i] + "%", x, 345, 121, 27, 24, new[] { Muted, Ink, Hex("1c675e") }[i], FontStyle.Bold, TextAnchor.MiddleCenter);
+                Card(modal.transform, "Rarity " + i, x, 219, 121, 112, Hex("a8b0a1"));
+                Icon(modal.transform, "pick" + new[] { 1, 2, 4 }[i], x + 32, 230, 56, 56);
+                Label(modal.transform, chances[i] + "%", x, 295, 121, 27, 24, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
             }
-            Label(modal.transform, "Сила кирок: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + "\n\nПрочность породы: " + game.Hardness + ". Урон сохраняется.\nБлок: " + game.BlockReward + " монет · сундук: " + game.ChestReward + " монет\nВесь пласт: +" + game.FloorReward + " монет и жетон\n\nКирки в открытых столбцах дают лом:\n2 монеты за единицу силы.\nКузница повышает редкость и силу кирок.\n12 ударов в шахте дают новый жетон.", 48, 415, 384, 265, 18, Ink);
-            ButtonAt(modal.transform, "Продолжить добычу", 47, 713, 386, 55, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
+            for (int i = 0; i < 2; i++)
+            {
+                int x = 47 + i * 200;
+                Card(modal.transform, "Obstacle rule " + i, x, 345, 186, 66, Hex("a8b0a1"));
+                Icon(modal.transform, i == 0 ? "tile-bedrock" : "tile-obsidian", x + 10, 358, 36, 36);
+                Label(modal.transform, i == 0 ? "БЕДРОК" : "ОБСИДИАН", x + 56, 349, 124, 26, 18, Ink);
+                Label(modal.transform, i == 0 ? "Сундук потерян" : "Только алмаз", x + 56, 378, 124, 24, 16, Muted);
+            }
+            string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
+            Label(modal.transform, migration + "За запуск списывается 1 жетон.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход до нового пласта.\n\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена пласта: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n12 ударов в шахте дают новый жетон.", 48, 425, 384, 316, 16, Ink);
+            ButtonAt(modal.transform, "Продолжить добычу", 47, 761, 386, 50, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")

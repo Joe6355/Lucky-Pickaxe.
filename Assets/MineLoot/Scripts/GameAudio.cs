@@ -21,6 +21,7 @@ namespace MineLoot
             Create("level", 520, .45f, true);
             Create("reel-stop", 175, .075f, false); Create("rare", 880, .19f, true);
             Create("chest", 330, .18f, true);
+            Create("shatter", 65, .16f, false);
         }
         public void Toggle()
         {

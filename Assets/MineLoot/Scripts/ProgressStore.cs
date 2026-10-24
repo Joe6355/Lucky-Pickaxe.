@@ -28,7 +28,7 @@ namespace MineLoot
         public static MineProgress Decode(string json)
         {
             var data = JsonUtility.FromJson<MineProgress>(json);
-            if (data == null || data.version < 1 || data.version > 3) throw new FormatException("Unknown save version");
+            if (data == null || data.version < 1 || data.version > 4) throw new FormatException("Unknown save version");
             return data;
         }
 

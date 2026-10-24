@@ -41,7 +41,7 @@ namespace MineLoot
             if (expedition) transform.localPosition = Vector3.right * 1000;
             particleProperties = new MaterialPropertyBlock();
             gameObject.layer = Layer;
-            Target = new RenderTexture(864, expedition ? 764 : 560, 24) { name = "Block world view", filterMode = FilterMode.Point, antiAliasing = 1 };
+            Target = new RenderTexture(expedition ? 432 : 864, expedition ? 417 : 560, 24) { name = "Block world view", filterMode = FilterMode.Point, antiAliasing = 1 };
             var cameraObject = new GameObject("Diorama camera", typeof(Camera)); cameraObject.transform.SetParent(transform, false);
             view = cameraObject.GetComponent<Camera>(); view.orthographic = true; view.orthographicSize = 3.4f;
             view.clearFlags = CameraClearFlags.SolidColor; view.backgroundColor = ColorOf("8fcaea"); view.cullingMask = 1 << Layer;
@@ -50,8 +50,8 @@ namespace MineLoot
             Camera.main.cullingMask &= ~(1 << Layer);
             if (expedition)
             {
-                view.orthographicSize = 4.25f;
-                view.transform.localPosition = new Vector3(3, 6, -21);
+                view.orthographicSize = 4.65f;
+                view.transform.localPosition = new Vector3(2.6f, 4.5f, -23);
                 view.transform.LookAt(transform.position);
                 BuildExpedition(); InitializeChips(); SetBiome(0); return;
             }
@@ -230,9 +230,10 @@ namespace MineLoot
             if(materials.TryGetValue(key,out var material)) return material;
             material=new Material(Resources.Load<Shader>("VoxelWorld")) { name="Voxel "+key };
             material.SetFloat("_Shade", IsExpedition ? .53f : .68f);
-            string tex = key=="black" ? "stone" : key=="flower" ? "gold" : key=="cloud" ? "stone" : key=="torch" ? "gold" : key;
+            string tex = key=="black" ? "stone" : key=="failure" ? "metal-dark" : key=="flower" ? "gold" : key=="cloud" ? "stone" : key=="torch" ? "gold" : key;
             material.mainTexture=art.Texture("tex-"+tex);
             if(key=="black") material.color=ColorOf("20262d");
+            if(key=="failure") material.color=ColorOf("e86b61");
             if(key=="cloud") material.color=new Color(1.35f,1.35f,1.35f,1);
             if(key=="flower" || key=="torch") material.color=new Color(1.15f,1.05f,.8f,1);
             materials.Add(key,material); return material;

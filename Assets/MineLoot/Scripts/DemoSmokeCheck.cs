@@ -36,6 +36,9 @@ namespace MineLoot
             VoxelStage shaft = null;
             foreach (var candidate in GetComponentsInChildren<VoxelStage>(true)) if (candidate.IsExpedition) shaft = candidate;
             Check(shaft != null && !shaft.gameObject.activeSelf && shaft.VisibleBlocks == 25, "Voxel shaft is prepared and sleeps on mining page");
+            Vector3 dimensions = shaft.BlockDimensions;
+            Check(Mathf.Abs(dimensions.x - dimensions.y) < .001f && Mathf.Abs(dimensions.y - dimensions.z) < .001f, "Ore geometry is cubic without compressed texture axes");
+            Check(shaft.Target.width == 432 && shaft.Target.height == 417 && shaft.Target.filterMode == FilterMode.Point, "Shaft renders at native UI pixels with point filtering");
             Check(stage != null && stage.Target != null && stage.Target.IsCreated() && stage.StaticBatches < 24 && stage.OreVertices == 24, "Voxel scene renders in material batches");
             stage.RenderNow();
             var previousTarget = RenderTexture.active;
@@ -139,20 +142,24 @@ namespace MineLoot
             // Exercise a later biome and partial block damage in the same built player.
             demo.Game.Progress.stratum = 4;
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
+            Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
             demo.Spin();
             while (demo.IsBusy) yield return null;
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-crystal-shaft.png");
             demo.Game.Progress.stratum = 7; demo.Game.Progress.tickets = 1;
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
+            Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
             demo.Spin();
             while (demo.IsBusy) yield return null;
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-ember-shaft.png");
             // Record a complete full-speed expedition, including the last chest and the next-floor action.
             demo.Game.Progress.stratum = 1; demo.Game.Progress.tickets = 2;
+            demo.Game.Progress.boardSeed = 0; demo.Game.Progress.failedFloors = 0;
             int previousForge = demo.Game.Progress.forgeLevel; demo.Game.Progress.forgeLevel = 10;
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
+            Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
             Click("Toggle speed"); Check(!demo.FastRoll, "Normal-speed expedition");
             demo.Spin();
             int rollFrame = 0; var rollTimes = new System.Text.StringBuilder();
@@ -170,6 +177,25 @@ namespace MineLoot
             demo.Game.Progress.forgeLevel = previousForge;
             demo.Spin(); while (demo.IsBusy) yield return null;
             Check(demo.Game.Progress.stratum == 2 && shaft.VisibleBlocks > 0 && shaft.OpenChests < 5, "Next floor restores shaft geometry and closes chests");
+            // Controlled inputs exercise a genuine loss through the same model and presentation.
+            demo.Game.Progress.stratum = 1; demo.Game.Progress.boardSeed = 236; demo.Game.Progress.tickets = 4;
+            demo.Game.Progress.forgeLevel = 0; demo.Game.Progress.failedFloors = 0;
+            Array.Clear(demo.Game.Progress.damage, 0, 5); Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
+            for (int c = 0; c < 5; c++) for (int r = 1; r < 5; r++) if (demo.Game.BlockAt(c, r) == BlockKind.Obsidian) demo.Game.Progress.depths[c] = r;
+            previousCoins = demo.Game.Progress.coins;
+            demo.SpinForSmoke(() => 0);
+            yield return RecordRoll(demo, "roulette-loss");
+            Check(demo.Game.Progress.coins == previousCoins && demo.Game.Progress.tickets == 3 && !demo.Game.IsComplete, "Obsidian loses the ticket without money or free progress");
+            CheckLayout(); Capture("unity-roulette-loss.png");
+            Click("Abandon floor");
+            Check(demo.Game.Progress.stratum == 1 && demo.Game.Progress.tickets == 2 && shaft.VisibleBlocks == 25 && demo.Game.Progress.coins == previousCoins, "Changing shaft costs a ticket and keeps reward tier unchanged");
+            demo.Game.Progress.boardSeed = 1758; demo.Game.Progress.stratum = 1;
+            Array.Clear(demo.Game.Progress.damage, 0, 5); Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
+            for (int c = 0; c < 5; c++) for (int r = 1; r < 5; r++) if (demo.Game.BlockAt(c, r) == BlockKind.Bedrock) demo.Game.Progress.depths[c] = r;
+            demo.SpinForSmoke(() => .99);
+            yield return RecordRoll(demo, "roulette-bedrock");
+            Check(demo.Game.IsComplete && !demo.Game.IsPerfect && shaft.OpenChests == 0 && shaft.VisibleBlocks == 5 && demo.Game.Progress.tickets == 1, "Bedrock stops diamonds and loses all chests without ticket refund");
+            CheckLayout(); Capture("unity-roulette-bedrock.png");
             demo.ShowPage(false);
             demo.Game.Progress.experience = MineGame.ExperienceForLevel(10);
             demo.Game.Progress.upgradeLevel = 12;
@@ -223,6 +249,21 @@ namespace MineLoot
             }
             foreach (var text in GetComponentsInChildren<Text>(false))
                 if (!text.resizeTextForBestFit) Check(text.preferredHeight <= text.rectTransform.rect.height + 2, "Text fits height: " + text.text);
+        }
+
+        private IEnumerator RecordRoll(DemoController demo, string name)
+        {
+            var times = new System.Text.StringBuilder(); int frame = 0;
+            float deadline = Time.realtimeSinceStartup + 10;
+            while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
+            {
+                times.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+                Capture("unity-" + name + "-" + (frame++).ToString("000") + ".png");
+                yield return new WaitForSecondsRealtime(.04f);
+            }
+            File.WriteAllText(Path.Combine(output, name + "-times.txt"), times.ToString());
+            Check(!demo.IsBusy, "Risk animation completes: " + name);
+            yield return new WaitForSecondsRealtime(.45f);
         }
 
         private void Check(bool condition, string label)

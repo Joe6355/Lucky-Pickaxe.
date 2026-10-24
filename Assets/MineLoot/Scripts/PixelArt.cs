@@ -76,11 +76,28 @@ namespace MineLoot
                 }
                 if (kind == "stone" || kind == "slate")
                     foreach (var a in new[] { new Vector2Int(2, 5), new Vector2Int(9, 10), new Vector2Int(4, 14) }) R(a.x, a.y, 4, 1, "#777e83");
+                if (kind == "bedrock")
+                {
+                    R(0, 0, 16, 16, "#5f646a");
+                    for (int y = 0; y < 16; y += 3) for (int x = 0; x < 16; x += 4)
+                    { int shift = (x + y * 3) % 3; R(x, y + shift, 4, 2, "#242a31"); R(x + 1, y + shift, 2, 1, "#a0a6ab"); }
+                }
+                if (kind == "obsidian")
+                {
+                    R(0, 0, 16, 16, "#211c30");
+                    foreach (var p in new[] { new Vector2Int(1, 2), new Vector2Int(8, 1), new Vector2Int(5, 8), new Vector2Int(11, 11), new Vector2Int(0, 13) })
+                    { R(p.x, p.y, 5, 3, "#403052"); R(p.x, p.y, 3, 1, "#73538e"); R(p.x + 1, p.y + 3, 4, 2, "#30233f"); }
+                }
+            }
+            else if (name == "pick-broken")
+            {
+                for (int k = 11; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
+                R(12, 15, 3, 3, "#e4b66f"); R(15, 17, 2, 2, "#e4b66f");
             }
             else if (name.StartsWith("pick"))
             {
-                string metal = name == "pick4" ? "#53e7dc" : name == "pick-gold" ? "#f4cd57" : name == "pick2" ? "#e1e5e8" : name == "pick-stone" ? "#a2abb2" : "#bf985b";
-                for (int k = 0; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
+                string metal = name.EndsWith("4") ? "#53e7dc" : name == "pick-gold" ? "#f4cd57" : name.EndsWith("2") ? "#e1e5e8" : name == "pick-stone" ? "#a2abb2" : "#bf985b";
+                if (!name.StartsWith("pick-head")) for (int k = 0; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
                 R(4, 2, 18, 5, "#263c40"); R(10, 6, 17, 5, "#263c40"); R(22, 10, 7, 9, "#263c40"); R(26, 17, 4, 5, "#263c40");
                 R(4, 2, 16, 3, metal); R(10, 5, 15, 4, metal); R(22, 9, 5, 7, metal); R(26, 16, 2, 5, metal); R(7, 2, 12, 1, "#edfff5");
             }

@@ -12,13 +12,17 @@ namespace MineLoot
         private readonly Material[] shaftCrackMaterials = new Material[5];
         private readonly float[] chestOpenness = new float[5];
         private readonly bool[] chestTargets = new bool[5];
+        private readonly bool[] shaftLost = new bool[5];
+        private readonly GameObject[] lostMarks = new GameObject[5];
+        private readonly MeshRenderer[,] chestParts = new MeshRenderer[5, 5];
         private float shaftShake;
         private static readonly string[][] ShaftLayers = {
             new[] { "grass", "stone", "iron", "gold", "diamond" },
             new[] { "stone", "iron", "diamond", "stone", "diamond" },
             new[] { "stone", "ember", "iron", "ember", "gold" }
         };
-        private static Vector3 ShaftPosition(int column, int row) => new Vector3((column - 2) * 1.8f, 1.93f - row * .98f, 0);
+        private static Vector3 ShaftPosition(int column, int row) => new Vector3((column - 2) * 1.8f, 2.15f - row * 1.22f, 0);
+        public Vector3 BlockDimensions => shaftBlocks[0, 0].GetComponent<MeshFilter>().sharedMesh.bounds.size;
         public int VisibleBlocks
         {
             get { int count = 0; foreach (var block in shaftBlocks) if (block != null && block.gameObject.activeSelf) count++; return count; }
@@ -49,17 +53,17 @@ namespace MineLoot
             for (int c = 0; c < 5; c++)
             {
                 float x = (c - 2) * 1.8f;
-                Block(new Vector3(x, -.1f, 1.03f), new Vector3(1.7f, 5.65f, .2f), "black");
+                Block(new Vector3(x, -.55f, 1.03f), new Vector3(1.7f, 6.8f, .2f), "black");
                 foreach (float side in new[] { -.83f, .83f })
-                    Block(new Vector3(x + side, -.05f, .7f), new Vector3(.09f, 5.7f, .13f), "metal-dark");
+                    Block(new Vector3(x + side, -.55f, .7f), new Vector3(.09f, 6.8f, .13f), "metal-dark");
                 for (int r = 0; r < 5; r++)
                 {
-                    var block = new Geometry(); AddCube(block, Vector3.zero, new Vector3(1.54f, .88f, 1.35f), 1);
+                    var block = new Geometry(); AddCube(block, Vector3.zero, Vector3.one * 1.12f, 1);
                     var item = MakeMesh("Shaft ore " + c + "/" + r, block, GetMaterial(ShaftLayers[0][r]));
                     item.transform.localPosition = ShaftPosition(c, r);
                     shaftBlocks[c, r] = item.transform; shaftRenderers[c, r] = item.GetComponent<MeshRenderer>();
                 }
-                var crackGeometry = new Geometry(); AddCube(crackGeometry, Vector3.zero, new Vector3(1.553f, .893f, 1.363f), 1);
+                var crackGeometry = new Geometry(); AddCube(crackGeometry, Vector3.zero, Vector3.one * 1.133f, 1);
                 var material = new Material(Resources.Load<Shader>("VoxelShadow")) { mainTexture = art.Texture("crack1") };
                 materials.Add("Shaft cracks " + c, material); shaftCrackMaterials[c] = material;
                 shaftCracks[c] = MakeMesh("Shaft cracks " + c, crackGeometry, material).transform;
@@ -71,47 +75,61 @@ namespace MineLoot
 
         private void BuildChest(int column, float x)
         {
-            Vector3 center = new Vector3(x, -2.95f, -.08f);
+            Vector3 center = new Vector3(x, -3.68f, -.08f);
             var body = new Geometry(); AddCube(body, center, new Vector3(1.05f, .53f, .76f), 1);
-            MakeMesh("Treasure chest " + column, body, GetMaterial("planks"));
+            chestParts[column, 0] = MakeMesh("Treasure chest " + column, body, GetMaterial("planks")).GetComponent<MeshRenderer>();
             var metal = new Geometry();
             foreach (float dx in new[] { -.4f, .4f }) AddCube(metal, center + new Vector3(dx, 0, -.39f), new Vector3(.09f, .56f, .045f), 1);
             AddCube(metal, center + new Vector3(0, .09f, -.42f), new Vector3(.19f, .26f, .08f), 1);
-            MakeMesh("Chest straps " + column, metal, GetMaterial("metal-gold"));
+            chestParts[column, 1] = MakeMesh("Chest straps " + column, metal, GetMaterial("metal-gold")).GetComponent<MeshRenderer>();
             var hinge = new GameObject("Chest lid hinge " + column).transform; hinge.SetParent(transform, false);
             hinge.localPosition = center + new Vector3(0, .29f, .36f); chestLids[column] = hinge;
             var lid = new Geometry(); AddCube(lid, new Vector3(0, .05f, -.38f), new Vector3(1.09f, .22f, .8f), 1);
             var top = MakeMesh("Chest lid " + column, lid, GetMaterial("planks")); top.transform.SetParent(hinge, false);
+            chestParts[column, 2] = top.GetComponent<MeshRenderer>();
             var rim = new Geometry();
             foreach (float dx in new[] { -.42f, .42f }) AddCube(rim, new Vector3(dx, .17f, -.38f), new Vector3(.09f, .04f, .82f), 1);
             var bands = MakeMesh("Lid brass " + column, rim, GetMaterial("metal-gold")); bands.transform.SetParent(hinge, false);
+            chestParts[column, 3] = bands.GetComponent<MeshRenderer>();
             var treasure = new Geometry();
             for (int i = 0; i < 5; i++) AddCube(treasure, center + new Vector3((i % 3 - 1) * .24f, .29f + i % 2 * .06f, -.12f + i / 3 * .22f), new Vector3(.2f, .12f, .2f), 1);
-            MakeMesh("Chest gold " + column, treasure, GetMaterial("metal-gold"));
+            chestParts[column, 4] = MakeMesh("Chest gold " + column, treasure, GetMaterial("metal-gold")).GetComponent<MeshRenderer>();
+            var cross = new Geometry();
+            AddCube(cross, Vector3.zero, new Vector3(.11f, .65f, .08f), 1);
+            var mark = new GameObject("Lost chest " + column); mark.transform.SetParent(transform, false); mark.transform.localPosition = center + new Vector3(0, .12f, -.63f);
+            foreach (float angle in new[] { -45f, 45f })
+            {
+                var bar = MakeMesh("Lost chest cross", cross, GetMaterial("failure")); bar.transform.SetParent(mark.transform, false); bar.transform.localEulerAngles = new Vector3(0, 0, angle);
+            }
+            mark.SetActive(false); lostMarks[column] = mark;
         }
 
         private void SetExpeditionBiome(int index)
         {
             view.backgroundColor = ColorOf("1c2528");
             GetMaterial("slate").color = index == 1 ? ColorOf("91b2c3") : index == 2 ? ColorOf("c1a08b") : Color.white;
-            for (int c = 0; c < 5; c++) for (int r = 0; r < 5; r++)
-                shaftRenderers[c, r].sharedMaterial = GetMaterial(ShaftLayers[index][r]);
         }
 
-        public void SetBoard(int[] depths, int[] damage, int hardness, int biomeIndex)
+        public void SetBoard(MineGame game, int[] depths, int[] damage, bool[] lost)
         {
-            SetBiome(biomeIndex);
+            SetBiome(game.Biome);
             for (int c = 0; c < 5; c++)
             {
-                for (int r = 0; r < 5; r++) shaftBlocks[c, r].gameObject.SetActive(r >= depths[c]);
+                shaftLost[c] = lost[c]; lostMarks[c].SetActive(lost[c]);
+                for (int r = 0; r < 5; r++)
+                {
+                    shaftBlocks[c, r].gameObject.SetActive(r >= depths[c] && (!lost[c] || r == depths[c]));
+                    BlockKind kind = r <= depths[c] ? game.BlockAt(c, r) : BlockKind.Ore;
+                    shaftRenderers[c, r].sharedMaterial = GetMaterial(kind == BlockKind.Bedrock ? "bedrock" : kind == BlockKind.Obsidian ? "obsidian" : ShaftLayers[game.Biome][r]);
+                }
                 bool open = depths[c] == 5;
-                if (open && !chestTargets[c]) EmitChips(new Vector3((c - 2) * 1.8f, -2.6f, -.5f), art.Texture("tex-metal-gold"), 8, true);
+                if (open && !chestTargets[c]) EmitChips(new Vector3((c - 2) * 1.8f, -3.3f, -.5f), art.Texture("tex-metal-gold"), 8, true);
                 chestTargets[c] = open;
                 shaftCracks[c].gameObject.SetActive(!open && damage[c] > 0);
                 if (!open)
                 {
                     shaftCracks[c].localPosition = ShaftPosition(c, depths[c]);
-                    shaftCrackMaterials[c].mainTexture = art.Texture("crack" + Mathf.Clamp(1 + damage[c] * 3 / hardness, 1, 3));
+                    shaftCrackMaterials[c].mainTexture = art.Texture("crack" + Mathf.Clamp(1 + damage[c] * 3 / game.BlockHardness(c, depths[c]), 1, 3));
                 }
             }
         }
@@ -128,16 +146,23 @@ namespace MineLoot
             EmitChips(ShaftPosition(column, row) + new Vector3(.2f, .1f, -.8f), shaftRenderers[column, row].sharedMaterial.mainTexture, broken ? 7 : 3, broken);
         }
 
+        public void ShatterPick(int column, int row)
+        {
+            EmitChips(ShaftPosition(column, row) + new Vector3(.2f, .25f, -.75f), art.Texture("tex-wood"), 7, true);
+        }
+
         private void UpdateExpedition()
         {
             float dt = Time.unscaledDeltaTime;
             shaftShake = Mathf.MoveTowards(shaftShake, 0, dt * 8);
-            view.transform.localPosition = new Vector3(3, 6 + Mathf.Sin(shaftShake * 20) * shaftShake * .025f, -21);
+            view.transform.localPosition = new Vector3(2.6f, 4.5f + Mathf.Sin(shaftShake * 20) * shaftShake * .025f, -23);
             for (int c = 0; c < 5; c++)
             {
                 chestOpenness[c] = Mathf.MoveTowards(chestOpenness[c], chestTargets[c] ? 1 : 0, dt * 3.8f);
                 float t = chestOpenness[c], ease = 1 - Mathf.Pow(1 - t, 3);
                 chestLids[c].localEulerAngles = new Vector3(104 * ease, 0, 0);
+                particleProperties.Clear(); particleProperties.SetColor("_Color", shaftLost[c] ? Color.white * .3f : Color.white);
+                for (int part = 0; part < 5; part++) chestParts[c, part].SetPropertyBlock(particleProperties);
                 for (int r = 0; r < 5; r++)
                 {
                     shaftHits[c, r] = Mathf.MoveTowards(shaftHits[c, r], 0, dt * 7);

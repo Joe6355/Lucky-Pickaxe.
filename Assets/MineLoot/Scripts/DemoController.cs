@@ -17,6 +17,7 @@ namespace MineLoot
         private readonly Text[] powers = new Text[5];
         private readonly int[] shownDepths = new int[5];
         private readonly int[] shownDamage = new int[5];
+        private readonly bool[] shownLost = new bool[5];
         private MineGame game;
         private System.Random random;
         private Canvas canvas;
@@ -57,6 +58,7 @@ namespace MineLoot
             BuildInterface();
             Array.Copy(game.Progress.depths, shownDepths, 5);
             Array.Copy(game.Progress.damage, shownDamage, 5);
+            Array.Copy(game.Progress.lostColumns, shownLost, 5);
             DrawBoard(); Refresh(); ShowPage(false);
             if (SmokeMode) gameObject.AddComponent<DemoSmokeCheck>();
         }
@@ -166,7 +168,7 @@ namespace MineLoot
         {
             FastRoll = !FastRoll;
             foreach (var button in rollPage.GetComponentsInChildren<Button>())
-                    if (button.name == "Toggle speed") button.GetComponentInChildren<Text>().text = "Скорость ×" + (FastRoll ? "2" : "1");
+                    if (button.name == "Toggle speed") button.GetComponentInChildren<Text>().text = "×" + (FastRoll ? "2" : "1");
         }
 
         public void ToggleSound() { sounds.Toggle(); Refresh(); }
@@ -184,12 +186,16 @@ namespace MineLoot
             stage.gameObject.SetActive(!roulette); shaft.gameObject.SetActive(roulette);
         }
 
-        public void Spin()
+        public void Spin() => StartRoll(() => random.NextDouble());
+
+        internal void SpinForSmoke(Func<double> draw) { if (SmokeMode) StartRoll(draw); }
+
+        private void StartRoll(Func<double> draw)
         {
             if (busy || modal != null) return;
             long walletBefore = game.Progress.coins;
             if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (MineGame.HitsPerTicket - game.Progress.hits) + " ударов"; return; }
-            var result = game.Roll(() => random.NextDouble());
+            var result = game.Roll(draw);
             if (result == null) return;
             displayedCoins = walletBefore;
             busy = true;
@@ -197,6 +203,7 @@ namespace MineLoot
             Persist(); Flush();
             Array.Copy(result.before, shownDepths, 5);
             Array.Copy(result.damageBefore, shownDamage, 5);
+            Array.Copy(result.lostBefore, shownLost, 5);
             DrawBoard(); Refresh(); StartCoroutine(AnimateRoll(result));
         }
 
@@ -209,7 +216,7 @@ namespace MineLoot
         private Vector2 BoardPoint(int column, int row)
         {
             Vector2 p = shaft.BlockViewport(column, row);
-            return new Vector2(24 + p.x * 432 - 13, -(70 + (1 - p.y) * 382) + 24);
+            return new Vector2(24 + p.x * 432 - 13, -(70 + (1 - p.y) * ShaftWindowHeight) + 24);
         }
 
         private IEnumerator AnimateRoll(RollResult result)
@@ -218,6 +225,7 @@ namespace MineLoot
             RollPhase = "reels"; SettledReels = 0;
             rollGain.text = "КАКИЕ КИРКИ ВЫПАДУТ?";
             rollStatus.text = "Дерево · железо · алмаз";
+            rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
             var stopped = new bool[5];
             for (int c = 0; c < 5; c++)
             {
@@ -225,8 +233,17 @@ namespace MineLoot
                 picks[c].rectTransform.localEulerAngles = Vector3.zero;
                 picks[c].rectTransform.localScale = Vector3.one;
                 reels[c].sprite = art.Get("ui-timber"); reels[c].color = Color.white;
-                powers[c].text = "· · ·"; powers[c].color = Hex("c7c4ae");
-                for (int i = 0; i < 3; i++) reelSymbols[c, i].enabled = true;
+                bool active = result.powers[c] > 0;
+                powers[c].text = active ? "· · ·" : result.lostBefore[c] ? "ПОТЕРЯН" : "СУНДУК";
+                powers[c].color = active ? Hex("c7c4ae") : Hex("aa8a80");
+                picks[c].color = active ? Color.white : new Color(.55f, .55f, .55f);
+                for (int i = 0; i < 3; i++) reelSymbols[c, i].enabled = active || i == 1;
+                if (!active)
+                {
+                    stopped[c] = true; SettledReels++;
+                    picks[c].sprite = art.Get(result.lostBefore[c] ? "tile-bedrock" : "chest-open");
+                    picks[c].rectTransform.anchoredPosition = new Vector2(9, 0);
+                }
             }
             float elapsed = 0, lastTick = -1;
             var indices = new int[5];
@@ -235,6 +252,7 @@ namespace MineLoot
                 elapsed += Time.unscaledDeltaTime / speed;
                 for (int c = 0; c < 5; c++)
                 {
+                    if (result.powers[c] == 0) continue;
                     float duration = .95f + c * .18f;
                     float t = Mathf.Clamp01(elapsed / duration);
                     int destination = 11 + c * 3;
@@ -270,7 +288,7 @@ namespace MineLoot
             for (int c = 0; c < 5; c++)
             {
                 reelSymbols[c, 0].enabled = reelSymbols[c, 2].enabled = false;
-                picks[c].sprite = art.Get("pick" + result.types[c]);
+                if (result.powers[c] > 0) picks[c].sprite = art.Get("pick" + result.types[c]);
                 picks[c].transform.SetParent(rollPage.transform, false);
                 picks[c].rectTransform.anchoredPosition = ReelHome(c);
                 picks[c].rectTransform.localScale = Vector3.one;
@@ -280,7 +298,7 @@ namespace MineLoot
             rollStatus.text = "Удары разбивают породу до сундуков";
             var origins = new Vector2[5]; var targets = new Vector2[5];
             int maxPower = 0, earned = 0;
-            foreach (int power in result.powers) maxPower = Mathf.Max(maxPower, power);
+            foreach (int power in result.usedPower) maxPower = Mathf.Max(maxPower, power);
             long walletBefore = displayedCoins;
             for (int step = 0; step < maxPower; step++)
             {
@@ -289,7 +307,7 @@ namespace MineLoot
                 {
                     origins[c] = picks[c].rectTransform.anchoredPosition;
                     targets[c] = BoardPoint(c, Mathf.Min(4, shownDepths[c]));
-                    if (step < result.powers[c] && shownDepths[c] < 5) active = true;
+                    if (step < result.usedPower[c] && shownDepths[c] < 5 && !shownLost[c]) active = true;
                 }
                 if (!active) continue;
                 float phase = 0;
@@ -297,7 +315,7 @@ namespace MineLoot
                 {
                     phase = Mathf.Min(1, phase + Time.unscaledDeltaTime / (.13f * speed));
                     float ease = phase * phase;
-                    for (int c = 0; c < 5; c++) if (step < result.powers[c] && shownDepths[c] < 5)
+                    for (int c = 0; c < 5; c++) if (step < result.usedPower[c] && shownDepths[c] < 5 && !shownLost[c])
                     {
                         picks[c].rectTransform.anchoredPosition = Vector2.Lerp(origins[c], targets[c], ease) + Vector2.up * (Mathf.Sin(phase * Mathf.PI) * 10);
                         picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(18, -40, ease));
@@ -305,36 +323,51 @@ namespace MineLoot
                     }
                     yield return null;
                 }
-                bool chest = false;
+                bool chest = false, failed = false; BlockKind obstacle = BlockKind.Ore;
                 for (int c = 0; c < 5; c++)
                 {
-                    if (step >= result.powers[c] || shownDepths[c] >= 5) continue;
+                    if (step >= result.usedPower[c] || shownDepths[c] >= 5 || shownLost[c]) continue;
                     int row = shownDepths[c];
-                    bool broken = ++shownDamage[c] >= result.hardness;
-                    shaft.HitBlock(c, row, broken);
-                    if (broken)
+                    bool snapped = result.blockedBy[c] != BlockKind.Ore && step == result.usedPower[c] - 1;
+                    if (snapped)
                     {
-                        shownDamage[c] = 0; shownDepths[c]++; earned += game.BlockReward;
-                        if (shownDepths[c] == 5) { earned += game.ChestReward; chest = true; }
+                        failed = true; obstacle = result.blockedBy[c];
+                        shaft.HitBlock(c, row, false); shaft.ShatterPick(c, row);
+                        shownLost[c] = obstacle == BlockKind.Bedrock;
+                        picks[c].sprite = art.Get("pick-broken");
+                        reels[c].sprite = art.Get("ui-timber"); reels[c].color = Hex("e7aaa0");
+                        powers[c].text = obstacle == BlockKind.Bedrock ? "БЕДРОК" : "СЛОМАНА";
+                        powers[c].color = Hex("ffb3a6");
+                        StartCoroutine(FlyPickHead(c, result.types[c], picks[c].rectTransform.anchoredPosition));
                     }
-                    powers[c].text = PowerText(result.powers[c] - step - 1);
+                    else
+                    {
+                        bool broken = ++shownDamage[c] >= game.BlockHardness(c, row);
+                        shaft.HitBlock(c, row, broken);
+                        if (broken)
+                        {
+                            shownDamage[c] = 0; shownDepths[c]++; earned += game.BlockReward;
+                            if (shownDepths[c] == 5) { earned += game.ChestReward; chest = true; }
+                        }
+                        powers[c].text = PowerText(result.powers[c] - step - 1);
+                    }
                 }
-                DrawBoard(); sounds.Play(chest ? "chest" : "break");
-                rollGain.text = earned > 0 ? "+ " + ShortAmount(earned) + " МОНЕТ" : "ПОРОДА ТРЕСКАЕТСЯ";
-                rollStatus.text = chest ? "Сундук открыт! Сокровища твои" : "Ещё один удар — ещё глубже";
+                DrawBoard(); sounds.Play(failed ? "shatter" : chest ? "chest" : "break");
+                rollGain.text = failed ? "КИРКА СЛОМАЛАСЬ!" : earned > 0 ? "+ " + ShortAmount(earned) + " МОНЕТ" : "ПОРОДА ТРЕСКАЕТСЯ";
+                rollStatus.text = failed ? obstacle == BlockKind.Bedrock ? "Бедрок · сундук этого прохода потерян" : "Обсидиан · нужна алмазная кирка" : chest ? "Сундук открыт! Сокровища твои" : "Ещё один удар — ещё глубже";
                 coinLabel.text = Math.Min(MineGame.CoinLimit, walletBefore + earned).ToString("N0");
                 phase = 0;
                 while (phase < 1)
                 {
                     phase = Mathf.Min(1, phase + Time.unscaledDeltaTime / (.12f * speed));
-                    for (int c = 0; c < 5; c++) if (step < result.powers[c] && origins[c] != targets[c])
+                    for (int c = 0; c < 5; c++) if (step < result.usedPower[c] && origins[c] != targets[c])
                     {
                         picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(-40, -12, phase));
                     }
                     yield return null;
                 }
             }
-            Array.Copy(result.after, shownDepths, 5); Array.Copy(result.damageAfter, shownDamage, 5); DrawBoard();
+            Array.Copy(result.after, shownDepths, 5); Array.Copy(result.damageAfter, shownDamage, 5); Array.Copy(result.lostAfter, shownLost, 5); DrawBoard();
             for (int c = 0; c < 5; c++) origins[c] = picks[c].rectTransform.anchoredPosition;
             float returning = 0;
             while (returning < 1)
@@ -353,7 +386,7 @@ namespace MineLoot
             {
                 picks[c].transform.SetParent(reelWindows[c], false);
                 picks[c].rectTransform.anchoredPosition = new Vector2(9, 0);
-                powers[c].text = PowerText(result.powers[c]);
+                powers[c].text = result.blockedBy[c] == BlockKind.Bedrock ? "БЕДРОК" : result.blockedBy[c] == BlockKind.Obsidian ? "СЛОМАНА" : result.powers[c] == 0 ? result.lostBefore[c] ? "ПОТЕРЯН" : "СУНДУК" : PowerText(result.powers[c]);
             }
             RollPhase = "reward";
             float count = 0;
@@ -366,21 +399,53 @@ namespace MineLoot
                 rollGain.text = "+ " + ShortAmount(earned + (long)Math.Round((result.reward - earned) * ease)) + " МОНЕТ";
                 yield return null;
             }
-            rollGain.text = result.reward == 0 ? "УРОН СОХРАНЁН" : "+ " + ShortAmount(result.reward) + " МОНЕТ";
-            rollStatus.text = result.completed ? "Пласт пройден! +1 жетон · идём глубже" : "Блоков: " + result.broken + " · сундуков: " + result.chests + (result.scrap > 0 ? " · лом +" + result.scrap : "");
-            sounds.Play(result.chests > 0 || result.completed ? "reward" : "hit");
+            bool miss = result.reward == 0 && result.brokenPicks > 0;
+            rollGain.text = miss ? "НЕУДАЧА · 0 МОНЕТ" : result.reward == 0 ? "БЕЗ ДОБЫЧИ" : "+ " + ShortAmount(result.reward) + " МОНЕТ";
+            rollGain.color = miss ? Hex("f18b7a") : Hex("f5d88d");
+            rollRewardIcon.sprite = art.Get(miss ? "pick-broken" : "coin");
+            rollStatus.text = miss ? "Жетон потерян · сломано кирок: " + result.brokenPicks : result.perfect ? "Все 5 сундуков! Бонус пласта и жетон" : "Блоков: " + result.broken + " · сундуков: " + result.chests + " · сломано: " + result.brokenPicks;
+            sounds.Play(miss ? "shatter" : result.chests > 0 || result.perfect ? "reward" : "hit");
             if (result.levelAfter > result.levelBefore) { sounds.Play("level"); LevelNotice(result.levelBefore, result.levelAfter); }
-            else if (result.completed) Notice("ПЛАСТ ПРОЙДЕН!", "+" + result.reward + " монет · +1 жетон\nСледующий пласт готов к добыче");
+            else if (result.completed) Notice(result.perfect ? "ПЛАСТ ПРОЙДЕН!" : "ВЫЛАЗКА ЗАВЕРШЕНА", result.perfect ? "+" + result.reward + " монет · +1 жетон" : "Часть сундуков потеряна\nБонус пласта не получен");
             displayedCoins = -1; busy = false; RollPhase = "result"; Refresh();
+        }
+
+        private IEnumerator FlyPickHead(int column, int type, Vector2 origin)
+        {
+            var image = Icon(rollPage.transform, "pick-head" + type, origin.x, -origin.y, 48, 48);
+            float elapsed = 0;
+            while (elapsed < .55f)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                image.rectTransform.anchoredPosition = origin + new Vector2(column % 2 == 0 ? -65 : 65, 135) * elapsed + Vector2.down * (340 * elapsed * elapsed);
+                image.rectTransform.localEulerAngles = new Vector3(0, 0, -40 + elapsed * 300);
+                image.color = new Color(1, 1, 1, 1 - elapsed / .55f); yield return null;
+            }
+            Destroy(image.gameObject);
+        }
+
+        public void AbandonFloor()
+        {
+            if (busy || modal != null || !game.Abandon(() => random.NextDouble())) return;
+            Array.Copy(game.Progress.depths, shownDepths, 5); Array.Copy(game.Progress.damage, shownDamage, 5); Array.Copy(game.Progress.lostColumns, shownLost, 5);
+            for (int c = 0; c < 5; c++) { picks[c].sprite = art.Get("pick1"); picks[c].color = Color.white; powers[c].text = PowerText(1 + game.PowerBonus); powers[c].color = Hex("ead9ad"); }
+            rollGain.text = "НОВАЯ РАСКЛАДКА"; rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
+            rollStatus.text = "-1 жетон · незабранные сундуки потеряны";
+            DrawBoard(); Persist(); Flush(); Refresh();
         }
 
         private void DrawBoard()
         {
-            int cleared = 0, opened = 0;
-            for (int c = 0; c < 5; c++) { cleared += shownDepths[c]; if (shownDepths[c] == 5) opened++; }
-            shaft.SetBoard(shownDepths, shownDamage, game.Hardness, game.Biome);
-            boardText.text = cleared + " / 25 БЛОКОВ     ·     СУНДУКИ " + opened + " / 5";
-            boardFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, cleared / 25f * 398);
+            int opened = 0, lost = 0, progress = 0;
+            for (int c = 0; c < 5; c++)
+            {
+                if (shownDepths[c] == 5) opened++;
+                if (shownLost[c]) lost++;
+                progress += shownLost[c] ? 5 : shownDepths[c];
+            }
+            shaft.SetBoard(game, shownDepths, shownDamage, shownLost);
+            boardText.text = "Вылазка " + (progress * 4) + "% · сундуки " + opened + "/5" + (lost > 0 ? " · потеряно " + lost : "");
+            boardFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, progress / 25f * 398);
         }
 
         private void Refresh()
@@ -428,6 +493,7 @@ namespace MineLoot
             forgeLabel.color = game.CanForge ? Ink : Muted;
             soundLabel.text = sounds.Muted ? "♪×" : "♪";
             spinButton.interactable = !busy;
+            abandonButton.interactable = !busy && game.CanAbandon;
             spinButton.GetComponentInChildren<Text>().text = busy ? "КИРКИ В РАБОТЕ…" : game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КОПАТЬ · 1 ЖЕТОН";
             mineTab.interactable = rollTab.interactable = !busy;
             string biome = new[] { "Мшистые штольни", "Кристальный грот", "Угольные недра" }[game.Biome];
