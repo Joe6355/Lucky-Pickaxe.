@@ -17,6 +17,8 @@ namespace MineLoot
         private readonly Text[] oreNames = new Text[5];
         private readonly RectTransform[] reelWindows = new RectTransform[5];
         private readonly Image[,] reelSymbols = new Image[5, 3];
+        private readonly Button[] reelButtons = new Button[5];
+        private readonly Image[] pickBorders = new Image[5];
         private Text rollGain, boardText;
         private RectTransform noticeRect;
         private CanvasGroup noticeGroup;
@@ -162,8 +164,17 @@ namespace MineLoot
             rollBackdrop = Hero(page, "Expedition illustration", 24, 70, 432, ShaftWindowHeight);
             for (int column = 0; column < 5; column++)
             {
+                int pickColumn = column;
                 int x = 41 + column * 81;
+                pickBorders[column] = PanelAt(page, "Selected pick " + column, Hex("c8ed79"), x - 3, 77, 80, 84);
+                pickBorders[column].enabled = false;
                 reels[column] = Card(page, "Reel " + column, x, 80, 74, 78, Color.white, "ui-timber");
+                reels[column].raycastTarget = true;
+                reelButtons[column] = reels[column].gameObject.AddComponent<Button>();
+                reelButtons[column].targetGraphic = reels[column];
+                reelButtons[column].transition = Selectable.Transition.None;
+                var navigation = reelButtons[column].navigation; navigation.mode = Navigation.Mode.None; reelButtons[column].navigation = navigation;
+                reelButtons[column].onClick.AddListener(() => SelectPick(pickColumn));
                 var window = PanelAt(reels[column].transform, "Reel window " + column, Hex("202a2c"), 4, 5, 66, 51);
                 window.gameObject.AddComponent<Mask>().showMaskGraphic = true; reelWindows[column] = window.rectTransform;
                 for (int symbol = 0; symbol < 3; symbol++)
@@ -180,8 +191,8 @@ namespace MineLoot
             Card(page, "Result panel", 24, 500, 432, 42, Color.white, "ui-timber");
             rollRewardIcon = Icon(page, "coin", 38, 508, 28, 28);
             rollGain = Label(page, "ДОБЕРИСЬ ДО СУНДУКОВ", 82, 498, 356, 27, 21, Hex("f5d88d"), FontStyle.Bold);
-            rollStatus = Label(page, "Остерегайся бедрока и обсидиана", 82, 523, 356, 19, 16, Hex("c6c8b8"));
-            spinButton = ButtonAt(page, "КОПАТЬ · 1 ЖЕТОН", 24, 550, 432, 44, Spin, Color.white, Hex("35291c"));
+            rollStatus = Label(page, "Кирки можно один раз поменять местами", 82, 523, 356, 19, 16, Hex("c6c8b8"));
+            spinButton = ButtonAt(page, "КИРКИ · 1 ЖЕТОН", 24, 550, 432, 44, Spin, Color.white, Hex("35291c"));
             spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 22;
             spinButton.name = "ЗАПУСТИТЬ КИРКИ";
             ButtonAt(page, "Правила", 24, 600, 148, 25, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
@@ -214,7 +225,7 @@ namespace MineLoot
             holding = false;
             modal = MakeRect(shell, "Rules modal", 0, 0, 480, 960).gameObject;
             var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
-            Card(modal.transform, "Rules card", 24, 122, 432, 710, Panel);
+            Card(modal.transform, "Rules card", 24, 102, 432, 750, Panel);
             Label(modal.transform, "КИРКА + ПОРОДА = ИСХОД", 47, 140, 386, 35, 23, Ink, FontStyle.Bold);
             Label(modal.transform, "Кузница " + game.Progress.forgeLevel + " · бонус силы +" + game.PowerBonus, 48, 183, 380, 22, 16, Muted);
             int[] chances = { 100 - game.IronChance - game.DiamondChance, game.IronChance, game.DiamondChance };
@@ -234,8 +245,8 @@ namespace MineLoot
                 Label(modal.transform, i == 0 ? "Сундук потерян" : "Только алмаз", x + 56, 378, 124, 24, 16, Muted);
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
-            Label(modal.transform, migration + "За запуск списывается 1 жетон.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход до нового пласта.\n\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена пласта: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n12 ударов в шахте дают новый жетон.", 48, 425, 384, 316, 16, Ink);
-            ButtonAt(modal.transform, "Продолжить добычу", 47, 761, 386, 50, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
+            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПеред ударом: один бесплатный обмен.\nНажми две разные кирки, затем «Копать».\nОбмен и бросок сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n12 ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
+            ButtonAt(modal.transform, "Продолжить добычу", 47, 783, 386, 50, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")

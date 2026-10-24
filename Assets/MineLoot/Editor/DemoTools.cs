@@ -28,7 +28,7 @@ public static class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.7.0";
+        PlayerSettings.bundleVersion = "0.8.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -94,7 +94,7 @@ public static class DemoTools
         game.Roll(() => 0);
         Check(game.Relics == 1 && game.ClickPower == 9, "Three floors grant permanent relic");
         var legacy = new MineGame(ProgressStore.Decode("{\"version\":1,\"coins\":1240,\"tickets\":3,\"hits\":4,\"upgradeLevel\":2,\"stratum\":4,\"depths\":[1,2,3,4,5]}"));
-        Check(legacy.Progress.version == 4 && legacy.Progress.boardSeed == 0 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress without inserting hazards");
+        Check(legacy.Progress.version == 5 && legacy.Progress.boardSeed == 0 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress without inserting hazards");
         game = new MineGame();
         for (int i = 0; i < 5; i++) game.Mine();
         Check(game.Progress.oreDamage == 5 && game.Progress.oresMined == 0 && game.Progress.experience == 5, "Ore accumulates damage and click experience");
@@ -149,6 +149,7 @@ public static class DemoTools
         }
         finally { PlayerPrefs.DeleteKey(testKey); PlayerPrefs.DeleteKey(testKey + ".backup"); PlayerPrefs.Save(); }
         VerifyRiskRules(Check);
+        VerifyExchangeRules(Check);
         Directory.CreateDirectory("Logs");
         File.WriteAllText("Logs/rules-check.json", "{\"result\":\"PASS\",\"assertions\":" + assertions + ",\"unity\":\"" + Application.unityVersion + "\"}");
         Debug.Log("MINE_LOOT_RULES: PASS (" + assertions + " assertions)");
@@ -214,18 +215,101 @@ public static class DemoTools
         check(bedrock > 750 && bedrock < 1050 && obsidian > 1300 && obsidian < 1700 && clear > 2300 && clear < 2900, "Risk layout distribution stays close to advertised 18/30/52");
     }
 
+    private static void VerifyExchangeRules(Action<bool, string> check)
+    {
+        var game = new MineGame(new MineProgress { tickets = 1, coins = 1000, totalBlocks = 25, forgeLevel = 2 });
+        int draws = 0;
+        check(game.BeginRoll(() => ++draws == 2 ? .99 : 0), "Paid draw enters the choice phase");
+        check(draws == 5 && game.HasPendingRoll && game.Progress.tickets == 0 && game.Progress.totalRolls == 1, "Draw spends one ticket even when it was the last one");
+        check(game.Progress.coins == 1000 && game.Progress.totalBlocks == 25 && game.Progress.experience == 0 && Array.TrueForAll(game.Progress.depths, d => d == 0), "No damage or reward before confirming picks");
+        check(game.Progress.pendingTypes[0] == 1 && game.Progress.pendingTypes[1] == 4 && game.PendingPower(0) == 2 && game.PendingPower(1) == 5, "Pending draw stores material and includes the forge bonus");
+        string pending = JsonUtility.ToJson(game.Progress);
+        check(!game.BeginRoll(() => throw new Exception("Must not draw again")) && game.Roll(null) == null, "A pending paid draw cannot be replaced");
+        check(!game.Upgrade() && !game.Forge() && !game.ClaimContract() && !game.Abandon(() => throw new Exception("Must not reroute")), "Other economy actions cannot alter the pending board");
+        game.Mine();
+        check(JsonUtility.ToJson(game.Progress) == pending, "Mining cannot change a pending transaction");
+        check(!game.SwapPicks(-1, 1) && !game.SwapPicks(0, 5) && !game.SwapPicks(0, 0) && !game.SwapPicks(0, 2) && !game.Progress.pendingSwapUsed, "Invalid and identical picks never consume the exchange");
+        var restored = new MineGame(ProgressStore.Decode(pending));
+        check(restored.HasPendingRoll && restored.Progress.tickets == 0 && restored.CanSwap && restored.PendingPower(1) == 5, "Reload resumes the same picks without needing another ticket");
+        check(restored.SwapPicks(0, 1) && restored.Progress.pendingTypes[0] == 4 && restored.Progress.pendingTypes[1] == 1 && restored.PendingPower(0) == 5, "One exchange moves the material and full power together");
+        check(restored.Progress.coins == 1000 && restored.Progress.tickets == 0 && restored.Progress.totalRolls == 1 && !restored.CanSwap, "Exchange is free and is limited to one per draw");
+        restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(restored.Progress)));
+        check(restored.Progress.pendingSwapUsed && !restored.SwapPicks(0, 2) && restored.Progress.pendingTypes[0] == 4, "Restart cannot undo or renew the used exchange");
+        var resolved = restored.ResolveRoll();
+        check(resolved != null && resolved.types[0] == 4 && resolved.powers[0] == 5 && resolved.powers[1] == 2 && !restored.HasPendingRoll && restored.Progress.tickets == 0, "Confirm resolves the arranged picks without charging another ticket");
+        long coins = restored.Progress.coins;
+        check(restored.ResolveRoll() == null && !restored.SwapPicks(0, 1) && restored.Progress.coins == coins, "Confirm and exchange cannot repeat a completed reward");
+        restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(restored.Progress)));
+        check(!restored.HasPendingRoll && restored.ResolveRoll() == null && restored.Progress.coins == coins, "Reload after reward does not pay twice");
+
+        game = new MineGame(new MineProgress { boardSeed = 236, tickets = 2, coins = 0 });
+        for (int c = 0; c < 5; c++) for (int row = 1; row < 5; row++) if (game.BlockAt(c, row) == BlockKind.Obsidian) game.Progress.depths[c] = row;
+        draws = 0; game.BeginRoll(() => ++draws == 2 ? .99 : 0);
+        check(game.SwapPicks(0, 1), "Diamond can be assigned to a revealed obsidian lane");
+        resolved = game.ResolveRoll();
+        check(resolved.blockedBy[0] == BlockKind.Ore && resolved.after[0] > resolved.before[0] && resolved.blockedBy[1] == BlockKind.Obsidian && resolved.brokenPicks == 4, "The arranged material determines obsidian damage and pick breakage");
+
+        game = new MineGame(new MineProgress { boardSeed = 1758, tickets = 2 });
+        game.Progress.depths[0] = 5;
+        for (int r = 1; r < 5; r++) if (game.BlockAt(1, r) == BlockKind.Bedrock) game.Progress.depths[1] = r;
+        game.Progress.lostColumns[1] = true;
+        draws = 0; game.BeginRoll(() => ++draws == 4 ? .99 : 0);
+        check(game.Progress.pendingTypes[0] == 0 && game.Progress.pendingTypes[1] == 0 && game.PendingPower(0) == 0 && game.PendingPower(1) == 0, "Closed and lost lanes have no exchangeable pick");
+        check(!game.SwapPicks(0, 3) && !game.SwapPicks(1, 3) && game.SwapPicks(2, 3), "Exchange is restricted to two active lanes");
+        resolved = game.ResolveRoll();
+        check(resolved.powers[0] == 0 && resolved.powers[1] == 0 && resolved.reward >= 0 && game.Progress.lostColumns[1], "Exchanging cannot restore a bedrock chest");
+        game = new MineGame(new MineProgress { boardSeed = 1758 });
+        for (int c = 0; c < 5; c++) for (int r = 1; r < 5; r++) if (game.BlockAt(c, r) == BlockKind.Bedrock) game.Progress.depths[c] = r;
+        draws = 0; game.BeginRoll(() => ++draws == 2 ? .99 : 0); game.SwapPicks(0, 1); resolved = game.ResolveRoll();
+        check(resolved.lostChests == 5 && resolved.reward == 0 && !resolved.perfect, "Exchanged diamonds still cannot break bedrock");
+
+        game = new MineGame(new MineProgress { tickets = 1 }); game.BeginRoll(() => 0);
+        check(!game.CanSwap && game.ResolveRoll().broken == 5, "Identical picks can be confirmed without an exchange");
+        game = new MineGame(new MineProgress { tickets = 1, depths = new[] { 5, 5, 5, 5, 0 } }); game.BeginRoll(() => .99);
+        check(!game.CanSwap && game.PendingPower(4) == 4 && game.ResolveRoll().after[4] == 4, "Single remaining lane remains playable");
+        game = new MineGame(new MineProgress { tickets = 1, depths = new[] { 5, 5, 5, 5, 5 } });
+        pending = JsonUtility.ToJson(game.Progress); draws = 0;
+        try { game.BeginRoll(() => ++draws == 6 ? double.NaN : .6); } catch (ArgumentOutOfRangeException) { }
+        check(JsonUtility.ToJson(game.Progress) == pending, "Failed next-floor draw is atomic before the choice phase");
+        game.BeginRoll(() => .6); int seed = game.Progress.boardSeed;
+        restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        check(restored.Progress.stratum == 2 && restored.Progress.pendingNewStratum && restored.Progress.boardSeed == seed && restored.Progress.tickets == 0, "New-floor seed and spent last ticket survive pending reload");
+        check(restored.ResolveRoll().newStratum && restored.Progress.stratum == 2, "Restoring a pending new floor cannot advance twice");
+        var v4 = new MineGame(ProgressStore.Decode("{\"version\":4,\"boardSeed\":17,\"tickets\":7,\"coins\":123,\"depths\":[1,2,2,3,4],\"damage\":[0,0,0,1,0],\"lostColumns\":[false,false,true,false,false]}"));
+        check(v4.Progress.version == 5 && !v4.HasPendingRoll && v4.Progress.boardSeed == 17 && v4.Progress.lostColumns[2] && v4.Progress.damage[3] == 1 && v4.Progress.coins == 123 && v4.Progress.tickets == 7, "v4 migration preserves hazards, losses and partial damage");
+        string key = "LuckyPickaxe.Exchange.Tests." + Guid.NewGuid().ToString("N");
+        try
+        {
+            game = new MineGame(new MineProgress { tickets = 1 }); draws = 0;
+            game.BeginRoll(() => ++draws == 2 ? .99 : 0); ProgressStore.Save(game, key);
+            restored = ProgressStore.Load(key);
+            check(restored.HasPendingRoll && restored.Progress.tickets == 0 && restored.Progress.pendingTypes[1] == 4, "PlayerPrefs restores the paid choice phase");
+            restored.SwapPicks(0, 1); ProgressStore.Save(restored, key);
+            restored = ProgressStore.Load(key);
+            check(restored.Progress.pendingSwapUsed && restored.Progress.pendingTypes[0] == 4 && !restored.SwapPicks(0, 2), "PlayerPrefs persists the used exchange");
+            game.Progress.pendingTypes[0] = 3; PlayerPrefs.SetString(key, JsonUtility.ToJson(game.Progress));
+            restored = ProgressStore.Load(key);
+            check(restored.Progress.pendingTypes[0] == 4 && restored.Progress.pendingSwapUsed, "Malformed pending primary recovers the fixed draw from backup");
+            restored.ResolveRoll(); coins = restored.Progress.coins; ProgressStore.Save(restored, key);
+            restored = ProgressStore.Load(key);
+            check(!restored.HasPendingRoll && restored.ResolveRoll() == null && restored.Progress.coins == coins, "PlayerPrefs persists the final reward once");
+        }
+        finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
+    }
+
     [MenuItem("Mine Loot/Simulate balance")]
     public static void SimulateBalance()
     {
         const int runs = 100;
-        var rows = new System.Text.StringBuilder("seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks,zero_rewards,lost_chests,reroutes\n");
+        var rows = new System.Text.StringBuilder("strategy,seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks,zero_rewards,lost_chests,reroutes,exchanges\n");
         int[] checkpoints = { 60, 300, 600, 1200 };
-        var sums = new double[4, 5];
-        int totalMisses = 0, totalLosses = 0, totalReroutes = 0;
-        for (int seed = 0; seed < runs; seed++)
+        var sums = new double[2, 4, 5];
+        var totalMisses = new int[2]; var totalLosses = new int[2]; var totalReroutes = new int[2]; var totalExchanges = new int[2];
+        for (int run = 0; run < runs * 2; run++)
         {
+            int strategy = run / runs, seed = run % runs;
             var rng = new System.Random(seed);
-            var game = new MineGame(); int wait = 0, emptyStreak = 0, misses = 0, losses = 0, reroutes = 0;
+            var game = new MineGame(); int wait = 0, emptyStreak = 0, misses = 0, losses = 0, reroutes = 0, exchanges = 0;
             for (int second = 1; second <= 1200; second++)
             {
                 if (wait > 0) wait--;
@@ -238,30 +322,49 @@ public static class DemoTools
                     if (emptyStreak >= 3 && game.CanAbandon) { game.Abandon(() => rng.NextDouble()); reroutes++; emptyStreak = 0; }
                     else if (game.Progress.tickets > 0)
                     {
-                        var roll = game.Roll(() => rng.NextDouble()); wait = 2;
+                        game.BeginRoll(() => rng.NextDouble());
+                        if (strategy == 1 && ExchangeForVisibleObsidian(game)) exchanges++;
+                        var roll = game.ResolveRoll(); wait = 2;
                         if (roll.reward == 0) { misses++; emptyStreak++; } else emptyStreak = 0;
                         losses += roll.lostChests;
                     }
                 }
                 for (int i = 0; i < checkpoints.Length; i++) if (second == checkpoints[i])
                 {
-                    rows.AppendLine($"{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks},{misses},{losses},{reroutes}");
-                    sums[i, 0] += game.Progress.stratum; sums[i, 1] += game.Progress.upgradeLevel; sums[i, 2] += game.Progress.forgeLevel;
-                    sums[i, 3] += game.MinerLevel; sums[i, 4] += game.Progress.oresMined;
+                    rows.AppendLine($"{strategy},{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks},{misses},{losses},{reroutes},{exchanges}");
+                    sums[strategy, i, 0] += game.Progress.stratum; sums[strategy, i, 1] += game.Progress.upgradeLevel; sums[strategy, i, 2] += game.Progress.forgeLevel;
+                    sums[strategy, i, 3] += game.MinerLevel; sums[strategy, i, 4] += game.Progress.oresMined;
                 }
             }
-            if (game.Progress.stratum < 10 || game.Progress.coins < 0 || game.Progress.tickets < 0 || game.UnlockedOres != 5 || game.Progress.oreDamage >= game.OreHealth) throw new Exception("Balance regression seed " + seed);
-            totalMisses += misses; totalLosses += losses; totalReroutes += reroutes;
+            if (game.Progress.stratum < 10 || game.Progress.coins < 0 || game.Progress.tickets < 0 || game.UnlockedOres != 5 || game.Progress.oreDamage >= game.OreHealth || game.HasPendingRoll) throw new Exception("Balance regression strategy " + strategy + ", seed " + seed);
+            totalMisses[strategy] += misses; totalLosses[strategy] += losses; totalReroutes[strategy] += reroutes; totalExchanges[strategy] += exchanges;
         }
-        if (totalMisses == 0 || totalLosses == 0 || totalReroutes == 0) throw new Exception("Risk simulation has no actual losses or reroutes");
+        for (int s = 0; s < 2; s++) if (totalMisses[s] == 0 || totalLosses[s] == 0 || totalReroutes[s] == 0 || s == 1 && totalExchanges[s] == 0) throw new Exception("Risk simulation has no actual losses or exchanges");
         Directory.CreateDirectory("Logs"); Directory.CreateDirectory("Docs");
         File.WriteAllText("Logs/balance-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.7\n\n100 воспроизводимых прогонов, seed 0–99, 20 минут каждый. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. После трёх розыгрышей без награды меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\n| Минута | Средний пласт | Уровень кирки | Кузница | Уровень шахтёра | Разрушено руд |\n|---|---:|---:|---:|---:|---:|\n");
-        for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} |", checkpoints[i] / 60, sums[i, 0] / runs, sums[i, 1] / runs, sums[i, 2] / runs, sums[i, 3] / runs, sums[i, 4] / runs));
-        doc.Append($"\nВсего за 100 прогонов: {totalMisses} розыгрышей без монет, {totalLosses} сундуков потеряно из-за бедрока, {totalReroutes} смен раскладки за жетон.\n");
+        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.8\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. После трёх розыгрышей без награды меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 копает без обмена. Стратегия 1 один раз меняет кирки, если алмаз можно направить на уже раскрытый обсидиан из прохода с обычной породой. Скрытые слои бот не читает.\n");
+        for (int s = 0; s < 2; s++)
+        {
+            doc.Append(s == 0 ? "\n## Без обмена\n" : "\n## Обмен перед ударом\n");
+            doc.Append("\n| Минута | Средний пласт | Уровень кирки | Кузница | Уровень шахтёра | Разрушено руд |\n|---|---:|---:|---:|---:|---:|\n");
+            for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} |", checkpoints[i] / 60, sums[s, i, 0] / runs, sums[s, i, 1] / runs, sums[s, i, 2] / runs, sums[s, i, 3] / runs, sums[s, i, 4] / runs));
+            doc.Append($"\nВсего за 100 прогонов: {totalMisses[s]} розыгрышей без монет, {totalLosses[s]} сундуков потеряно из-за бедрока, {totalReroutes[s]} смен раскладки за жетон, {totalExchanges[s]} обменов кирок.\n");
+        }
         doc.Append("\nФормулы и шансы находятся в `Assets/MineLoot/Scripts/MineGame.cs`. Сырые результаты: `Logs/balance-runs.csv` после запуска меню Mine Loot → Simulate balance. Прочность растёт каждые 3 пласта до 4, награды растут до 100-го пласта. Для проверки удержания и удобства нужен плейтест.\n");
         File.WriteAllText("Docs/Balance.md", doc.ToString().Replace("\r\n", "\n"));
-        Debug.Log("LUCKY_PICKAXE_BALANCE: PASS (100 seeded runs)");
+        Debug.Log("LUCKY_PICKAXE_BALANCE: PASS (200 seeded runs, two exchange strategies)");
+    }
+
+    private static bool ExchangeForVisibleObsidian(MineGame game)
+    {
+        if (!game.CanSwap) return false;
+        for (int target = 0; target < MineGame.Columns; target++)
+        {
+            if (!game.IsActiveColumn(target) || game.Progress.pendingTypes[target] == 4 || game.BlockAt(target, game.Progress.depths[target]) != BlockKind.Obsidian) continue;
+            for (int donor = 0; donor < MineGame.Columns; donor++)
+                if (game.CanSwapPicks(target, donor) && game.Progress.pendingTypes[donor] == 4 && game.BlockAt(donor, game.Progress.depths[donor]) == BlockKind.Ore) return game.SwapPicks(target, donor);
+        }
+        return false;
     }
 
     [MenuItem("Mine Loot/Build Windows demo")]
@@ -269,7 +372,7 @@ public static class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.7.0";
+        PlayerSettings.bundleVersion = "0.8.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");

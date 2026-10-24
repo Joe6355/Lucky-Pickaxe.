@@ -107,18 +107,26 @@ namespace MineLoot
             Capture("unity-roulette.png");
             yield return new WaitForEndOfFrame();
             int ticketsBeforeSpin = demo.Game.Progress.tickets;
+            long coinsBeforeSpin = demo.Game.Progress.coins;
             Click("ЗАПУСТИТЬ КИРКИ");
             Check(demo.IsBusy && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Spin starts once");
-            int[] committed = (int[])demo.Game.Progress.depths.Clone();
             demo.Spin();
             Check(demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Double spin blocked");
             float deadline = Time.realtimeSinceStartup + 8;
             int settled = 0;
-            while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
+            while (demo.IsBusy && !demo.AwaitingPickChoice && Time.realtimeSinceStartup < deadline)
             {
                 Check(demo.SettledReels >= settled, "Reels stop in one direction"); settled = demo.SettledReels;
                 yield return null;
             }
+            Check(demo.AwaitingPickChoice && demo.SettledReels == 5 && demo.Game.Progress.coins == coinsBeforeSpin, "Reels await the player's choice without awarding coins");
+            for (int c = 0; c < 5; c++) Check(demo.Game.Progress.depths[c] == 0, "No strike before confirmation");
+            CheckLayout(); Capture("unity-roulette-choice.png");
+            Click("ЗАПУСТИТЬ КИРКИ");
+            int[] committed = (int[])demo.Game.Progress.depths.Clone();
+            demo.Spin();
+            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Confirm and repeated click never charge a second ticket");
+            while (demo.IsBusy && Time.realtimeSinceStartup < deadline) yield return null;
             Check(!demo.IsBusy, "Animation completes");
             Check(demo.SettledReels == 5 && demo.RollPhase == "result", "All five reels settle before final reward");
             int remaining = 25; foreach (int depth in committed) remaining -= depth;
@@ -144,14 +152,14 @@ namespace MineLoot
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
             Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
             demo.Spin();
-            while (demo.IsBusy) yield return null;
+            yield return FinishRoll(demo);
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-crystal-shaft.png");
             demo.Game.Progress.stratum = 7; demo.Game.Progress.tickets = 1;
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
             Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
             demo.Spin();
-            while (demo.IsBusy) yield return null;
+            yield return FinishRoll(demo);
             yield return new WaitForSecondsRealtime(.25f);
             Capture("unity-ember-shaft.png");
             // Record a complete full-speed expedition, including the last chest and the next-floor action.
@@ -166,6 +174,7 @@ namespace MineLoot
             deadline = Time.realtimeSinceStartup + 10;
             while ((demo.IsBusy || rollFrame < 8) && Time.realtimeSinceStartup < deadline)
             {
+                if (demo.AwaitingPickChoice) demo.Spin();
                 rollTimes.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
                 Capture("unity-roulette-animation-" + (rollFrame++).ToString("000") + ".png");
                 yield return new WaitForSecondsRealtime(.04f);
@@ -175,7 +184,7 @@ namespace MineLoot
             yield return new WaitForSecondsRealtime(.4f);
             CheckLayout(); Capture("unity-roulette-complete.png");
             demo.Game.Progress.forgeLevel = previousForge;
-            demo.Spin(); while (demo.IsBusy) yield return null;
+            demo.Spin(); yield return FinishRoll(demo);
             Check(demo.Game.Progress.stratum == 2 && shaft.VisibleBlocks > 0 && shaft.OpenChests < 5, "Next floor restores shaft geometry and closes chests");
             // Controlled inputs exercise a genuine loss through the same model and presentation.
             demo.Game.Progress.stratum = 1; demo.Game.Progress.boardSeed = 236; demo.Game.Progress.tickets = 4;
@@ -196,6 +205,13 @@ namespace MineLoot
             yield return RecordRoll(demo, "roulette-bedrock");
             Check(demo.Game.IsComplete && !demo.Game.IsPerfect && shaft.OpenChests == 0 && shaft.VisibleBlocks == 5 && demo.Game.Progress.tickets == 1, "Bedrock stops diamonds and loses all chests without ticket refund");
             CheckLayout(); Capture("unity-roulette-bedrock.png");
+            // A controlled last-ticket draw tests real pointer input, exchange animation and reload.
+            demo.RestoreForSmoke(new MineProgress { boardSeed = 17, tickets = 1, coins = 0, depths = new[] { 0, 0, 0, 3, 0 } });
+            demo.ShowPage(true); int exchangeDraws = 0;
+            demo.SpinForSmoke(() => ++exchangeDraws == 1 ? .99 : 0);
+            yield return RecordRoll(demo, "roulette-exchange", true);
+            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.tickets == 0 && demo.Game.Progress.depths[3] == 5 && demo.Game.Progress.depths[0] == 1 && shaft.OpenChests == 1, "Exchanged diamond opens the obsidian chest and the wooden donor mines one block");
+            Capture("unity-roulette-exchange-result.png");
             demo.ShowPage(false);
             demo.Game.Progress.experience = MineGame.ExperienceForLevel(10);
             demo.Game.Progress.upgradeLevel = 12;
@@ -230,6 +246,23 @@ namespace MineLoot
                 demo.ShowPage(true); yield return null; CheckLayout();
                 demo.ShowPage(false); yield return null;
             }
+            demo.RestoreForSmoke(new MineProgress { tickets = 1 });
+            demo.ShowPage(true); int layoutDraws = 0;
+            demo.SpinForSmoke(() => ++layoutDraws == 2 ? .99 : 0);
+            deadline = Time.realtimeSinceStartup + 5;
+            while (!demo.AwaitingPickChoice && Time.realtimeSinceStartup < deadline) yield return null;
+            Check(demo.AwaitingPickChoice, "Choice phase available for viewport checks");
+            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.4f);
+                CheckLayout();
+                Click("Reel 0");
+                Check(demo.SelectedPick == 0 && demo.AwaitingPickChoice, "Choice selection works at " + size);
+                Click("Reel 0");
+                Check(demo.SelectedPick == -1 && !demo.Game.Progress.pendingSwapUsed, "Deselect keeps the exchange available at " + size);
+                Capture("unity-choice-" + size.x + "x" + size.y + ".png");
+            }
+            demo.Spin(); yield return FinishRoll(demo); demo.ShowPage(false);
             Screen.SetResolution(960, 540, false);
             yield return new WaitForSecondsRealtime(.6f);
             Capture("unity-landscape.png");
@@ -251,18 +284,70 @@ namespace MineLoot
                 if (!text.resizeTextForBestFit) Check(text.preferredHeight <= text.rectTransform.rect.height + 2, "Text fits height: " + text.text);
         }
 
-        private IEnumerator RecordRoll(DemoController demo, string name)
+        private IEnumerator FinishRoll(DemoController demo)
         {
-            var times = new System.Text.StringBuilder(); int frame = 0;
             float deadline = Time.realtimeSinceStartup + 10;
             while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
             {
+                if (demo.AwaitingPickChoice) demo.Spin();
+                yield return null;
+            }
+            Check(!demo.IsBusy, "Confirmed roll completes within deadline");
+        }
+
+        private IEnumerator RecordRoll(DemoController demo, string name, bool exchange = false)
+        {
+            var times = new System.Text.StringBuilder(); int frame = 0;
+            float deadline = Time.realtimeSinceStartup + 14;
+            int choiceFrames = 0, exchangeStage = 0;
+            while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
+            {
+                if (demo.AwaitingPickChoice)
+                {
+                    choiceFrames++;
+                    if (!exchange) demo.Spin();
+                    else if (exchangeStage == 0 && choiceFrames == 3)
+                    {
+                        Check(demo.Game.Progress.coins == 0 && demo.Game.Progress.tickets == 0 && demo.Game.Progress.depths[3] == 3, "Last ticket is spent but the exposed obsidian has not been hit");
+                        demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+                        Check(demo.AwaitingPickChoice && demo.Game.Progress.pendingTypes[0] == 4 && demo.Game.Progress.pendingTypes[3] == 1 && !demo.Game.Progress.pendingSwapUsed, "Reload returns to the same unused paid draw");
+                        CheckLayout(); Capture("unity-roulette-exchange-before.png");
+                        Click("Reel 3");
+                        Check(demo.SelectedPick == 3, "First pointer click selects an active pick");
+                        Button target = FindButton("Reel 0");
+                        var pointer = new PointerEventData(EventSystem.current) { position = RectTransformUtility.WorldToScreenPoint(null, target.GetComponent<RectTransform>().position) };
+                        var hits = new List<RaycastResult>(); EventSystem.current.RaycastAll(pointer, hits);
+                        Check(hits.Count > 0 && hits[0].gameObject == target.gameObject, "Reel receives real pointer input above its mask and symbols");
+                        Capture("unity-roulette-exchange-selected.png");
+                        choiceFrames = 0; exchangeStage = 1;
+                    }
+                    else if (exchangeStage == 1 && choiceFrames == 7)
+                    {
+                        Click("Reel 0");
+                        Check(demo.RollPhase == "exchange" && demo.Game.Progress.pendingSwapUsed && demo.Game.Progress.pendingTypes[3] == 4 && demo.Game.Progress.pendingTypes[0] == 1, "Second pointer click saves the exchange before animation");
+                        demo.Spin();
+                        Check(demo.Game.HasPendingRoll && demo.Game.Progress.tickets == 0 && demo.Game.Progress.depths[3] == 3, "Confirmation is blocked while picks exchange places");
+                        choiceFrames = 0; exchangeStage = 2;
+                    }
+                    else if (exchangeStage == 2 && choiceFrames == 7)
+                    {
+                        demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+                        Check(demo.AwaitingPickChoice && demo.Game.Progress.pendingSwapUsed && demo.Game.Progress.pendingTypes[3] == 4 && !FindButton("Reel 0").interactable, "Reload retains the arranged picks and disables a second exchange");
+                        demo.SelectPick(1); Check(demo.SelectedPick == -1, "Used exchange rejects further selection");
+                        CheckLayout(); Capture("unity-roulette-exchange-after.png");
+                        Click("ЗАПУСТИТЬ КИРКИ");
+                        long coins = demo.Game.Progress.coins; demo.Spin();
+                        Check(!demo.Game.HasPendingRoll && demo.Game.Progress.coins == coins && demo.Game.Progress.tickets == 0, "Repeated confirm cannot duplicate reward or spend tickets");
+                        exchangeStage = 3;
+                    }
+                }
                 times.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
                 Capture("unity-" + name + "-" + (frame++).ToString("000") + ".png");
                 yield return new WaitForSecondsRealtime(.04f);
             }
             File.WriteAllText(Path.Combine(output, name + "-times.txt"), times.ToString());
             Check(!demo.IsBusy, "Risk animation completes: " + name);
+            if (exchange) Check(exchangeStage == 3, "Exchange recording covers choice, swap, reload and confirm");
             yield return new WaitForSecondsRealtime(.45f);
         }
 
@@ -293,14 +378,17 @@ namespace MineLoot
 
         private void Click(string prefix)
         {
+            var button = FindButton(prefix);
+            if (button == null) { Debug.LogError("Smoke check: missing button " + prefix); return; }
+            Check(button.interactable, "Button enabled: " + prefix);
+            if (button.interactable) button.onClick.Invoke();
+        }
+
+        private Button FindButton(string prefix)
+        {
             foreach (var button in GetComponentsInChildren<Button>(false))
-            {
-                if (!button.name.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                Check(button.interactable, "Button enabled: " + prefix);
-                if (button.interactable) button.onClick.Invoke();
-                return;
-            }
-            Debug.LogError("Smoke check: missing button " + prefix);
+                if (button.name.StartsWith(prefix, StringComparison.Ordinal)) return button;
+            return null;
         }
     }
 }

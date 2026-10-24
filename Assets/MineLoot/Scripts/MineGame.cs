@@ -7,7 +7,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 4;
+        public int version = 5;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -27,6 +27,10 @@ namespace MineLoot
         public int boardSeed;
         public bool[] lostColumns = new bool[5];
         public int failedFloors;
+        public bool rollPending;
+        public int[] pendingTypes = new int[5];
+        public bool pendingSwapUsed;
+        public bool pendingNewStratum;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -77,17 +81,25 @@ namespace MineLoot
         public int IronChance => 35 + Progress.forgeLevel;
         public long UpgradeCost => (long)Math.Min(CoinLimit, Math.Round(120 * Math.Pow(1.28, Progress.upgradeLevel)));
         public long ForgeCost => (long)Math.Round(180 * Math.Pow(1.42, Progress.forgeLevel));
-        public bool CanForge => Progress.forgeLevel < MaxForge && Progress.coins >= ForgeCost;
+        public bool CanForge => !HasPendingRoll && Progress.forgeLevel < MaxForge && Progress.coins >= ForgeCost;
         public long ContractTarget => (Progress.claimedContracts + 1L) * 25;
         public int ContractReward => 100 + 40 * Math.Min(1000, Progress.claimedContracts);
-        public bool CanClaim => Progress.totalBlocks >= ContractTarget;
-        public bool CanUpgrade => Progress.upgradeLevel < MaxUpgrade && Progress.coins >= UpgradeCost;
+        public bool CanClaim => !HasPendingRoll && Progress.totalBlocks >= ContractTarget;
+        public bool CanUpgrade => !HasPendingRoll && Progress.upgradeLevel < MaxUpgrade && Progress.coins >= UpgradeCost;
         public bool IsPerfect => Array.TrueForAll(Progress.depths, d => d == Rows);
         public bool IsComplete
         {
             get { for (int c = 0; c < Columns; c++) if (Progress.depths[c] < Rows && !Progress.lostColumns[c]) return false; return true; }
         }
-        public bool CanAbandon => Progress.tickets > 0 && !IsComplete;
+        public bool HasPendingRoll => Progress.rollPending;
+        public bool CanAbandon => !HasPendingRoll && Progress.tickets > 0 && !IsComplete;
+        public bool IsActiveColumn(int column) => column >= 0 && column < Columns && Progress.depths[column] < Rows && !Progress.lostColumns[column];
+        public int PendingPower(int column) => HasPendingRoll && column >= 0 && column < Columns && Progress.pendingTypes[column] > 0 ? Progress.pendingTypes[column] + PowerBonus : 0;
+        public bool CanSwapPicks(int first, int second) => HasPendingRoll && !Progress.pendingSwapUsed && first != second && IsActiveColumn(first) && IsActiveColumn(second) && Progress.pendingTypes[first] != Progress.pendingTypes[second];
+        public bool CanSwap
+        {
+            get { for (int a = 0; a < Columns; a++) for (int b = a + 1; b < Columns; b++) if (CanSwapPicks(a, b)) return true; return false; }
+        }
 
         public MineGame(MineProgress progress = null)
         {
@@ -99,7 +111,8 @@ namespace MineLoot
         {
             bool legacy = Progress.version < 3;
             bool legacyBoard = Progress.version < 4;
-            Progress.version = 4;
+            bool legacyRoll = Progress.version < 5;
+            Progress.version = 5;
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
             Progress.tickets = Math.Max(0, Math.Min(1000000, Progress.tickets));
             Progress.hits = Math.Max(0, Math.Min(HitsPerTicket - 1, Progress.hits));
@@ -127,10 +140,22 @@ namespace MineLoot
             Progress.oresMined = Math.Max(0, Math.Min(CoinLimit, Progress.oresMined));
             Progress.oreKind = Math.Max(0, Math.Min(UnlockedOres - 1, Progress.oreKind));
             Progress.oreDamage = Math.Max(0, Math.Min(OreHealth - 1, Progress.oreDamage));
+            if (legacyRoll || !Progress.rollPending) ClearPendingRoll();
+            else
+            {
+                // Invalid paid rolls recover from the backup, rather than silently drawing new picks.
+                if (Progress.pendingTypes == null || Progress.pendingTypes.Length != Columns || IsComplete) throw new FormatException("Invalid pending roll");
+                for (int c = 0; c < Columns; c++)
+                {
+                    int type = Progress.pendingTypes[c];
+                    if (IsActiveColumn(c) ? type != 1 && type != 2 && type != 4 : type != 0) throw new FormatException("Invalid pending pick");
+                }
+            }
         }
 
         public bool Mine()
         {
+            if (HasPendingRoll) { LastHit = default; return false; }
             var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = ClickPower, experience = 1 };
             int previousLevel = MinerLevel;
             int previousUnlocks = UnlockedOres;
@@ -237,28 +262,47 @@ namespace MineLoot
             return true;
         }
 
-        // Resolve atomically before presentation, so closing during animation cannot lose a reward.
-        public RollResult Roll(Func<double> random)
+        // Spend and fix the draw before presentation; the player may then exchange two picks once.
+        public bool BeginRoll(Func<double> random)
         {
-            if (Progress.tickets <= 0) return null;
+            if (HasPendingRoll || Progress.tickets <= 0) return false;
             if (random == null) throw new ArgumentNullException(nameof(random));
-            var result = new RollResult();
-            result.levelBefore = MinerLevel;
+            var types = new int[Columns];
             bool nextFloor = IsComplete;
             // Obtain all draws before mutating progress, including failures of an injected random source.
-            for (int i = 0; i < Columns; i++)
-            {
-                result.types[i] = PickPower(random(), Progress.forgeLevel);
-                result.powers[i] = result.types[i] + PowerBonus;
-            }
+            for (int i = 0; i < Columns; i++) types[i] = PickPower(random(), Progress.forgeLevel);
             int seed = nextFloor ? DrawSeed(random) : Progress.boardSeed;
-            if (nextFloor)
-            {
-                NextFloor(seed);
-                result.newStratum = true;
-            }
+            if (nextFloor) NextFloor(seed);
             Progress.tickets--;
             Progress.totalRolls = Math.Min(10000000, Progress.totalRolls + 1);
+            for (int c = 0; c < Columns; c++) if (!IsActiveColumn(c)) types[c] = 0;
+            Progress.pendingTypes = types;
+            Progress.pendingSwapUsed = false;
+            Progress.pendingNewStratum = nextFloor;
+            Progress.rollPending = true;
+            return true;
+        }
+
+        public bool SwapPicks(int first, int second)
+        {
+            if (!CanSwapPicks(first, second)) return false;
+            int type = Progress.pendingTypes[first];
+            Progress.pendingTypes[first] = Progress.pendingTypes[second];
+            Progress.pendingTypes[second] = type;
+            Progress.pendingSwapUsed = true;
+            return true;
+        }
+
+        // Commit rewards once, before the strike animation. This method never draws randomness.
+        public RollResult ResolveRoll()
+        {
+            if (!HasPendingRoll) return null;
+            var result = new RollResult { levelBefore = MinerLevel, newStratum = Progress.pendingNewStratum };
+            for (int c = 0; c < Columns; c++)
+            {
+                result.types[c] = Progress.pendingTypes[c];
+                result.powers[c] = PendingPower(c);
+            }
             Array.Copy(Progress.depths, result.before, Columns);
             Array.Copy(Progress.damage, result.damageBefore, Columns);
             Array.Copy(Progress.lostColumns, result.lostBefore, Columns);
@@ -306,8 +350,19 @@ namespace MineLoot
             result.levelAfter = MinerLevel;
             result.reward += result.levelCoins;
             AddCoins(result.reward);
+            ClearPendingRoll();
             return result;
         }
+
+        private void ClearPendingRoll()
+        {
+            Progress.rollPending = Progress.pendingSwapUsed = Progress.pendingNewStratum = false;
+            if (Progress.pendingTypes == null || Progress.pendingTypes.Length != Columns) Progress.pendingTypes = new int[Columns];
+            else Array.Clear(Progress.pendingTypes, 0, Columns);
+        }
+
+        // Automatic resolution remains available for rule checks and the no-exchange simulation.
+        public RollResult Roll(Func<double> random) => BeginRoll(random) ? ResolveRoll() : null;
 
         private void AddCoins(long value) => Progress.coins = Math.Min(CoinLimit, Progress.coins + value);
     }

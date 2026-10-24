@@ -44,9 +44,12 @@ namespace MineLoot
         private Vector2 pickHome;
         private float visualHealth = 1, visualExperience, visualTicket, upgradePulse, noticeTime;
         private int previousLevel, previousOre = -1;
+        private int selectedPick = -1;
         public bool FastRoll { get; private set; }
         public MineGame Game => game;
         public bool IsBusy => busy;
+        public bool AwaitingPickChoice => game.HasPendingRoll && RollPhase == "choice";
+        public int SelectedPick => selectedPick;
 
         private void Awake()
         {
@@ -56,11 +59,25 @@ namespace MineLoot
             sounds = gameObject.AddComponent<GameAudio>();
             Application.targetFrameRate = 60;
             BuildInterface();
+            RestorePresentation();
+            if (SmokeMode) gameObject.AddComponent<DemoSmokeCheck>();
+        }
+
+        private void RestorePresentation()
+        {
+            busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
+            noticeTime = 0; noticeGroup.alpha = 0;
             Array.Copy(game.Progress.depths, shownDepths, 5);
             Array.Copy(game.Progress.damage, shownDamage, 5);
             Array.Copy(game.Progress.lostColumns, shownLost, 5);
-            DrawBoard(); Refresh(); ShowPage(false);
-            if (SmokeMode) gameObject.AddComponent<DemoSmokeCheck>();
+            DrawBoard(); Refresh(); ShowPage(game.HasPendingRoll);
+            if (game.HasPendingRoll) EnterPickChoice();
+        }
+
+        internal void RestoreForSmoke(MineProgress progress)
+        {
+            if (!SmokeMode) return;
+            game = new MineGame(progress); RestorePresentation();
         }
 
         private void Update()
@@ -186,25 +203,112 @@ namespace MineLoot
             stage.gameObject.SetActive(!roulette); shaft.gameObject.SetActive(roulette);
         }
 
-        public void Spin() => StartRoll(() => random.NextDouble());
+        public void Spin()
+        {
+            if (AwaitingPickChoice) CommitPicks();
+            else StartRoll(() => random.NextDouble());
+        }
 
         internal void SpinForSmoke(Func<double> draw) { if (SmokeMode) StartRoll(draw); }
 
         private void StartRoll(Func<double> draw)
         {
             if (busy || modal != null) return;
-            long walletBefore = game.Progress.coins;
             if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (MineGame.HitsPerTicket - game.Progress.hits) + " ударов"; return; }
-            var result = game.Roll(draw);
-            if (result == null) return;
-            displayedCoins = walletBefore;
+            if (!game.BeginRoll(draw)) return;
             busy = true;
-            // Commit all rewards before the coroutine; UI only presents the completed transaction.
+            selectedPick = -1;
+            // Commit the spent ticket and fixed picks before showing the reels.
             Persist(); Flush();
-            Array.Copy(result.before, shownDepths, 5);
-            Array.Copy(result.damageBefore, shownDamage, 5);
-            Array.Copy(result.lostBefore, shownLost, 5);
-            DrawBoard(); Refresh(); StartCoroutine(AnimateRoll(result));
+            Array.Copy(game.Progress.depths, shownDepths, 5);
+            Array.Copy(game.Progress.damage, shownDamage, 5);
+            Array.Copy(game.Progress.lostColumns, shownLost, 5);
+            DrawBoard(); Refresh(); StartCoroutine(AnimateReels());
+        }
+
+        private void CommitPicks()
+        {
+            if (!AwaitingPickChoice || modal != null) return;
+            long walletBefore = game.Progress.coins;
+            var result = game.ResolveRoll();
+            if (result == null) return;
+            displayedCoins = walletBefore; selectedPick = -1;
+            // The second transaction awards the resolved strike exactly once, before its animation.
+            Persist(); Flush(); Refresh(); StartCoroutine(AnimateRoll(result));
+        }
+
+        private void EnterPickChoice()
+        {
+            busy = true; RollPhase = "choice"; SettledReels = 5; selectedPick = -1;
+            ShowPendingPicks();
+            rollGain.text = game.Progress.pendingSwapUsed ? "ОБМЕН УЖЕ ПРИМЕНЁН" : game.CanSwap ? "ОДИН БЕСПЛАТНЫЙ ОБМЕН" : "КИРКИ ГОТОВЫ К ДОБЫЧЕ";
+            rollStatus.text = game.Progress.pendingSwapUsed ? "Копай · новый жетон не нужен" : game.CanSwap ? "Нажми две разные кирки или копай сразу" : "Можно копать · новый жетон не нужен";
+            rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("pick4");
+            Refresh();
+        }
+
+        private void ShowPendingPicks()
+        {
+            for (int c = 0; c < 5; c++)
+            {
+                bool active = game.IsActiveColumn(c);
+                picks[c].transform.SetParent(reelWindows[c], false);
+                picks[c].rectTransform.anchoredPosition = new Vector2(9, 0);
+                picks[c].rectTransform.localEulerAngles = Vector3.zero;
+                picks[c].rectTransform.localScale = Vector3.one;
+                picks[c].sprite = art.Get(active ? "pick" + game.Progress.pendingTypes[c] : shownLost[c] ? "tile-bedrock" : "chest-open");
+                picks[c].color = active ? Color.white : new Color(.55f, .55f, .55f);
+                powers[c].text = active ? PowerText(game.PendingPower(c)) : shownLost[c] ? "ПОТЕРЯН" : "СУНДУК";
+                powers[c].color = active ? game.Progress.pendingTypes[c] == 4 ? Hex("9ae5cb") : Hex("ead9ad") : Hex("aa8a80");
+                reels[c].color = Color.white;
+                reels[c].sprite = art.Get(active && game.Progress.pendingTypes[c] == 4 ? "ui-brass" : "ui-timber");
+                reelSymbols[c, 0].enabled = reelSymbols[c, 2].enabled = false;
+                picks[c].enabled = true;
+            }
+        }
+
+        public void SelectPick(int column)
+        {
+            if (!AwaitingPickChoice || modal != null || !game.CanSwap || !game.IsActiveColumn(column)) return;
+            if (selectedPick == column)
+            {
+                selectedPick = -1; rollStatus.text = "Нажми две разные кирки или копай сразу"; Refresh(); return;
+            }
+            if (selectedPick < 0)
+            {
+                selectedPick = column; rollStatus.text = "Кирка " + (column + 1) + " выбрана · выбери вторую";
+                sounds.Play("tick"); Refresh(); return;
+            }
+            int first = selectedPick;
+            if (!game.SwapPicks(first, column))
+            {
+                rollStatus.text = "Одинаковые кирки · выбери другую"; return;
+            }
+            selectedPick = -1; RollPhase = "exchange";
+            // Save the chosen arrangement before moving its icons; reload cannot restore the exchange.
+            Persist(); Flush(); Refresh(); StartCoroutine(AnimateExchange(first, column));
+        }
+
+        private IEnumerator AnimateExchange(int first, int second)
+        {
+            rollGain.text = "МЕНЯЕМ КИРКИ МЕСТАМИ";
+            rollStatus.text = "Обмен применён · дополнительной платы нет";
+            var start = ReelHome(first); var end = ReelHome(second);
+            picks[first].transform.SetParent(rollPage.transform, false);
+            picks[second].transform.SetParent(rollPage.transform, false);
+            pickBorders[first].enabled = pickBorders[second].enabled = true;
+            float t = 0;
+            while (t < 1)
+            {
+                t = Mathf.Min(1, t + Time.unscaledDeltaTime / (FastRoll ? .22f : .36f));
+                float ease = t * t * (3 - 2 * t), arc = Mathf.Sin(t * Mathf.PI) * 24;
+                picks[first].rectTransform.anchoredPosition = Vector2.Lerp(start, end, ease) + Vector2.up * arc;
+                picks[second].rectTransform.anchoredPosition = Vector2.Lerp(end, start, ease) - Vector2.up * arc;
+                picks[first].rectTransform.localEulerAngles = new Vector3(0, 0, -Mathf.Sin(t * Mathf.PI) * 15);
+                picks[second].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Sin(t * Mathf.PI) * 15);
+                yield return null;
+            }
+            sounds.Play("reel-stop"); EnterPickChoice();
         }
 
         private static readonly int[] ReelTypes = { 1, 2, 4 };
@@ -219,10 +323,14 @@ namespace MineLoot
             return new Vector2(24 + p.x * 432 - 13, -(70 + (1 - p.y) * ShaftWindowHeight) + 24);
         }
 
-        private IEnumerator AnimateRoll(RollResult result)
+        private IEnumerator AnimateReels()
         {
+            var types = game.Progress.pendingTypes;
+            var powerValues = new int[5];
+            for (int c = 0; c < 5; c++) powerValues[c] = game.PendingPower(c);
             float speed = FastRoll ? .5f : 1;
             RollPhase = "reels"; SettledReels = 0;
+            Refresh();
             rollGain.text = "КАКИЕ КИРКИ ВЫПАДУТ?";
             rollStatus.text = "Дерево · железо · алмаз";
             rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
@@ -233,15 +341,15 @@ namespace MineLoot
                 picks[c].rectTransform.localEulerAngles = Vector3.zero;
                 picks[c].rectTransform.localScale = Vector3.one;
                 reels[c].sprite = art.Get("ui-timber"); reels[c].color = Color.white;
-                bool active = result.powers[c] > 0;
-                powers[c].text = active ? "· · ·" : result.lostBefore[c] ? "ПОТЕРЯН" : "СУНДУК";
+                bool active = powerValues[c] > 0;
+                powers[c].text = active ? "· · ·" : shownLost[c] ? "ПОТЕРЯН" : "СУНДУК";
                 powers[c].color = active ? Hex("c7c4ae") : Hex("aa8a80");
                 picks[c].color = active ? Color.white : new Color(.55f, .55f, .55f);
                 for (int i = 0; i < 3; i++) reelSymbols[c, i].enabled = active || i == 1;
                 if (!active)
                 {
                     stopped[c] = true; SettledReels++;
-                    picks[c].sprite = art.Get(result.lostBefore[c] ? "tile-bedrock" : "chest-open");
+                    picks[c].sprite = art.Get(shownLost[c] ? "tile-bedrock" : "chest-open");
                     picks[c].rectTransform.anchoredPosition = new Vector2(9, 0);
                 }
             }
@@ -252,7 +360,7 @@ namespace MineLoot
                 elapsed += Time.unscaledDeltaTime / speed;
                 for (int c = 0; c < 5; c++)
                 {
-                    if (result.powers[c] == 0) continue;
+                    if (powerValues[c] == 0) continue;
                     float duration = .95f + c * .18f;
                     float t = Mathf.Clamp01(elapsed / duration);
                     int destination = 11 + c * 3;
@@ -265,17 +373,17 @@ namespace MineLoot
                     for (int i = 0; i < 3; i++)
                     {
                         int symbol = index + i;
-                        int type = symbol == destination + 1 ? result.types[c] : ReelTypes[(symbol + c) % 3];
+                        int type = symbol == destination + 1 ? types[c] : ReelTypes[(symbol + c) % 3];
                         reelSymbols[c, i].sprite = art.Get("pick" + type);
                         reelSymbols[c, i].rectTransform.anchoredPosition = new Vector2(9, -((i - 1) * 52 - offset));
                     }
                     if (t >= 1 && !stopped[c])
                     {
                         stopped[c] = true; SettledReels++;
-                        sounds.Play(result.types[c] == 4 ? "rare" : "reel-stop");
-                        reels[c].sprite = art.Get(result.types[c] == 4 ? "ui-brass" : "ui-timber");
-                        powers[c].text = PowerText(result.powers[c]);
-                        powers[c].color = result.types[c] == 4 ? Hex("9ae5cb") : Hex("ead9ad");
+                        sounds.Play(types[c] == 4 ? "rare" : "reel-stop");
+                        reels[c].sprite = art.Get(types[c] == 4 ? "ui-brass" : "ui-timber");
+                        powers[c].text = PowerText(powerValues[c]);
+                        powers[c].color = types[c] == 4 ? Hex("9ae5cb") : Hex("ead9ad");
                     }
                     if (stopped[c])
                     {
@@ -285,6 +393,12 @@ namespace MineLoot
                 }
                 yield return null;
             }
+            EnterPickChoice();
+        }
+
+        private IEnumerator AnimateRoll(RollResult result)
+        {
+            float speed = FastRoll ? .5f : 1;
             for (int c = 0; c < 5; c++)
             {
                 reelSymbols[c, 0].enabled = reelSymbols[c, 2].enabled = false;
@@ -403,7 +517,7 @@ namespace MineLoot
             rollGain.text = miss ? "НЕУДАЧА · 0 МОНЕТ" : result.reward == 0 ? "БЕЗ ДОБЫЧИ" : "+ " + ShortAmount(result.reward) + " МОНЕТ";
             rollGain.color = miss ? Hex("f18b7a") : Hex("f5d88d");
             rollRewardIcon.sprite = art.Get(miss ? "pick-broken" : "coin");
-            rollStatus.text = miss ? "Жетон потерян · сломано кирок: " + result.brokenPicks : result.perfect ? "Все 5 сундуков! Бонус пласта и жетон" : "Блоков: " + result.broken + " · сундуков: " + result.chests + " · сломано: " + result.brokenPicks;
+            rollStatus.text = "Сундуки: +" + result.chests + " · потеряно: " + result.lostChests + " · сломано: " + result.brokenPicks;
             sounds.Play(miss ? "shatter" : result.chests > 0 || result.perfect ? "reward" : "hit");
             if (result.levelAfter > result.levelBefore) { sounds.Play("level"); LevelNotice(result.levelBefore, result.levelAfter); }
             else if (result.completed) Notice(result.perfect ? "ПЛАСТ ПРОЙДЕН!" : "ВЫЛАЗКА ЗАВЕРШЕНА", result.perfect ? "+" + result.reward + " монет · +1 жетон" : "Часть сундуков потеряна\nБонус пласта не получен");
@@ -492,9 +606,18 @@ namespace MineLoot
             forgeButton.image.color = game.CanForge ? Hex("e7cf89") : Hex("a9ada3");
             forgeLabel.color = game.CanForge ? Ink : Muted;
             soundLabel.text = sounds.Muted ? "♪×" : "♪";
-            spinButton.interactable = !busy;
+            spinButton.interactable = !busy || AwaitingPickChoice;
             abandonButton.interactable = !busy && game.CanAbandon;
-            spinButton.GetComponentInChildren<Text>().text = busy ? "КИРКИ В РАБОТЕ…" : game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КОПАТЬ · 1 ЖЕТОН";
+            string action = AwaitingPickChoice ? "КОПАТЬ · БЕЗ ДОПЛАТЫ" :
+                busy ? RollPhase == "reels" ? "ВЫПАДАЮТ КИРКИ…" : RollPhase == "exchange" ? "ОБМЕН КИРОК…" : "КИРКИ В РАБОТЕ…" :
+                game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КИРКИ · 1 ЖЕТОН";
+            spinButton.GetComponentInChildren<Text>().text = action;
+            for (int c = 0; c < 5; c++)
+            {
+                reelButtons[c].interactable = AwaitingPickChoice && game.CanSwap && game.IsActiveColumn(c);
+                pickBorders[c].enabled = AwaitingPickChoice && selectedPick == c;
+                if (AwaitingPickChoice) picks[c].rectTransform.localScale = Vector3.one * (selectedPick == c ? 1.1f : 1);
+            }
             mineTab.interactable = rollTab.interactable = !busy;
             string biome = new[] { "Мшистые штольни", "Кристальный грот", "Угольные недра" }[game.Biome];
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;

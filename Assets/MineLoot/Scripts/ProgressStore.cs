@@ -28,13 +28,13 @@ namespace MineLoot
         public static MineProgress Decode(string json)
         {
             var data = JsonUtility.FromJson<MineProgress>(json);
-            if (data == null || data.version < 1 || data.version > 4) throw new FormatException("Unknown save version");
+            if (data == null || data.version < 1 || data.version > 5) throw new FormatException("Unknown save version");
             return data;
         }
 
         public static void Save(MineGame game, string key = Key)
         {
-            // Both copies contain a complete transaction, including rewards already resolved by the model.
+            // Both copies contain the paid pending draw, or the completed reward transaction.
             string json = JsonUtility.ToJson(game.Progress);
             PlayerPrefs.SetString(key + ".backup", json);
             PlayerPrefs.SetString(key, json);
