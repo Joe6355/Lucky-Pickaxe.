@@ -3,11 +3,12 @@ using System;
 namespace MineLoot
 {
     public enum BlockKind { Ore, Obsidian, Bedrock }
+    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure }
 
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 5;
+        public int version = 6;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -29,8 +30,10 @@ namespace MineLoot
         public int failedFloors;
         public bool rollPending;
         public int[] pendingTypes = new int[5];
-        public bool pendingSwapUsed;
+        public bool pendingSwapUsed; // Read only when importing v5; v6 uses the counter below.
         public bool pendingNewStratum;
+        public int swapLevel, efficiencyLevel, pressLevel, treasureLevel;
+        public int pendingSwapLimit, pendingSwapCount;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -57,7 +60,8 @@ namespace MineLoot
         public string OreKey => OreKeys[Progress.oreKind];
         public int OreHealth => OreHealths[Progress.oreKind];
         public int OreReward => OreRewards[Progress.oreKind];
-        public int MiningDamage => 1 + Progress.upgradeLevel / 5;
+        public int MiningDamage => 1 + Progress.upgradeLevel / 5 + Progress.efficiencyLevel;
+        public int HitsRequired => HitsPerTicket - Progress.pressLevel;
         public int PickTier => Progress.upgradeLevel >= 20 ? 4 : Progress.upgradeLevel >= 12 ? 3 : Progress.upgradeLevel >= 5 ? 2 : Progress.upgradeLevel >= 2 ? 1 : 0;
         public int NextPickUpgrade => PickTier == 4 ? MaxUpgrade : new[] { 2, 5, 12, 20 }[PickTier];
         public static string OreKeyAt(int kind) => OreKeys[kind];
@@ -74,18 +78,18 @@ namespace MineLoot
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
         public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
-        public int ChestReward => 60 + 20 * Math.Min(99, Progress.stratum - 1);
+        public int ChestReward => (60 + 20 * Math.Min(99, Progress.stratum - 1)) * (100 + Progress.treasureLevel * 15) / 100;
         public int FloorReward => 100 + 30 * Math.Min(99, Progress.stratum - 1);
         public int PowerBonus => Progress.forgeLevel / 2;
         public int DiamondChance => 10 + Progress.forgeLevel;
         public int IronChance => 35 + Progress.forgeLevel;
-        public long UpgradeCost => (long)Math.Min(CoinLimit, Math.Round(120 * Math.Pow(1.28, Progress.upgradeLevel)));
-        public long ForgeCost => (long)Math.Round(180 * Math.Pow(1.42, Progress.forgeLevel));
-        public bool CanForge => !HasPendingRoll && Progress.forgeLevel < MaxForge && Progress.coins >= ForgeCost;
+        public long UpgradeCost => UpgradePrice(UpgradeKind.Pickaxe);
+        public long ForgeCost => UpgradePrice(UpgradeKind.Forge);
+        public bool CanForge => CanBuyUpgrade(UpgradeKind.Forge);
         public long ContractTarget => (Progress.claimedContracts + 1L) * 25;
         public int ContractReward => 100 + 40 * Math.Min(1000, Progress.claimedContracts);
         public bool CanClaim => !HasPendingRoll && Progress.totalBlocks >= ContractTarget;
-        public bool CanUpgrade => !HasPendingRoll && Progress.upgradeLevel < MaxUpgrade && Progress.coins >= UpgradeCost;
+        public bool CanUpgrade => CanBuyUpgrade(UpgradeKind.Pickaxe);
         public bool IsPerfect => Array.TrueForAll(Progress.depths, d => d == Rows);
         public bool IsComplete
         {
@@ -95,7 +99,8 @@ namespace MineLoot
         public bool CanAbandon => !HasPendingRoll && Progress.tickets > 0 && !IsComplete;
         public bool IsActiveColumn(int column) => column >= 0 && column < Columns && Progress.depths[column] < Rows && !Progress.lostColumns[column];
         public int PendingPower(int column) => HasPendingRoll && column >= 0 && column < Columns && Progress.pendingTypes[column] > 0 ? Progress.pendingTypes[column] + PowerBonus : 0;
-        public bool CanSwapPicks(int first, int second) => HasPendingRoll && !Progress.pendingSwapUsed && first != second && IsActiveColumn(first) && IsActiveColumn(second) && Progress.pendingTypes[first] != Progress.pendingTypes[second];
+        public int SwapsRemaining => HasPendingRoll ? Math.Max(0, Progress.pendingSwapLimit - Progress.pendingSwapCount) : 0;
+        public bool CanSwapPicks(int first, int second) => HasPendingRoll && SwapsRemaining > 0 && first != second && IsActiveColumn(first) && IsActiveColumn(second) && Progress.pendingTypes[first] != Progress.pendingTypes[second];
         public bool CanSwap
         {
             get { for (int a = 0; a < Columns; a++) for (int b = a + 1; b < Columns; b++) if (CanSwapPicks(a, b)) return true; return false; }
@@ -112,10 +117,15 @@ namespace MineLoot
             bool legacy = Progress.version < 3;
             bool legacyBoard = Progress.version < 4;
             bool legacyRoll = Progress.version < 5;
-            Progress.version = 5;
+            bool legacyUpgrades = Progress.version < 6;
+            Progress.version = 6;
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
             Progress.tickets = Math.Max(0, Math.Min(1000000, Progress.tickets));
-            Progress.hits = Math.Max(0, Math.Min(HitsPerTicket - 1, Progress.hits));
+            Progress.swapLevel = Math.Max(0, Math.Min(3, Progress.swapLevel));
+            Progress.efficiencyLevel = Math.Max(0, Math.Min(10, Progress.efficiencyLevel));
+            Progress.pressLevel = Math.Max(0, Math.Min(6, Progress.pressLevel));
+            Progress.treasureLevel = Math.Max(0, Math.Min(10, Progress.treasureLevel));
+            Progress.hits = Math.Max(0, Math.Min(HitsRequired - 1, Progress.hits));
             Progress.upgradeLevel = Math.Max(0, Math.Min(MaxUpgrade, Progress.upgradeLevel));
             Progress.stratum = Math.Max(1, Math.Min(1000000, Progress.stratum));
             if (Progress.depths == null || Progress.depths.Length != Columns) Progress.depths = new int[Columns];
@@ -145,12 +155,20 @@ namespace MineLoot
             {
                 // Invalid paid rolls recover from the backup, rather than silently drawing new picks.
                 if (Progress.pendingTypes == null || Progress.pendingTypes.Length != Columns || IsComplete) throw new FormatException("Invalid pending roll");
+                if (legacyUpgrades)
+                {
+                    // Honour only the already-paid v5 draw; permanent exchanges must now be purchased.
+                    Progress.pendingSwapLimit = 1;
+                    Progress.pendingSwapCount = Progress.pendingSwapUsed ? 1 : 0;
+                }
+                if (Progress.pendingSwapLimit < 0 || Progress.pendingSwapLimit > 3 || Progress.pendingSwapCount < 0 || Progress.pendingSwapCount > Progress.pendingSwapLimit) throw new FormatException("Invalid pending exchange budget");
                 for (int c = 0; c < Columns; c++)
                 {
                     int type = Progress.pendingTypes[c];
                     if (IsActiveColumn(c) ? type != 1 && type != 2 && type != 4 : type != 0) throw new FormatException("Invalid pending pick");
                 }
             }
+            Progress.pendingSwapUsed = false; // v5 migration field; v6 uses the saved counter.
         }
 
         public bool Mine()
@@ -175,7 +193,7 @@ namespace MineLoot
             AddCoins(hit.coins);
             Progress.totalClicks = Math.Min(CoinLimit, Progress.totalClicks + 1);
             Progress.hits++;
-            bool ticket = Progress.hits == HitsPerTicket;
+            bool ticket = Progress.hits == HitsRequired;
             if (ticket) { Progress.hits = 0; hit.tickets++; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
             LastHit = hit;
             return ticket;
@@ -193,17 +211,89 @@ namespace MineLoot
 
         public bool Upgrade()
         {
-            if (!CanUpgrade) return false;
-            Progress.coins -= UpgradeCost;
-            Progress.upgradeLevel++;
-            return true;
+            return BuyUpgrade(UpgradeKind.Pickaxe);
         }
 
         public bool Forge()
         {
-            if (!CanForge) return false;
-            Progress.coins -= ForgeCost;
-            Progress.forgeLevel++;
+            return BuyUpgrade(UpgradeKind.Forge);
+        }
+
+        public int UpgradeLevel(UpgradeKind kind)
+        {
+            switch (kind)
+            {
+                case UpgradeKind.Pickaxe: return Progress.upgradeLevel;
+                case UpgradeKind.Forge: return Progress.forgeLevel;
+                case UpgradeKind.Swap: return Progress.swapLevel;
+                case UpgradeKind.Efficiency: return Progress.efficiencyLevel;
+                case UpgradeKind.Press: return Progress.pressLevel;
+                case UpgradeKind.Treasure: return Progress.treasureLevel;
+                default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        public static int UpgradeMax(UpgradeKind kind)
+        {
+            switch (kind)
+            {
+                case UpgradeKind.Pickaxe: return MaxUpgrade;
+                case UpgradeKind.Forge: return MaxForge;
+                case UpgradeKind.Swap: return 3;
+                case UpgradeKind.Efficiency: case UpgradeKind.Treasure: return 10;
+                case UpgradeKind.Press: return 6;
+                default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+        }
+
+        public int UpgradeUnlock(UpgradeKind kind)
+        {
+            int rank = Math.Min(UpgradeLevel(kind), UpgradeMax(kind) - 1);
+            switch (kind)
+            {
+                case UpgradeKind.Swap: return new[] { 3, 8, 15 }[rank];
+                case UpgradeKind.Efficiency: return 2 + rank * 2;
+                case UpgradeKind.Press: return 4 + rank * 3;
+                case UpgradeKind.Treasure: return 6 + rank * 2;
+                default: return 1;
+            }
+        }
+
+        public long UpgradePrice(UpgradeKind kind)
+        {
+            int rank = UpgradeLevel(kind);
+            double start, growth;
+            switch (kind)
+            {
+                case UpgradeKind.Pickaxe: start = 120; growth = 1.28; break;
+                case UpgradeKind.Forge: start = 180; growth = 1.42; break;
+                case UpgradeKind.Swap: start = 600; growth = 4; break;
+                case UpgradeKind.Efficiency: start = 300; growth = 1.58; break;
+                case UpgradeKind.Press: start = 550; growth = 1.9; break;
+                case UpgradeKind.Treasure: start = 800; growth = 1.65; break;
+                default: throw new ArgumentOutOfRangeException(nameof(kind));
+            }
+            return (long)Math.Min(CoinLimit, Math.Round(start * Math.Pow(growth, rank)));
+        }
+
+        public bool CanBuyUpgrade(UpgradeKind kind) => !HasPendingRoll && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
+
+        public bool BuyUpgrade(UpgradeKind kind)
+        {
+            if (!CanBuyUpgrade(kind)) return false;
+            Progress.coins -= UpgradePrice(kind);
+            switch (kind)
+            {
+                case UpgradeKind.Pickaxe: Progress.upgradeLevel++; break;
+                case UpgradeKind.Forge: Progress.forgeLevel++; break;
+                case UpgradeKind.Swap: Progress.swapLevel++; break;
+                case UpgradeKind.Efficiency: Progress.efficiencyLevel++; break;
+                case UpgradeKind.Press:
+                    Progress.pressLevel++;
+                    if (Progress.hits >= HitsRequired) { Progress.hits -= HitsRequired; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
+                    break;
+                case UpgradeKind.Treasure: Progress.treasureLevel++; break;
+            }
             return true;
         }
 
@@ -262,7 +352,7 @@ namespace MineLoot
             return true;
         }
 
-        // Spend and fix the draw before presentation; the player may then exchange two picks once.
+        // Spend and fix the draw and its purchased exchange budget before presentation.
         public bool BeginRoll(Func<double> random)
         {
             if (HasPendingRoll || Progress.tickets <= 0) return false;
@@ -278,6 +368,8 @@ namespace MineLoot
             for (int c = 0; c < Columns; c++) if (!IsActiveColumn(c)) types[c] = 0;
             Progress.pendingTypes = types;
             Progress.pendingSwapUsed = false;
+            Progress.pendingSwapCount = 0;
+            Progress.pendingSwapLimit = Progress.swapLevel;
             Progress.pendingNewStratum = nextFloor;
             Progress.rollPending = true;
             return true;
@@ -289,7 +381,7 @@ namespace MineLoot
             int type = Progress.pendingTypes[first];
             Progress.pendingTypes[first] = Progress.pendingTypes[second];
             Progress.pendingTypes[second] = type;
-            Progress.pendingSwapUsed = true;
+            Progress.pendingSwapCount++;
             return true;
         }
 
@@ -357,6 +449,7 @@ namespace MineLoot
         private void ClearPendingRoll()
         {
             Progress.rollPending = Progress.pendingSwapUsed = Progress.pendingNewStratum = false;
+            Progress.pendingSwapLimit = Progress.pendingSwapCount = 0;
             if (Progress.pendingTypes == null || Progress.pendingTypes.Length != Columns) Progress.pendingTypes = new int[Columns];
             else Array.Clear(Progress.pendingTypes, 0, Columns);
         }

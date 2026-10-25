@@ -14,6 +14,11 @@ namespace MineLoot
         private Text levelLabel, pickTitle, nextUpgrade, noticeTitle, noticeDetail;
         private Text campLabel, forgeTitle;
         private readonly Image[] campSteps = new Image[5];
+        private readonly Button[] workshopButtons = new Button[6];
+        private readonly Text[] workshopLevels = new Text[6], workshopEffects = new Text[6], workshopStates = new Text[6];
+        private readonly Image[] workshopProgress = new Image[6];
+        private readonly Image[] workshopIcons = new Image[6];
+        private Image workshopNavMark;
         private Image experienceFill, oreFill, workshopPick;
         private readonly Image[] oreSlots = new Image[5], oreIcons = new Image[5], reels = new Image[5];
         private readonly Text[] oreNames = new Text[5];
@@ -62,7 +67,8 @@ namespace MineLoot
 
             minePage = MakeRect(shell, "Clicker page", 0, 168, 480, 614).gameObject;
             rollPage = MakeRect(shell, "Roulette page", 0, 168, 480, 614).gameObject;
-            BuildMine(minePage.transform); BuildRoll(rollPage.transform);
+            workshopPage = MakeRect(shell, "Workshop page", 0, 168, 480, 614).gameObject;
+            BuildMine(minePage.transform); BuildRoll(rollPage.transform); BuildWorkshop(workshopPage.transform);
 
             Card(shell, "Contract card", 24, 798, 432, 73, Hex("d4ccaf"));
             Icon(shell, "ticket", 38, 818, 35, 31);
@@ -75,11 +81,14 @@ namespace MineLoot
             contractLabel.fontSize = 16;
 
             Card(shell, "Navigation", 24, 888, 432, 58, Hex("9d9f98"));
-            mineTab = ButtonAt(shell, "ШАХТА", 33, 893, 205, 45, () => ShowPage(false), Panel, Ink);
-            rollTab = ButtonAt(shell, "РУЛЕТКА", 242, 893, 205, 45, () => ShowPage(true), Panel, Ink);
+            mineTab = ButtonAt(shell, "ШАХТА", 33, 893, 136, 45, () => ShowPage(false), Panel, Ink);
+            rollTab = ButtonAt(shell, "РУЛЕТКА", 172, 893, 136, 45, () => ShowPage(true), Panel, Ink);
+            workshopTab = ButtonAt(shell, "ПРОКАЧКА", 311, 893, 136, 45, ShowWorkshop, Panel, Ink);
+            workshopTab.name = "МАСТЕРСКАЯ";
             mineTab.name = "КЛИКЕР"; rollTab.name = "РУЛЕТКА ШАХТЁРА";
-            mineNavMark = PanelAt(shell, "Mine selected", Hex("d8ed88"), 91, 940, 86, 3);
-            rollNavMark = PanelAt(shell, "Roll selected", Hex("d8ed88"), 299, 940, 86, 3);
+            mineNavMark = PanelAt(shell, "Mine selected", Hex("d8ed88"), 68, 940, 66, 3);
+            rollNavMark = PanelAt(shell, "Roll selected", Hex("d8ed88"), 207, 940, 66, 3);
+            workshopNavMark = PanelAt(shell, "Workshop selected", Hex("d8ed88"), 346, 940, 66, 3);
             var notice = Card(shell, "Progress notification", 24, 10, 374, 76, Hex("cfdfa1"));
             noticeRect = notice.rectTransform; noticeGroup = notice.gameObject.AddComponent<CanvasGroup>();
             noticeGroup.alpha = 0; noticeGroup.blocksRaycasts = false; noticeGroup.interactable = false;
@@ -194,7 +203,7 @@ namespace MineLoot
             Card(page, "Result panel", 24, 500, 432, 42, Color.white, "ui-timber");
             rollRewardIcon = Icon(page, "coin", 38, 508, 28, 28);
             rollGain = Label(page, "ДОБЕРИСЬ ДО СУНДУКОВ", 82, 498, 356, 27, 21, Hex("f5d88d"), FontStyle.Bold);
-            rollStatus = Label(page, "Кирки можно один раз поменять местами", 82, 523, 356, 19, 16, Hex("c6c8b8"));
+            rollStatus = Label(page, "Открой перестановку в мастерской", 82, 523, 356, 19, 16, Hex("c6c8b8"));
             spinButton = ButtonAt(page, "КИРКИ · 1 ЖЕТОН", 24, 550, 432, 44, Spin, Color.white, Hex("35291c"));
             spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 22;
             spinButton.name = "ЗАПУСТИТЬ КИРКИ";
@@ -202,6 +211,65 @@ namespace MineLoot
             abandonButton = ButtonAt(page, "Сменить · 1 жетон", 180, 600, 172, 25, AbandonFloor, Panel, Muted);
             abandonButton.name = "Abandon floor"; abandonButton.GetComponentInChildren<Text>().fontSize = 16;
             ButtonAt(page, "×1", 360, 600, 96, 25, ToggleSpeed, Panel, Muted).name = "Toggle speed";
+        }
+
+        private void BuildWorkshop(Transform page)
+        {
+            Card(page, "Workshop header", 24, 0, 432, 58, Color.white, "ui-timber");
+            Label(page, "МАСТЕРСКАЯ", 40, 2, 400, 32, 27, Hex("ffe6aa"), FontStyle.Bold);
+            Label(page, "Шахта · рулетка · добыча", 40, 34, 400, 22, 16, Hex("d1c5a7"));
+            string[] icons = { "pick4", "forge", "swap", "pick-head2", "ticket", "chest" };
+            for (int i = 0; i < workshopButtons.Length; i++)
+            {
+                var kind = (UpgradeKind)i;
+                int x = 24 + i % 2 * 221, y = 68 + i / 2 * 172;
+                Card(page, "Upgrade card " + kind, x, y, 211, 164, Panel);
+                workshopIcons[i] = Icon(page, icons[i], x + 12, y + 12, 34, 34);
+                Label(page, UpgradeNames[i], x + 54, y + 7, 145, 27, 20, Ink, FontStyle.Bold);
+                workshopLevels[i] = Label(page, "", x + 54, y + 34, 145, 20, 16, Muted);
+                workshopEffects[i] = Label(page, "", x + 12, y + 57, 187, 36, 16, Ink);
+                workshopStates[i] = Label(page, "", x + 12, y + 94, 187, 20, 16, Muted);
+                PanelAt(page, "Upgrade progress track " + kind, Hex("717b6a"), x + 12, y + 112, 187, 3);
+                workshopProgress[i] = PanelAt(page, "Upgrade progress " + kind, Hex("a6cb6a"), x + 12, y + 112, 0, 3);
+                workshopButtons[i] = ButtonAt(page, "", x + 12, y + 119, 187, 37, () => Purchase(kind), Hex("d9bd80"), Hex("352b20"));
+                workshopButtons[i].name = "Buy " + kind;
+            }
+            Label(page, "Каждая покупка сохраняется сразу", 24, 589, 432, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+        }
+
+        private string UpgradeEffect(UpgradeKind kind, bool preview)
+        {
+            int rank = game.UpgradeLevel(kind), target = Mathf.Min(rank + (preview ? 1 : 0), MineGame.UpgradeMax(kind));
+            string Value(int before, int after) => preview && rank < MineGame.UpgradeMax(kind) ? before + " > " + after : before.ToString();
+            switch (kind)
+            {
+                case UpgradeKind.Pickaxe: return "Доход: " + Value(game.ClickPower, game.ClickPower + 4) + "\nУрон: " + Value(game.MiningDamage, 1 + target / 5 + game.Progress.efficiencyLevel);
+                case UpgradeKind.Forge: return "Алмаз: " + Value(game.DiamondChance, 10 + target) + "%\nСила: +" + Value(game.PowerBonus, target / 2);
+                case UpgradeKind.Swap: return "Обменов: " + Value(rank, target) + "\nВ рулетке";
+                case UpgradeKind.Efficiency: return "Урон: " + Value(game.MiningDamage, 1 + game.Progress.upgradeLevel / 5 + target) + "\nДобыча руды";
+                case UpgradeKind.Press: return "Ударов: " + Value(game.HitsRequired, MineGame.HitsPerTicket - target) + "\nЗа один жетон";
+                default: return "Сундук: +" + Value(rank * 15, target * 15) + "%\nНаграды в рулетке";
+            }
+        }
+
+        private void RefreshWorkshop()
+        {
+            workshopIcons[0].sprite = art.Get(PickSprites[game.PickTier]);
+            for (int i = 0; i < workshopButtons.Length; i++)
+            {
+                var kind = (UpgradeKind)i;
+                int rank = game.UpgradeLevel(kind), max = MineGame.UpgradeMax(kind), unlock = game.UpgradeUnlock(kind);
+                bool capped = rank == max, locked = game.MinerLevel < unlock;
+                workshopLevels[i].text = "Ур. " + rank + " / " + max;
+                workshopEffects[i].text = UpgradeEffect(kind, true);
+                workshopStates[i].text = capped ? "Полностью улучшено" : locked ? "Нужен шахтёр ур. " + unlock : game.HasPendingRoll ? "Заверши бросок" : game.CanBuyUpgrade(kind) ? "Можно улучшить" : "Нужно ещё: " + ShortAmount(game.UpgradePrice(kind) - game.Progress.coins);
+                workshopStates[i].color = locked ? Hex("805644") : Muted;
+                workshopProgress[i].rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 187f * rank / max);
+                var button = workshopButtons[i]; button.interactable = !busy && game.CanBuyUpgrade(kind);
+                button.image.color = button.interactable ? Hex("d9bd80") : Hex("a9ada3");
+                var label = button.GetComponentInChildren<Text>(); label.text = capped ? "Максимум" : ShortAmount(game.UpgradePrice(kind)) + " монет";
+                label.resizeTextForBestFit = true; label.resizeTextMinSize = 16; label.resizeTextMaxSize = 20;
+            }
         }
 
         private Image Hero(Transform parent, string name, float x, float y, float width, float height)
@@ -248,7 +316,7 @@ namespace MineLoot
                 Label(modal.transform, i == 0 ? "Сундук потерян" : "Только алмаз", x + 56, 378, 124, 24, 16, Muted);
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
-            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПеред ударом: один бесплатный обмен.\nНажми две разные кирки, затем «Копать».\nОбмен и бросок сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n12 ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
+            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
             ButtonAt(modal.transform, "Продолжить добычу", 47, 783, 386, 50, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
 

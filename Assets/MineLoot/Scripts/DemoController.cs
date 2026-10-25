@@ -15,6 +15,7 @@ namespace MineLoot
         private static readonly string[] CampNames = { "ЛАГЕРЬ I", "ШТОЛЬНЯ II", "РУДНИК III", "ПРИИСК IV", "АЛМАЗНЫЙ V" };
         private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари" };
         private static readonly string[] ForgeFeatures = { "", "Печь и наковальня", "Дымоход и стойка", "Навес мастерской", "Оснащение мастера" };
+        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Острота", "Пресс жетонов", "Сокровища" };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[] picks = new Image[5];
         private readonly Text[] powers = new Text[5];
@@ -25,9 +26,9 @@ namespace MineLoot
         private System.Random random;
         private Canvas canvas;
         private RectTransform shell, rock;
-        private GameObject minePage, rollPage, modal;
+        private GameObject minePage, rollPage, workshopPage, modal;
         private Text coinLabel, ticketLabel, mineStatus, rollStatus, progressLabel, upgradeLabel, powerLabel, stratumLabel, upgradeHint;
-        private Button mineTab, rollTab, spinButton, upgradeButton;
+        private Button mineTab, rollTab, workshopTab, spinButton, upgradeButton;
         private Image ticketFill;
         private bool busy, roulette;
         private float rockPulse;
@@ -99,7 +100,7 @@ namespace MineLoot
             workshopPick.rectTransform.localScale = Vector3.one * (1 + celebrate * .12f);
             visualHealth = Mathf.MoveTowards(visualHealth, 1 - game.Progress.oreDamage / (float)game.OreHealth, dt * 4);
             visualExperience = Mathf.MoveTowards(visualExperience, game.LevelGoal == 0 ? 1 : game.LevelExperience / (float)game.LevelGoal, dt * 2);
-            visualTicket = Mathf.MoveTowards(visualTicket, game.Progress.hits / (float)MineGame.HitsPerTicket, dt * 4);
+            visualTicket = Mathf.MoveTowards(visualTicket, game.Progress.hits / (float)game.HitsRequired, dt * 4);
             oreFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 178 * visualHealth);
             experienceFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 404 * visualExperience);
             ticketFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360 * visualTicket);
@@ -174,6 +175,16 @@ namespace MineLoot
             sounds.Play("reward"); Notice("КОНТРАКТ ВЫПОЛНЕН", "+" + reward + " монет · +1 жетон"); Persist(); Flush(); Refresh();
         }
 
+        public void Purchase(UpgradeKind kind)
+        {
+            if (kind == UpgradeKind.Pickaxe) { Upgrade(); return; }
+            if (kind == UpgradeKind.Forge) { Forge(); return; }
+            if (busy || modal != null || !game.BuyUpgrade(kind)) return;
+            sounds.Play("upgrade");
+            Notice(UpgradeNames[(int)kind].ToUpperInvariant(), "Уровень " + game.UpgradeLevel(kind) + "\n" + UpgradeEffect(kind, false).Replace("\n", " · "));
+            Persist(); Flush(); Refresh();
+        }
+
         private void Notice(string title, string detail)
         {
             noticeTitle.text = title; noticeDetail.text = detail; noticeTime = 2.7f;
@@ -199,15 +210,24 @@ namespace MineLoot
 
         public void ShowPage(bool showRoulette)
         {
+            SelectPage(showRoulette ? 1 : 0);
+        }
+
+        public void ShowWorkshop() => SelectPage(2);
+
+        private void SelectPage(int page)
+        {
             if (busy) return;
             holding = false;
-            roulette = showRoulette; minePage.SetActive(!roulette); rollPage.SetActive(roulette);
-            mineTab.image.color = roulette ? Panel : Hex("a4c975");
+            roulette = page == 1;
+            minePage.SetActive(page == 0); rollPage.SetActive(roulette); workshopPage.SetActive(page == 2);
+            mineTab.image.color = page == 0 ? Hex("a4c975") : Panel;
             rollTab.image.color = roulette ? Hex("a4c975") : Panel;
+            workshopTab.image.color = page == 2 ? Hex("a4c975") : Panel;
             mineTab.GetComponentInChildren<Text>().color = Ink;
             rollTab.GetComponentInChildren<Text>().color = Ink;
-            mineNavMark.enabled = !roulette; rollNavMark.enabled = roulette;
-            stage.gameObject.SetActive(!roulette); shaft.gameObject.SetActive(roulette);
+            mineNavMark.enabled = page == 0; rollNavMark.enabled = roulette; workshopNavMark.enabled = page == 2;
+            stage.gameObject.SetActive(page == 0); shaft.gameObject.SetActive(roulette);
         }
 
         public void Spin()
@@ -221,7 +241,7 @@ namespace MineLoot
         private void StartRoll(Func<double> draw)
         {
             if (busy || modal != null) return;
-            if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (MineGame.HitsPerTicket - game.Progress.hits) + " ударов"; return; }
+            if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (game.HitsRequired - game.Progress.hits) + " ударов"; return; }
             if (!game.BeginRoll(draw)) return;
             busy = true;
             selectedPick = -1;
@@ -248,8 +268,9 @@ namespace MineLoot
         {
             busy = true; RollPhase = "choice"; SettledReels = 5; selectedPick = -1;
             ShowPendingPicks();
-            rollGain.text = game.Progress.pendingSwapUsed ? "ОБМЕН УЖЕ ПРИМЕНЁН" : game.CanSwap ? "ОДИН БЕСПЛАТНЫЙ ОБМЕН" : "КИРКИ ГОТОВЫ К ДОБЫЧЕ";
-            rollStatus.text = game.Progress.pendingSwapUsed ? "Копай · новый жетон не нужен" : game.CanSwap ? "Нажми две разные кирки или копай сразу" : "Можно копать · новый жетон не нужен";
+            if (game.Progress.pendingSwapLimit == 0) { CommitPicks(); return; }
+            rollGain.text = "ОБМЕНЫ: " + game.SwapsRemaining + " / " + game.Progress.pendingSwapLimit;
+            rollStatus.text = game.CanSwap ? "Нажми две разные кирки или копай сразу" : "Можно копать · новый жетон не нужен";
             rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("pick4");
             Refresh();
         }
@@ -299,7 +320,7 @@ namespace MineLoot
         private IEnumerator AnimateExchange(int first, int second)
         {
             rollGain.text = "МЕНЯЕМ КИРКИ МЕСТАМИ";
-            rollStatus.text = "Обмен применён · дополнительной платы нет";
+            rollStatus.text = "Обмен применён · осталось: " + game.SwapsRemaining;
             var start = ReelHome(first); var end = ReelHome(second);
             picks[first].transform.SetParent(rollPage.transform, false);
             picks[second].transform.SetParent(rollPage.transform, false);
@@ -577,7 +598,7 @@ namespace MineLoot
             ticketLabel.text = game.Progress.tickets.ToString("N0");
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
             powerLabel.text = "+" + game.ClickPower + " за удар";
-            progressLabel.text = game.Progress.hits + " / " + MineGame.HitsPerTicket;
+            progressLabel.text = game.Progress.hits + " / " + game.HitsRequired;
             levelLabel.text = "ШАХТЁР · УР. " + game.MinerLevel;
             stageBadge.text = game.LevelGoal == 0 ? "МАКС. УРОВЕНЬ" : game.LevelExperience + "/" + game.LevelGoal + " ОПЫТА";
             if (previousLevel != game.MinerLevel) { previousLevel = game.MinerLevel; visualExperience = 0; }
@@ -628,7 +649,13 @@ namespace MineLoot
                 pickBorders[c].enabled = AwaitingPickChoice && selectedPick == c;
                 if (AwaitingPickChoice) picks[c].rectTransform.localScale = Vector3.one * (selectedPick == c ? 1.1f : 1);
             }
-            mineTab.interactable = rollTab.interactable = !busy;
+            mineTab.interactable = rollTab.interactable = workshopTab.interactable = !busy;
+            RefreshWorkshop();
+            if (!busy && RollPhase == "idle")
+            {
+                rollGain.text = game.Progress.swapLevel == 0 ? "ОБМЕН В ПРОКАЧКЕ" : "ПЕРЕСТАНОВКА · УР. " + game.Progress.swapLevel;
+                rollStatus.text = game.Progress.swapLevel == 0 ? "Открой в мастерской с уровня 3" : "До " + game.Progress.swapLevel + " обменов кирок перед ударом";
+            }
             string biome = new[] { "Мшистые штольни", "Кристальный грот", "Угольные недра" }[game.Biome];
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;
             floorHint.text = "Прочность " + game.Hardness;

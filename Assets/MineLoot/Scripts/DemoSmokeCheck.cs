@@ -120,19 +120,15 @@ namespace MineLoot
             Check(demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Double spin blocked");
             float deadline = Time.realtimeSinceStartup + 8;
             int settled = 0;
-            while (demo.IsBusy && !demo.AwaitingPickChoice && Time.realtimeSinceStartup < deadline)
+            while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
             {
                 Check(demo.SettledReels >= settled, "Reels stop in one direction"); settled = demo.SettledReels;
+                Check(!demo.AwaitingPickChoice, "Unpurchased exchange never opens the choice phase");
+                if (demo.RollPhase == "reels") Check(demo.Game.Progress.coins == coinsBeforeSpin && demo.Game.Progress.depths[0] == 0, "Locked draw still waits for reels before committing damage");
                 yield return null;
             }
-            Check(demo.AwaitingPickChoice && demo.SettledReels == 5 && demo.Game.Progress.coins == coinsBeforeSpin, "Reels await the player's choice without awarding coins");
-            for (int c = 0; c < 5; c++) Check(demo.Game.Progress.depths[c] == 0, "No strike before confirmation");
-            CheckLayout(); Capture("unity-roulette-choice.png");
-            Click("ЗАПУСТИТЬ КИРКИ");
             int[] committed = (int[])demo.Game.Progress.depths.Clone();
-            demo.Spin();
-            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Confirm and repeated click never charge a second ticket");
-            while (demo.IsBusy && Time.realtimeSinceStartup < deadline) yield return null;
+            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.swapLevel == 0 && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Unpurchased exchange resolves automatically with one ticket");
             Check(!demo.IsBusy, "Animation completes");
             Check(demo.SettledReels == 5 && demo.RollPhase == "result", "All five reels settle before final reward");
             int remaining = 25; foreach (int depth in committed) remaining -= depth;
@@ -153,6 +149,7 @@ namespace MineLoot
             Click("Claim contract");
             Check(demo.Game.Progress.claimedContracts == 1 && demo.Game.Progress.coins == previousCoins + 100, "Claim once");
             yield return new WaitForSecondsRealtime(.3f);
+            yield return VerifyWorkshop(demo, stage, shaft);
             // Exercise a later biome and partial block damage in the same built player.
             demo.Game.Progress.stratum = 4;
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
@@ -212,7 +209,7 @@ namespace MineLoot
             Check(demo.Game.IsComplete && !demo.Game.IsPerfect && shaft.OpenChests == 0 && shaft.VisibleBlocks == 5 && demo.Game.Progress.tickets == 1, "Bedrock stops diamonds and loses all chests without ticket refund");
             CheckLayout(); Capture("unity-roulette-bedrock.png");
             // A controlled last-ticket draw tests real pointer input, exchange animation and reload.
-            demo.RestoreForSmoke(new MineProgress { boardSeed = 17, tickets = 1, coins = 0, depths = new[] { 0, 0, 0, 3, 0 } });
+            demo.RestoreForSmoke(new MineProgress { swapLevel = 1, boardSeed = 17, tickets = 1, coins = 0, depths = new[] { 0, 0, 0, 3, 0 } });
             demo.ShowPage(true); int exchangeDraws = 0;
             demo.SpinForSmoke(() => ++exchangeDraws == 1 ? .99 : 0);
             yield return RecordRoll(demo, "roulette-exchange", true);
@@ -251,9 +248,10 @@ namespace MineLoot
                 CheckLayout();
                 Capture("unity-" + size.x + "x" + size.y + ".png");
                 demo.ShowPage(true); yield return null; CheckLayout();
+                demo.ShowWorkshop(); yield return null; CheckLayout(); Capture("unity-workshop-" + size.x + "x" + size.y + ".png");
                 demo.ShowPage(false); yield return null;
             }
-            demo.RestoreForSmoke(new MineProgress { tickets = 1 });
+            demo.RestoreForSmoke(new MineProgress { swapLevel = 1, tickets = 1 });
             demo.ShowPage(true); int layoutDraws = 0;
             demo.SpinForSmoke(() => ++layoutDraws == 2 ? .99 : 0);
             deadline = Time.realtimeSinceStartup + 5;
@@ -266,7 +264,7 @@ namespace MineLoot
                 Click("Reel 0");
                 Check(demo.SelectedPick == 0 && demo.AwaitingPickChoice, "Choice selection works at " + size);
                 Click("Reel 0");
-                Check(demo.SelectedPick == -1 && !demo.Game.Progress.pendingSwapUsed, "Deselect keeps the exchange available at " + size);
+                Check(demo.SelectedPick == -1 && demo.Game.Progress.pendingSwapCount == 0, "Deselect keeps the exchange available at " + size);
                 Capture("unity-choice-" + size.x + "x" + size.y + ".png");
             }
             demo.Spin(); yield return FinishRoll(demo); demo.ShowPage(false);
@@ -277,6 +275,65 @@ namespace MineLoot
             File.WriteAllText(Path.Combine(output, "runtime-check.json"), "{\"result\":\"" + (errors == 0 ? "PASS" : "FAIL") + "\",\"errors\":" + errors + ",\"unity\":\"" + Application.unityVersion + "\"}");
             Debug.Log("MINE_LOOT_RUNTIME_CHECK: " + (errors == 0 ? "PASS" : "FAIL"));
             Application.Quit(errors == 0 ? 0 : 1);
+        }
+
+        private IEnumerator VerifyWorkshop(DemoController demo, VoxelStage stage, VoxelStage shaft)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            demo.RestoreForSmoke(new MineProgress()); Click("МАСТЕРСКАЯ");
+            Check(!stage.gameObject.activeSelf && !shaft.gameObject.activeSelf && !FindButton("Buy Swap").interactable, "Workshop opens with exchange locked and both world cameras asleep");
+            CheckLayout(); Capture("unity-workshop-locked.png");
+            demo.Purchase(UpgradeKind.Swap);
+            Check(demo.Game.Progress.swapLevel == 0 && demo.Game.Progress.coins == 80, "Locked purchase cannot spend the starter wallet");
+            demo.RestoreForSmoke(new MineProgress { coins = 599, experience = MineGame.ExperienceForLevel(3) });
+            demo.ShowWorkshop(); Check(!FindButton("Buy Swap").interactable, "Unlocked level still requires the full price");
+            demo.Game.Progress.coins = 600; demo.ToggleSound();
+            Click("Buy Swap");
+            Check(demo.Game.Progress.swapLevel == 1 && demo.Game.Progress.coins == 0 && !FindButton("Buy Swap").interactable, "UI buys the permanent first exchange once and shows the next level gate");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress))); demo.ShowWorkshop();
+            CheckLayout(); Capture("unity-workshop-unlock.png");
+            demo.RestoreForSmoke(new MineProgress { coins = 5000, swapLevel = 1, hits = 11, experience = MineGame.ExperienceForLevel(6) });
+            demo.ShowWorkshop(); int tickets = demo.Game.Progress.tickets;
+            Click("Buy Efficiency"); Click("Buy Press"); Click("Buy Treasure");
+            Check(demo.Game.MiningDamage == 2 && demo.Game.HitsRequired == 11 && demo.Game.ChestReward == 69 && demo.Game.Progress.coins == 3350 && demo.Game.Progress.tickets == tickets + 1, "Workshop purchases change damage, ticket cadence and chest reward at their listed prices");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress))); demo.ShowWorkshop();
+            Check(demo.Game.Progress.swapLevel == 1 && demo.Game.Progress.efficiencyLevel == 1 && demo.Game.Progress.pressLevel == 1 && demo.Game.Progress.treasureLevel == 1, "All workshop branches survive presentation reload");
+            CheckLayout(); Capture("unity-workshop.png");
+            demo.ShowPage(false);
+            bool correctCadence = false;
+            foreach (var text in GetComponentsInChildren<Text>(false)) if (text.text == "0 / 11") correctCadence = true;
+            Check(correctCadence, "Mining UI displays the upgraded ticket interval");
+
+            demo.RestoreForSmoke(new MineProgress { coins = 9600, swapLevel = 2, experience = MineGame.ExperienceForLevel(15) });
+            demo.ShowWorkshop(); Click("Buy Swap");
+            Check(demo.Game.Progress.swapLevel == 3 && demo.Game.Progress.coins == 0 && !FindButton("Buy Swap").interactable, "Third exchange is purchased and capped through the real button");
+            demo.ShowPage(true); int draw = 0; double[] samples = { .99, 0, .6, 0, 0 };
+            demo.Game.Progress.tickets = 1;
+            demo.SpinForSmoke(() => samples[draw++]); yield return WaitForChoice(demo);
+            Check(demo.Game.SwapsRemaining == 3 && demo.Game.Progress.tickets == 0, "Purchased exchange allowance works on the last ticket");
+            for (int swap = 0; swap < 3; swap++)
+            {
+                Click("Reel " + swap); Click("Reel " + (swap + 1));
+                yield return WaitForChoice(demo);
+                demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+                Check(demo.Game.SwapsRemaining == 2 - swap && demo.Game.Progress.pendingSwapCount == swap + 1 && demo.Game.Progress.pendingTypes[swap + 1] == 4, "Reload preserves each arranged pick and remaining allowance " + swap);
+            }
+            Check(!FindButton("Reel 0").interactable && !demo.Game.CanSwap, "No fourth exchange can be selected");
+            CheckLayout(); Capture("unity-roulette-swap3.png");
+            demo.Spin(); yield return FinishRoll(demo);
+            Check(demo.Game.Progress.tickets == 0 && !demo.Game.HasPendingRoll, "Three exchanges confirm without another ticket");
+            demo.RestoreForSmoke(new MineProgress { coins = 8000, upgradeLevel = 100, forgeLevel = 10, swapLevel = 3, efficiencyLevel = 10, pressLevel = 6, treasureLevel = 10, experience = MineGame.ExperienceForLevel(50) });
+            demo.ShowWorkshop();
+            foreach (var kind in Enum.GetValues(typeof(UpgradeKind))) Check(!FindButton("Buy " + kind).interactable, "Capped workshop action is disabled: " + kind);
+            CheckLayout(); Capture("unity-workshop-max.png");
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+        }
+
+        private IEnumerator WaitForChoice(DemoController demo)
+        {
+            float deadline = Time.realtimeSinceStartup + 5;
+            while (demo.IsBusy && !demo.AwaitingPickChoice && Time.realtimeSinceStartup < deadline) yield return null;
+            Check(demo.AwaitingPickChoice, "Purchased exchange returns to the choice phase");
         }
 
         private IEnumerator VerifyDevelopment(DemoController demo, VoxelStage stage)
@@ -371,8 +428,8 @@ namespace MineLoot
                     {
                         Check(demo.Game.Progress.coins == 0 && demo.Game.Progress.tickets == 0 && demo.Game.Progress.depths[3] == 3, "Last ticket is spent but the exposed obsidian has not been hit");
                         demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
-                        Check(demo.AwaitingPickChoice && demo.Game.Progress.pendingTypes[0] == 4 && demo.Game.Progress.pendingTypes[3] == 1 && !demo.Game.Progress.pendingSwapUsed, "Reload returns to the same unused paid draw");
-                        CheckLayout(); Capture("unity-roulette-exchange-before.png");
+                        Check(demo.AwaitingPickChoice && demo.Game.Progress.pendingTypes[0] == 4 && demo.Game.Progress.pendingTypes[3] == 1 && demo.Game.Progress.pendingSwapCount == 0, "Reload returns to the same unused paid draw");
+                        CheckLayout(); Capture("unity-roulette-choice.png"); Capture("unity-roulette-exchange-before.png");
                         Click("Reel 3");
                         Check(demo.SelectedPick == 3, "First pointer click selects an active pick");
                         Button target = FindButton("Reel 0");
@@ -385,7 +442,7 @@ namespace MineLoot
                     else if (exchangeStage == 1 && choiceFrames == 7)
                     {
                         Click("Reel 0");
-                        Check(demo.RollPhase == "exchange" && demo.Game.Progress.pendingSwapUsed && demo.Game.Progress.pendingTypes[3] == 4 && demo.Game.Progress.pendingTypes[0] == 1, "Second pointer click saves the exchange before animation");
+                        Check(demo.RollPhase == "exchange" && demo.Game.Progress.pendingSwapCount == 1 && demo.Game.Progress.pendingTypes[3] == 4 && demo.Game.Progress.pendingTypes[0] == 1, "Second pointer click saves the exchange before animation");
                         demo.Spin();
                         Check(demo.Game.HasPendingRoll && demo.Game.Progress.tickets == 0 && demo.Game.Progress.depths[3] == 3, "Confirmation is blocked while picks exchange places");
                         choiceFrames = 0; exchangeStage = 2;
@@ -393,7 +450,7 @@ namespace MineLoot
                     else if (exchangeStage == 2 && choiceFrames == 7)
                     {
                         demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
-                        Check(demo.AwaitingPickChoice && demo.Game.Progress.pendingSwapUsed && demo.Game.Progress.pendingTypes[3] == 4 && !FindButton("Reel 0").interactable, "Reload retains the arranged picks and disables a second exchange");
+                        Check(demo.AwaitingPickChoice && demo.Game.Progress.pendingSwapCount == 1 && demo.Game.Progress.pendingTypes[3] == 4 && !FindButton("Reel 0").interactable, "Reload retains the arranged picks and disables a second exchange");
                         demo.SelectPick(1); Check(demo.SelectedPick == -1, "Used exchange rejects further selection");
                         CheckLayout(); Capture("unity-roulette-exchange-after.png");
                         Click("ЗАПУСТИТЬ КИРКИ");
