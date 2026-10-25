@@ -8,7 +8,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 6;
+        public int version = 7;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -34,6 +34,7 @@ namespace MineLoot
         public bool pendingNewStratum;
         public int swapLevel, efficiencyLevel, pressLevel, treasureLevel;
         public int pendingSwapLimit, pendingSwapCount;
+        public int milestoneClaims;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -51,6 +52,27 @@ namespace MineLoot
         private static readonly int[] OreRewards = { 12, 28, 55, 95, 150 };
         private static readonly string[] OreKeys = { "coal", "iron", "gold", "diamond", "emerald" };
         private static readonly int[] OreCycle = { 0, 1, 0, 2, 1, 0, 3, 1, 2, 0, 4, 2 };
+        // Stable order: each index is a saved claim bit. Append new goals instead of reordering.
+        private static readonly Milestone[] Milestones = {
+            new Milestone("Первые искры", "Нанеси 30 ударов по руде", "pick1", 30, 120, 1),
+            new Milestone("Каменолом", "Добудь 10 блоков руды", "tile-coal", 10, 180, 1),
+            new Milestone("Искатель удачи", "Сделай 5 бросков рулетки", "ticket", 5, 240, 1),
+            new Milestone("Железный век", "Улучши кирку до уровня 5", "pick2", 5, 300, 1),
+            new Milestone("Проходчик", "Разбей 50 блоков рулетки", "tile-iron", 50, 400, 2),
+            new Milestone("Алмазная жила", "Достигни уровня шахтёра 7", "tile-diamond", 7, 500, 2),
+            new Milestone("Первый манёвр", "Купи перестановку кирок", "swap", 1, 200, 1),
+            new Milestone("Верный удар", "Подними остроту до 3", "pick-head2", 3, 600, 2),
+            new Milestone("Новый горизонт", "Доберись до пласта 10", "tile-gold", 10, 800, 2),
+            new Milestone("Мастер кузницы", "Улучши кузницу до 6", "forge", 6, 1000, 2),
+            new Milestone("Поток жетонов", "Улучши пресс до 3", "ticket", 3, 900, 2),
+            new Milestone("Кристальная кирка", "Улучши кирку до уровня 20", "pick4", 20, 1500, 3),
+            new Milestone("Охотник за кладом", "Подними сокровища до 5", "chest", 5, 1400, 3),
+            new Milestone("Хранитель реликвий", "Собери 3 реликвии", "tile-emerald", 3, 1200, 3),
+            new Milestone("Опытный шахтёр", "Достигни уровня шахтёра 25", "pick-gold", 25, 1800, 3),
+            new Milestone("Легенда шахты", "Достигни уровня шахтёра 50", "medal", 50, 3000, 5)
+        };
+        public static int MilestoneCount => Milestones.Length;
+        public static Milestone MilestoneAt(int index) => Milestones[index];
         public MineProgress Progress { get; }
         public MineHit LastHit { get; private set; }
         public int MinerLevel => LevelForExperience(Progress.experience);
@@ -118,7 +140,8 @@ namespace MineLoot
             bool legacyBoard = Progress.version < 4;
             bool legacyRoll = Progress.version < 5;
             bool legacyUpgrades = Progress.version < 6;
-            Progress.version = 6;
+            Progress.version = 7;
+            Progress.milestoneClaims = Math.Max(0, Progress.milestoneClaims) & ((1 << MilestoneCount) - 1);
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
             Progress.tickets = Math.Max(0, Math.Min(1000000, Progress.tickets));
             Progress.swapLevel = Math.Max(0, Math.Min(3, Progress.swapLevel));
@@ -306,6 +329,50 @@ namespace MineLoot
             return true;
         }
 
+        public long MilestoneValue(int index)
+        {
+            long value;
+            switch (index)
+            {
+                case 0: value = Progress.totalClicks; break;
+                case 1: value = Progress.oresMined; break;
+                case 2: value = Progress.totalRolls; break;
+                case 3: case 11: value = Progress.upgradeLevel; break;
+                case 4: value = Progress.totalBlocks; break;
+                case 5: case 14: case 15: value = MinerLevel; break;
+                case 6: value = Progress.swapLevel; break;
+                case 7: value = Progress.efficiencyLevel; break;
+                case 8: value = Progress.stratum; break;
+                case 9: value = Progress.forgeLevel; break;
+                case 10: value = Progress.pressLevel; break;
+                case 12: value = Progress.treasureLevel; break;
+                case 13: value = Relics; break;
+                default: throw new ArgumentOutOfRangeException(nameof(index));
+            }
+            return Math.Min(Milestones[index].target, value);
+        }
+
+        public bool MilestoneClaimed(int index) => index >= 0 && index < MilestoneCount && (Progress.milestoneClaims & (1 << index)) != 0;
+        public bool CanClaimMilestone(int index) => index >= 0 && index < MilestoneCount && !HasPendingRoll && !MilestoneClaimed(index) && MilestoneValue(index) >= Milestones[index].target;
+        public int ClaimedMilestones
+        {
+            get { int count = 0; for (int i = 0; i < MilestoneCount; i++) if (MilestoneClaimed(i)) count++; return count; }
+        }
+        public int ReadyMilestones
+        {
+            get { int count = 0; for (int i = 0; i < MilestoneCount; i++) if (CanClaimMilestone(i)) count++; return count; }
+        }
+
+        public bool ClaimMilestone(int index)
+        {
+            if (!CanClaimMilestone(index)) return false;
+            // Persisted by the controller together with the reward, before presentation.
+            Progress.milestoneClaims |= 1 << index;
+            AddCoins(Milestones[index].coins);
+            Progress.tickets = Math.Min(1000000, Progress.tickets + Milestones[index].tickets);
+            return true;
+        }
+
         public static int PickPower(double sample, int forgeLevel = 0)
         {
             if (double.IsNaN(sample) || sample < 0 || sample >= 1) throw new ArgumentOutOfRangeException(nameof(sample));
@@ -458,6 +525,17 @@ namespace MineLoot
         public RollResult Roll(Func<double> random) => BeginRoll(random) ? ResolveRoll() : null;
 
         private void AddCoins(long value) => Progress.coins = Math.Min(CoinLimit, Progress.coins + value);
+    }
+
+    public readonly struct Milestone
+    {
+        public readonly string title, detail, icon;
+        public readonly int target, coins, tickets;
+        public Milestone(string title, string detail, string icon, int target, int coins, int tickets)
+        {
+            this.title = title; this.detail = detail; this.icon = icon;
+            this.target = target; this.coins = coins; this.tickets = tickets;
+        }
     }
 
     public struct MineHit

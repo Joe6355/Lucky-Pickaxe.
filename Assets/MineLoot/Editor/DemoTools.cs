@@ -28,7 +28,7 @@ public static class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.10.0";
+        PlayerSettings.bundleVersion = "0.11.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -94,7 +94,7 @@ public static class DemoTools
         game.Roll(() => 0);
         Check(game.Relics == 1 && game.ClickPower == 9, "Three floors grant permanent relic");
         var legacy = new MineGame(ProgressStore.Decode("{\"version\":1,\"coins\":1240,\"tickets\":3,\"hits\":4,\"upgradeLevel\":2,\"stratum\":4,\"depths\":[1,2,3,4,5]}"));
-        Check(legacy.Progress.version == 6 && legacy.Progress.boardSeed == 0 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress without inserting hazards");
+        Check(legacy.Progress.version == 7 && legacy.Progress.boardSeed == 0 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress without inserting hazards");
         game = new MineGame();
         for (int i = 0; i < 5; i++) game.Mine();
         Check(game.Progress.oreDamage == 5 && game.Progress.oresMined == 0 && game.Progress.experience == 5, "Ore accumulates damage and click experience");
@@ -151,6 +151,7 @@ public static class DemoTools
         VerifyRiskRules(Check);
         VerifyExchangeRules(Check);
         VerifyUpgradeRules(Check);
+        VerifyMilestoneRules(Check);
         Directory.CreateDirectory("Logs");
         File.WriteAllText("Logs/rules-check.json", "{\"result\":\"PASS\",\"assertions\":" + assertions + ",\"unity\":\"" + Application.unityVersion + "\"}");
         Debug.Log("MINE_LOOT_RULES: PASS (" + assertions + " assertions)");
@@ -277,7 +278,7 @@ public static class DemoTools
         check(restored.Progress.stratum == 2 && restored.Progress.pendingNewStratum && restored.Progress.boardSeed == seed && restored.Progress.tickets == 0, "New-floor seed and spent last ticket survive pending reload");
         check(restored.ResolveRoll().newStratum && restored.Progress.stratum == 2, "Restoring a pending new floor cannot advance twice");
         var v4 = new MineGame(ProgressStore.Decode("{\"version\":4,\"boardSeed\":17,\"tickets\":7,\"coins\":123,\"depths\":[1,2,2,3,4],\"damage\":[0,0,0,1,0],\"lostColumns\":[false,false,true,false,false]}"));
-        check(v4.Progress.version == 6 && !v4.HasPendingRoll && v4.Progress.boardSeed == 17 && v4.Progress.lostColumns[2] && v4.Progress.damage[3] == 1 && v4.Progress.coins == 123 && v4.Progress.tickets == 7, "v4 migration preserves hazards, losses and partial damage");
+        check(v4.Progress.version == 7 && !v4.HasPendingRoll && v4.Progress.boardSeed == 17 && v4.Progress.lostColumns[2] && v4.Progress.damage[3] == 1 && v4.Progress.coins == 123 && v4.Progress.tickets == 7, "v4 migration preserves hazards, losses and partial damage");
         string key = "LuckyPickaxe.Exchange.Tests." + Guid.NewGuid().ToString("N");
         try
         {
@@ -326,7 +327,7 @@ public static class DemoTools
         foreach (bool used in new[] { false, true })
         {
             var legacy = new MineGame(ProgressStore.Decode("{\"version\":5,\"coins\":125,\"tickets\":1,\"rollPending\":true,\"pendingTypes\":[1,4,1,1,1],\"pendingSwapUsed\":" + (used ? "true" : "false") + "}"));
-            check(legacy.Progress.version == 6 && legacy.Progress.swapLevel == 0 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 1 && legacy.SwapsRemaining == (used ? 0 : 1), "v5 paid draw keeps only its previously available exchange");
+            check(legacy.Progress.version == 7 && legacy.Progress.swapLevel == 0 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 1 && legacy.SwapsRemaining == (used ? 0 : 1), "v5 paid draw keeps only its previously available exchange");
             legacy = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(legacy.Progress)));
             check(legacy.SwapsRemaining == (used ? 0 : 1), "Repeated migration load cannot renew spent exchanges");
             legacy.ResolveRoll(); legacy.BeginRoll(() => .6);
@@ -364,13 +365,58 @@ public static class DemoTools
         check(invalid, "Malformed exchange counters are rejected for backup recovery");
     }
 
+    private static void VerifyMilestoneRules(Action<bool, string> check)
+    {
+        var game = new MineGame();
+        check(game.ClaimedMilestones == 0 && game.ReadyMilestones == 0 && !game.ClaimMilestone(0), "Fresh goals cannot pay before completion");
+        check(!game.ClaimMilestone(-1) && !game.ClaimMilestone(MineGame.MilestoneCount), "Invalid goal indices never change progress");
+        for (int i = 0; i < 29; i++) game.Mine();
+        check(game.MilestoneValue(0) == 29 && !game.CanClaimMilestone(0), "Thirty-hit goal has an exact completion threshold");
+        game.Mine(); long before = game.Progress.coins; int tickets = game.Progress.tickets; long experience = game.Progress.experience;
+        check(game.CanClaimMilestone(0) && game.ClaimMilestone(0) && game.Progress.coins == before + 120 && game.Progress.tickets == tickets + 1, "Goal pays its listed reward only when explicitly claimed");
+        var restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        check(restored.MilestoneClaimed(0) && !restored.ClaimMilestone(0) && restored.Progress.coins == game.Progress.coins && restored.Progress.experience == experience, "Claim survives reload without duplicate coins, tickets or experience");
+        game = new MineGame(new MineProgress { coins = 0, tickets = 1, totalClicks = 30, totalBlocks = 50 });
+        game.BeginRoll(() => .6); int claims = game.Progress.milestoneClaims;
+        check(!game.ClaimMilestone(0) && !game.ClaimMilestone(4) && game.ReadyMilestones == 0 && game.Progress.coins == 0 && game.Progress.milestoneClaims == claims, "Goals cannot pay during a pending draw");
+        game.ResolveRoll();
+        check(game.CanClaimMilestone(0) && game.CanClaimMilestone(4) && game.Progress.milestoneClaims == 0, "Resolving a draw restores claim availability without automatic rewards");
+        var legacy = new MineGame(ProgressStore.Decode("{\"version\":6,\"coins\":745,\"tickets\":4,\"totalClicks\":36,\"swapLevel\":2,\"efficiencyLevel\":3,\"pressLevel\":2,\"treasureLevel\":4,\"hits\":8,\"experience\":1000}"));
+        check(legacy.Progress.version == 7 && legacy.Progress.coins == 745 && legacy.Progress.tickets == 4 && legacy.Progress.hits == 8 && legacy.Progress.swapLevel == 2 && legacy.Progress.efficiencyLevel == 3 && legacy.Progress.pressLevel == 2 && legacy.Progress.treasureLevel == 4, "v6 migration preserves the wallet and every purchased branch");
+        check(legacy.ClaimedMilestones == 0 && legacy.CanClaimMilestone(0) && legacy.MilestoneValue(0) == 30, "Existing lifetime progress counts toward unclaimed goals without automatic payouts");
+        legacy = new MineGame(ProgressStore.Decode("{\"version\":6,\"coins\":125,\"tickets\":0,\"totalClicks\":30,\"swapLevel\":2,\"rollPending\":true,\"pendingTypes\":[4,1,2,1,1],\"pendingSwapLimit\":2,\"pendingSwapCount\":1}"));
+        check(legacy.HasPendingRoll && legacy.Progress.version == 7 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 0 && legacy.Progress.swapLevel == 2 && legacy.SwapsRemaining == 1 && legacy.Progress.pendingTypes[0] == 4 && !legacy.ClaimMilestone(0), "v6 paid draw keeps its fixed picks, spent last ticket and remaining purchased exchange");
+        legacy = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(legacy.Progress)));
+        check(legacy.SwapsRemaining == 1 && legacy.ClaimedMilestones == 0 && legacy.ResolveRoll() != null && legacy.ResolveRoll() == null && legacy.CanClaimMilestone(0), "Repeated v7 reload cannot renew the migrated exchange budget or resolve its draw twice");
+        game = new MineGame(new MineProgress { coins = 0, tickets = 0, totalClicks = 30, oresMined = 10, totalRolls = 5, upgradeLevel = 20, totalBlocks = 50, experience = MineGame.ExperienceForLevel(50), swapLevel = 1, efficiencyLevel = 3, stratum = 10, forgeLevel = 6, pressLevel = 3, treasureLevel = 5 });
+        check(game.ReadyMilestones == 16 && game.Relics == 3, "Lifetime and workshop milestones all use existing progression counters");
+        for (int i = 0; i < MineGame.MilestoneCount; i++)
+        {
+            var goal = MineGame.MilestoneAt(i);
+            check(game.MilestoneValue(i) == goal.target && game.ClaimMilestone(i), "Each completed goal can be claimed: " + i);
+            game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+            check(game.MilestoneClaimed(i) && !game.CanClaimMilestone(i) && !game.ClaimMilestone(i), "Each claim remains spent through reload: " + i);
+        }
+        check(game.ClaimedMilestones == 16 && game.ReadyMilestones == 0 && game.Progress.coins == 14140 && game.Progress.tickets == 34, "Complete book has a bounded lifetime reward of 14140 coins and 34 tickets");
+        string key = "LuckyPickaxe.Milestones.Tests." + Guid.NewGuid().ToString("N");
+        try
+        {
+            ProgressStore.Save(game, key); PlayerPrefs.SetString(key, "not-json"); restored = ProgressStore.Load(key);
+            check(restored.Progress.milestoneClaims == 65535 && restored.Progress.coins == 14140 && restored.Progress.tickets == 34 && !restored.ClaimMilestone(15), "Backup recovery preserves paid goal claims and prevents double rewards");
+        }
+        finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
+        check(new MineGame(new MineProgress { milestoneClaims = -1 }).ClaimedMilestones == 0 && new MineGame(new MineProgress { milestoneClaims = (1 << 23) | 1 }).Progress.milestoneClaims == 1, "Save validation removes negative claims and unknown future bits");
+        game = new MineGame(new MineProgress { coins = MineGame.CoinLimit, tickets = 1000000, totalClicks = long.MaxValue });
+        check(game.MilestoneValue(0) == 30 && game.ClaimMilestone(0) && game.Progress.coins == MineGame.CoinLimit && game.Progress.tickets == 1000000, "Goal progress display and rewards respect existing currency caps");
+    }
+
     [MenuItem("Mine Loot/Simulate balance")]
     public static void SimulateBalance()
     {
         const int runs = 100;
-        var rows = new System.Text.StringBuilder("strategy,seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks,zero_rewards,lost_chests,reroutes,exchanges,swap_level,efficiency_level,press_level,treasure_level\n");
+        var rows = new System.Text.StringBuilder("strategy,seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks,zero_rewards,lost_chests,reroutes,exchanges,swap_level,efficiency_level,press_level,treasure_level,milestones\n");
         int[] checkpoints = { 60, 300, 600, 1200 };
-        var sums = new double[2, 4, 9];
+        var sums = new double[2, 4, 10];
         var totalMisses = new int[2]; var totalLosses = new int[2]; var totalReroutes = new int[2]; var totalExchanges = new int[2];
         for (int run = 0; run < runs * 2; run++)
         {
@@ -384,6 +430,7 @@ public static class DemoTools
                 {
                     for (int tap = 0; tap < 6; tap++) game.Mine();
                     if (game.CanClaim) game.ClaimContract();
+                    for (int goal = 0; goal < MineGame.MilestoneCount; goal++) game.ClaimMilestone(goal);
                     if (strategy == 0 || !BuyAdditionalUpgrade(game))
                     {
                         if (game.CanForge && game.Progress.forgeLevel < Math.Min(10, 2 * game.Hardness)) game.Forge();
@@ -401,11 +448,12 @@ public static class DemoTools
                 }
                 for (int i = 0; i < checkpoints.Length; i++) if (second == checkpoints[i])
                 {
-                    rows.AppendLine($"{strategy},{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks},{misses},{losses},{reroutes},{exchanges},{game.Progress.swapLevel},{game.Progress.efficiencyLevel},{game.Progress.pressLevel},{game.Progress.treasureLevel}");
+                    rows.AppendLine($"{strategy},{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks},{misses},{losses},{reroutes},{exchanges},{game.Progress.swapLevel},{game.Progress.efficiencyLevel},{game.Progress.pressLevel},{game.Progress.treasureLevel},{game.ClaimedMilestones}");
                     sums[strategy, i, 0] += game.Progress.stratum; sums[strategy, i, 1] += game.Progress.upgradeLevel; sums[strategy, i, 2] += game.Progress.forgeLevel;
                     sums[strategy, i, 3] += game.MinerLevel; sums[strategy, i, 4] += game.Progress.oresMined;
                     sums[strategy, i, 5] += game.Progress.swapLevel; sums[strategy, i, 6] += game.Progress.efficiencyLevel;
                     sums[strategy, i, 7] += game.Progress.pressLevel; sums[strategy, i, 8] += game.Progress.treasureLevel;
+                    sums[strategy, i, 9] += game.ClaimedMilestones;
                 }
             }
             if (game.Progress.stratum < 10 || game.Progress.coins < 0 || game.Progress.tickets < 0 || game.UnlockedOres != 5 || game.Progress.oreDamage >= game.OreHealth || game.HasPendingRoll) throw new Exception("Balance regression strategy " + strategy + ", seed " + seed);
@@ -414,12 +462,12 @@ public static class DemoTools
         for (int s = 0; s < 2; s++) if (totalMisses[s] == 0 || totalLosses[s] == 0 || totalReroutes[s] == 0 || s == 1 && totalExchanges[s] == 0) throw new Exception("Risk simulation has no actual losses or exchanges");
         Directory.CreateDirectory("Logs"); Directory.CreateDirectory("Docs");
         File.WriteAllText("Logs/balance-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.10\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Бот забирает контракты, предпочитает кузницу до уровня min(10, 2 × прочность), затем покупает кирку при наличии монет. После трёх розыгрышей без награды меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 покупает только кирку и кузницу, обмен закрыт. Стратегия 1 покупает новые ветки за монеты с соблюдением уровней: перестановку до 3, остроту до min(10, уровень/4), пресс до min(6, уровень/5), сокровища до min(10, уровень/5). Если новая покупка недоступна, действует базовый приоритет кузницы и кирки. Использует до купленного лимита обменов, передавая алмаз на раскрытый обсидиан. Скрытые слои бот не читает.\n");
+        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.11\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Обе стратегии забирают контракты и готовые разовые награды книги целей (не более 14140 монет и 34 жетонов за всё прохождение). Базовый приоритет покупок: кузница до уровня min(10, 2 × прочность), затем кирка при наличии монет. После трёх розыгрышей без награды бот меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 покупает только кирку и кузницу, обмен закрыт. Стратегия 1 покупает новые ветки за монеты с соблюдением уровней: перестановку до 3, остроту до min(10, уровень/4), пресс до min(6, уровень/5), сокровища до min(10, уровень/5). Если новая покупка недоступна, действует базовый приоритет кузницы и кирки. Использует до купленного лимита обменов, передавая алмаз на раскрытый обсидиан. Скрытые слои бот не читает.\n");
         for (int s = 0; s < 2; s++)
         {
             doc.Append(s == 0 ? "\n## Без обмена\n" : "\n## Все ветки прокачки\n");
-            doc.Append("\n| Минута | Средний пласт | Уровень кирки | Кузница | Уровень шахтёра | Разрушено руд |\n|---|---:|---:|---:|---:|---:|\n");
-            for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} |", checkpoints[i] / 60, sums[s, i, 0] / runs, sums[s, i, 1] / runs, sums[s, i, 2] / runs, sums[s, i, 3] / runs, sums[s, i, 4] / runs));
+            doc.Append("\n| Минута | Средний пласт | Уровень кирки | Кузница | Уровень шахтёра | Разрушено руд | Наград за цели |\n|---|---:|---:|---:|---:|---:|---:|\n");
+            for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} | {6:F1} |", checkpoints[i] / 60, sums[s, i, 0] / runs, sums[s, i, 1] / runs, sums[s, i, 2] / runs, sums[s, i, 3] / runs, sums[s, i, 4] / runs, sums[s, i, 9] / runs));
             doc.Append($"\nВсего за 100 прогонов: {totalMisses[s]} розыгрышей без монет, {totalLosses[s]} сундуков потеряно из-за бедрока, {totalReroutes[s]} смен раскладки за жетон, {totalExchanges[s]} обменов кирок.\n");
             if (s == 1)
             {
@@ -459,7 +507,7 @@ public static class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.10.0";
+        PlayerSettings.bundleVersion = "0.11.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");

@@ -150,6 +150,7 @@ namespace MineLoot
             Check(demo.Game.Progress.claimedContracts == 1 && demo.Game.Progress.coins == previousCoins + 100, "Claim once");
             yield return new WaitForSecondsRealtime(.3f);
             yield return VerifyWorkshop(demo, stage, shaft);
+            yield return VerifyMilestones(demo);
             // Exercise a later biome and partial block damage in the same built player.
             demo.Game.Progress.stratum = 4;
             Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
@@ -249,6 +250,14 @@ namespace MineLoot
                 Capture("unity-" + size.x + "x" + size.y + ".png");
                 demo.ShowPage(true); yield return null; CheckLayout();
                 demo.ShowWorkshop(); yield return null; CheckLayout(); Capture("unity-workshop-" + size.x + "x" + size.y + ".png");
+                Click("Open milestones"); yield return null;
+                for (int page = 0; page < 4; page++)
+                {
+                    CheckLayout();
+                    if (page < 3) Click("Milestones next");
+                }
+                Capture("unity-milestones-" + size.x + "x" + size.y + ".png");
+                Click("Close milestones"); yield return null;
                 demo.ShowPage(false); yield return null;
             }
             demo.RestoreForSmoke(new MineProgress { swapLevel = 1, tickets = 1 });
@@ -275,6 +284,52 @@ namespace MineLoot
             File.WriteAllText(Path.Combine(output, "runtime-check.json"), "{\"result\":\"" + (errors == 0 ? "PASS" : "FAIL") + "\",\"errors\":" + errors + ",\"unity\":\"" + Application.unityVersion + "\"}");
             Debug.Log("MINE_LOOT_RUNTIME_CHECK: " + (errors == 0 ? "PASS" : "FAIL"));
             Application.Quit(errors == 0 ? 0 : 1);
+        }
+
+        private IEnumerator VerifyMilestones(DemoController demo)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            demo.RestoreForSmoke(new MineProgress());
+            Click("Open milestones"); yield return null;
+            Check(GameObject.Find("Milestones modal") != null && !FindButton("Claim milestone 0").interactable && !FindButton("Milestones previous").interactable, "Book opens on the first page with unfinished goals locked");
+            CheckLayout(); Capture("unity-milestones-start.png");
+            Click("Close milestones"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { coins = 1000, tickets = 0, totalClicks = 30, totalBlocks = 25 });
+            Click("Open milestones"); yield return null;
+            Check(FindButton("Claim milestone 0").interactable, "Completed goal enables its real reward button");
+            long clicks = demo.Game.Progress.totalClicks;
+            demo.Mine(); demo.Upgrade(); demo.Forge(); demo.ClaimContract(); demo.ShowWorkshop();
+            Check(demo.Game.Progress.totalClicks == clicks && demo.Game.Progress.coins == 1000 && demo.Game.Progress.claimedContracts == 0 && demo.Game.Progress.upgradeLevel == 0 && demo.Game.Progress.forgeLevel == 0 && FindButton("Mine rock") != null, "Book blocks otherwise affordable background purchases, ready contracts, mining and navigation");
+            CheckLayout(); Capture("unity-milestones-ready.png");
+            Click("Claim milestone 0"); demo.ClaimMilestone(0);
+            Check(demo.Game.Progress.coins == 1120 && demo.Game.Progress.tickets == 1 && demo.Game.ClaimedMilestones == 1 && !FindButton("Claim milestone 0").interactable, "Real goal button pays once and disables duplicate claims");
+            yield return new WaitForSecondsRealtime(.2f);
+            CheckLayout(); Capture("unity-milestones-claimed.png");
+            Click("Close milestones"); yield return null;
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+            Click("Open milestones"); yield return null;
+            Check(!FindButton("Claim milestone 0").interactable && demo.Game.Progress.coins == 1120 && demo.Game.ClaimedMilestones == 1, "Book restores paid goal state without awarding it again");
+            Click("Close milestones"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { coins = 1000, tickets = 0, totalClicks = 30, oresMined = 10, totalRolls = 5, upgradeLevel = 20, totalBlocks = 50, experience = MineGame.ExperienceForLevel(50), swapLevel = 1, efficiencyLevel = 3, stratum = 10, forgeLevel = 6, pressLevel = 3, treasureLevel = 5 });
+            Click("Open milestones"); yield return null;
+            for (int page = 0; page < 4; page++)
+            {
+                CheckLayout();
+                for (int slot = 0; slot < 4; slot++) Check(FindButton("Claim milestone " + slot).interactable, "Completed goal button is ready on page " + page + ", slot " + slot);
+                if (page < 3) Click("Milestones next");
+            }
+            Check(!FindButton("Milestones next").interactable, "Last page cannot advance beyond the book");
+            Capture("unity-milestones-late.png");
+            Click("Claim milestone 3");
+            Check(demo.Game.Progress.coins == 4000 && demo.Game.Progress.tickets == 5 && demo.Game.MilestoneClaimed(15), "Last page pays the selected goal without requiring earlier claims");
+            Click("Milestones previous"); yield return null; CheckLayout();
+            Click("Close milestones"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { swapLevel = 1, totalClicks = 30 }); demo.ShowPage(true);
+            int draw = 0; demo.SpinForSmoke(() => ++draw == 2 ? .99 : 0); yield return WaitForChoice(demo);
+            demo.ShowMilestones();
+            Check(GameObject.Find("Milestones modal") == null && !demo.Game.ClaimMilestone(0), "Pending paid draw blocks both book opening and goal payouts");
+            demo.Spin(); yield return FinishRoll(demo);
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }
 
         private IEnumerator VerifyWorkshop(DemoController demo, VoxelStage stage, VoxelStage shaft)

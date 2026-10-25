@@ -148,7 +148,7 @@ namespace MineLoot
 
         public void Upgrade()
         {
-            if (busy) return;
+            if (busy || modal != null) return;
             int tier = game.PickTier;
             if (!game.Upgrade()) return;
             mineStatus.text = "Кирка улучшена! +" + game.ClickPower + " за удар";
@@ -161,7 +161,7 @@ namespace MineLoot
         public void Forge()
         {
             int previousStage = stage.ForgeStage;
-            if (busy || !game.Forge()) return;
+            if (busy || modal != null || !game.Forge()) return;
             sounds.Play("upgrade"); mineStatus.text = "Кузница: алмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus;
             Persist(); Flush(); Refresh();
             if (stage.ForgeStage > previousStage) Notice("КУЗНИЦА УЛУЧШЕНА", ForgeFeatures[stage.ForgeStage] + "\nАлмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus);
@@ -169,10 +169,18 @@ namespace MineLoot
 
         public void ClaimContract()
         {
-            if (busy) return;
+            if (busy || modal != null) return;
             int reward = game.ContractReward;
             if (!game.ClaimContract()) return;
             sounds.Play("reward"); Notice("КОНТРАКТ ВЫПОЛНЕН", "+" + reward + " монет · +1 жетон"); Persist(); Flush(); Refresh();
+        }
+
+        public void ClaimMilestone(int index)
+        {
+            if (busy || !milestoneBookOpen || !game.ClaimMilestone(index)) return;
+            var goal = MineGame.MilestoneAt(index);
+            Persist(); Flush(); Refresh(); RefreshMilestoneBook();
+            sounds.Play("reward"); Notice("ЦЕЛЬ ВЫПОЛНЕНА", goal.title + "\n+" + goal.coins + " монет · +" + goal.tickets + " жет.");
         }
 
         public void Purchase(UpgradeKind kind)
@@ -217,7 +225,7 @@ namespace MineLoot
 
         private void SelectPage(int page)
         {
-            if (busy) return;
+            if (busy || modal != null) return;
             holding = false;
             roulette = page == 1;
             minePage.SetActive(page == 0); rollPage.SetActive(roulette); workshopPage.SetActive(page == 2);
@@ -650,6 +658,9 @@ namespace MineLoot
                 if (AwaitingPickChoice) picks[c].rectTransform.localScale = Vector3.one * (selectedPick == c ? 1.1f : 1);
             }
             mineTab.interactable = rollTab.interactable = workshopTab.interactable = !busy;
+            milestoneButton.interactable = !busy;
+            milestoneButtonLabel.text = game.ReadyMilestones > 0 ? "ЦЕЛИ " + game.ReadyMilestones : "ЦЕЛИ";
+            milestoneButton.image.color = game.ReadyMilestones > 0 ? Hex("c8d981") : Hex("a8b78e");
             RefreshWorkshop();
             if (!busy && RollPhase == "idle")
             {

@@ -33,6 +33,13 @@ namespace MineLoot
         private const float ShaftWindowHeight = 417;
         private Button abandonButton;
         private Image rollRewardIcon;
+        private Button milestoneButton, milestonePrevious, milestoneNext;
+        private Text milestoneButtonLabel, milestoneSummary, milestonePageLabel;
+        private readonly Image[] milestoneIcons = new Image[4], milestoneCards = new Image[4], milestoneFills = new Image[4];
+        private readonly Text[] milestoneTitles = new Text[4], milestoneDetails = new Text[4], milestoneRewards = new Text[4], milestoneValues = new Text[4];
+        private readonly Button[] milestoneClaimButtons = new Button[4];
+        private int milestonePage;
+        private bool milestoneBookOpen;
 
         private void BuildInterface()
         {
@@ -72,7 +79,9 @@ namespace MineLoot
 
             Card(shell, "Contract card", 24, 798, 432, 73, Hex("d4ccaf"));
             Icon(shell, "ticket", 38, 818, 35, 31);
-            Label(shell, "Контракт шахтёра", 88, 806, 248, 26, 20, Ink, FontStyle.Bold);
+            Label(shell, "КОНТРАКТ", 88, 806, 153, 26, 20, Ink, FontStyle.Bold);
+            milestoneButton = ButtonAt(shell, "ЦЕЛИ", 247, 803, 96, 27, ShowMilestones, Hex("a8b78e"), Ink);
+            milestoneButton.name = "Open milestones"; milestoneButtonLabel = milestoneButton.GetComponentInChildren<Text>(); milestoneButtonLabel.fontSize = 16;
             contractDetail = Label(shell, "", 88, 836, 247, 22, 15, Muted);
             PanelAt(shell, "Contract track", Hex("7d7966"), 88, 862, 240, 4);
             contractFill = PanelAt(shell, "Contract progress", Hex("79ba45"), 88, 862, 0, 4);
@@ -317,7 +326,85 @@ namespace MineLoot
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
             Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
-            ButtonAt(modal.transform, "Продолжить добычу", 47, 783, 386, 50, () => { Destroy(modal); modal = null; }, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
+            ButtonAt(modal.transform, "Продолжить добычу", 47, 783, 386, 50, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
+        }
+
+        public void ShowMilestones()
+        {
+            if (busy || modal != null) return;
+            holding = false; milestonePage = 0;
+            int firstUnclaimed = -1, firstReady = -1;
+            for (int i = 0; i < MineGame.MilestoneCount; i++)
+            {
+                if (firstUnclaimed < 0 && !game.MilestoneClaimed(i)) firstUnclaimed = i;
+                if (firstReady < 0 && game.CanClaimMilestone(i)) firstReady = i;
+            }
+            milestonePage = Mathf.Max(0, firstReady >= 0 ? firstReady : firstUnclaimed) / 4;
+            milestoneBookOpen = true;
+            modal = MakeRect(shell, "Milestones modal", 0, 0, 480, 960).gameObject;
+            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
+            Card(modal.transform, "Milestones card", 24, 105, 432, 750, Panel);
+            Icon(modal.transform, "medal", 43, 123, 30, 30);
+            Label(modal.transform, "КНИГА ШАХТЁРА", 83, 121, 350, 34, 27, Ink, FontStyle.Bold);
+            milestoneSummary = Label(modal.transform, "", 48, 161, 384, 24, 16, Muted);
+            for (int i = 0; i < 4; i++)
+            {
+                int slot = i, y = 193 + i * 133;
+                milestoneCards[i] = Card(modal.transform, "Milestone slot " + i, 40, y, 400, 124, Hex("b1b8a6"));
+                milestoneIcons[i] = Icon(modal.transform, "medal", 52, y + 10, 34, 34);
+                milestoneTitles[i] = Label(modal.transform, "", 98, y + 6, 330, 27, 21, Ink, FontStyle.Bold);
+                milestoneDetails[i] = Label(modal.transform, "", 98, y + 33, 330, 22, 16, Muted);
+                milestoneRewards[i] = Label(modal.transform, "", 52, y + 58, 376, 22, 16, Ink);
+                milestoneValues[i] = Label(modal.transform, "", 52, y + 84, 230, 22, 16, Muted);
+                PanelAt(modal.transform, "Milestone track " + i, Hex("65705d"), 52, y + 111, 230, 4);
+                milestoneFills[i] = PanelAt(modal.transform, "Milestone progress " + i, Hex("8ebd56"), 52, y + 111, 0, 4);
+                milestoneClaimButtons[i] = ButtonAt(modal.transform, "", 300, y + 84, 128, 30, () => ClaimMilestone(milestonePage * 4 + slot), Hex("d9bd80"), Ink);
+                milestoneClaimButtons[i].name = "Claim milestone " + i;
+                milestoneClaimButtons[i].GetComponentInChildren<Text>().fontSize = 16;
+            }
+            milestonePrevious = ButtonAt(modal.transform, "<", 40, 735, 84, 34, () => ChangeMilestonePage(-1), Hex("a3b492"), Ink);
+            milestonePrevious.name = "Milestones previous";
+            milestonePageLabel = Label(modal.transform, "", 132, 735, 216, 34, 18, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
+            milestoneNext = ButtonAt(modal.transform, ">", 356, 735, 84, 34, () => ChangeMilestonePage(1), Hex("a3b492"), Ink);
+            milestoneNext.name = "Milestones next";
+            ButtonAt(modal.transform, "Продолжить игру", 40, 790, 400, 44, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "Close milestones";
+            RefreshMilestoneBook();
+        }
+
+        private void ChangeMilestonePage(int delta)
+        {
+            milestonePage = Mathf.Clamp(milestonePage + delta, 0, (MineGame.MilestoneCount - 1) / 4);
+            RefreshMilestoneBook();
+        }
+
+        private void RefreshMilestoneBook()
+        {
+            if (!milestoneBookOpen || modal == null) return;
+            milestoneSummary.text = "Награды: " + game.ClaimedMilestones + " / " + MineGame.MilestoneCount + " · Готово: " + game.ReadyMilestones;
+            milestonePageLabel.text = "Страница " + (milestonePage + 1) + " / " + ((MineGame.MilestoneCount + 3) / 4);
+            milestonePrevious.interactable = milestonePage > 0;
+            milestoneNext.interactable = (milestonePage + 1) * 4 < MineGame.MilestoneCount;
+            for (int i = 0; i < 4; i++)
+            {
+                int index = milestonePage * 4 + i;
+                var goal = MineGame.MilestoneAt(index);
+                bool claimed = game.MilestoneClaimed(index), ready = game.CanClaimMilestone(index);
+                milestoneCards[i].color = claimed ? Hex("a2ac9b") : ready ? Hex("d1d7ac") : Hex("b1b8a6");
+                milestoneIcons[i].sprite = art.Get(goal.icon); milestoneIcons[i].color = claimed ? new Color(.7f, .75f, .65f) : Color.white;
+                milestoneTitles[i].text = goal.title; milestoneDetails[i].text = goal.detail;
+                milestoneRewards[i].text = "Награда: " + ShortAmount(goal.coins) + " монет · +" + goal.tickets + " жет.";
+                milestoneValues[i].text = claimed ? "Награда получена" : ShortAmount(game.MilestoneValue(index)) + " / " + goal.target;
+                milestoneFills[i].rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 230f * game.MilestoneValue(index) / goal.target);
+                milestoneClaimButtons[i].interactable = ready;
+                milestoneClaimButtons[i].image.color = ready ? Hex("d9bd80") : Hex("a1aa98");
+                milestoneClaimButtons[i].GetComponentInChildren<Text>().text = claimed ? "Получено" : ready ? "Забрать" : "В работе";
+            }
+        }
+
+        private void CloseModal()
+        {
+            if (modal == null) return;
+            milestoneBookOpen = false; Destroy(modal); modal = null; Refresh();
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")
