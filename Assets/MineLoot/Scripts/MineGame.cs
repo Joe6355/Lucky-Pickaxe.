@@ -3,12 +3,12 @@ using System;
 namespace MineLoot
 {
     public enum BlockKind { Ore, Obsidian, Bedrock }
-    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure }
+    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure, Worker, Drill, Cart, Rails }
 
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 7;
+        public int version = 8;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -35,6 +35,11 @@ namespace MineLoot
         public int swapLevel, efficiencyLevel, pressLevel, treasureLevel;
         public int pendingSwapLimit, pendingSwapCount;
         public int milestoneClaims;
+        public int workerCount, drillCount, cartCount, railLevel;
+        public double productionCarry;
+        public long totalProduced;
+        public int veinCharge;
+        public double veinOfferLeft, veinBoostLeft;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -47,6 +52,7 @@ namespace MineLoot
         public const int MaxUpgrade = 100;
         public const int MaxMinerLevel = 50;
         public const long CoinLimit = 1000000000000L;
+        public const int VeinOreTarget = 24, VeinOfferSeconds = 20, VeinBoostSeconds = 12, VeinMultiplier = 3;
         private static readonly int[] OreLevels = { 1, 2, 4, 7, 10 };
         private static readonly int[] OreHealths = { 6, 9, 12, 16, 20 };
         private static readonly int[] OreRewards = { 12, 28, 55, 95, 150 };
@@ -97,6 +103,13 @@ namespace MineLoot
         }
         public int Relics => Math.Min(333333, Math.Max(0, Progress.stratum - 1 + (IsComplete ? 1 : 0) - Progress.failedFloors) / 3);
         public int ClickPower => 8 + Progress.upgradeLevel * 4 + Relics;
+        public bool VeinOffered => Progress.veinOfferLeft > 0;
+        public bool VeinActive => Progress.veinBoostLeft > 0;
+        public int ManualMultiplier => VeinActive ? VeinMultiplier : 1;
+        public int ManualClickPower => ClickPower * ManualMultiplier;
+        public int CartBonus => Progress.cartCount * (10 + 2 * Progress.railLevel);
+        public int DrillBonus => Progress.forgeLevel * 10;
+        public long ProductionMilli => (Progress.workerCount * 2000L + Progress.drillCount * 12000L * (10 + Progress.forgeLevel) / 10) * (100 + CartBonus) / 100;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
         public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
@@ -140,7 +153,17 @@ namespace MineLoot
             bool legacyBoard = Progress.version < 4;
             bool legacyRoll = Progress.version < 5;
             bool legacyUpgrades = Progress.version < 6;
-            Progress.version = 7;
+            Progress.version = 8;
+            Progress.workerCount = Math.Max(0, Math.Min(100, Progress.workerCount));
+            Progress.drillCount = Math.Max(0, Math.Min(50, Progress.drillCount));
+            Progress.cartCount = Math.Max(0, Math.Min(25, Progress.cartCount));
+            Progress.railLevel = Math.Max(0, Math.Min(10, Progress.railLevel));
+            Progress.productionCarry = FiniteClamp(Progress.productionCarry, 0, .999999999);
+            Progress.totalProduced = Math.Max(0, Math.Min(CoinLimit, Progress.totalProduced));
+            Progress.veinCharge = Math.Max(0, Math.Min(VeinOreTarget - 1, Progress.veinCharge));
+            Progress.veinOfferLeft = FiniteClamp(Progress.veinOfferLeft, 0, VeinOfferSeconds);
+            Progress.veinBoostLeft = FiniteClamp(Progress.veinBoostLeft, 0, VeinBoostSeconds);
+            if (VeinActive) Progress.veinOfferLeft = 0;
             Progress.milestoneClaims = Math.Max(0, Progress.milestoneClaims) & ((1 << MilestoneCount) - 1);
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
             Progress.tickets = Math.Max(0, Math.Min(1000000, Progress.tickets));
@@ -197,17 +220,21 @@ namespace MineLoot
         public bool Mine()
         {
             if (HasPendingRoll) { LastHit = default; return false; }
-            var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = ClickPower, experience = 1 };
+            var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = ManualClickPower, experience = 1, rich = VeinActive };
             int previousLevel = MinerLevel;
             int previousUnlocks = UnlockedOres;
             Progress.oreDamage += MiningDamage;
             if (Progress.oreDamage >= OreHealth)
             {
                 hit.broken = true;
-                hit.coins += OreReward;
+                hit.coins += OreReward * ManualMultiplier;
                 hit.experience += 6 + Progress.oreKind * 4;
                 Progress.oresMined = Math.Min(CoinLimit, Progress.oresMined + 1);
                 Progress.oreDamage = 0;
+                if (!VeinOffered && !VeinActive && ++Progress.veinCharge >= VeinOreTarget)
+                {
+                    Progress.veinCharge = 0; Progress.veinOfferLeft = VeinOfferSeconds; hit.veinFound = true;
+                }
             }
             hit.coins += GainExperience(hit.experience, out hit.tickets);
             hit.levels = MinerLevel - previousLevel;
@@ -232,6 +259,33 @@ namespace MineLoot
             return coins;
         }
 
+        private static double FiniteClamp(double value, double min, double max) => double.IsNaN(value) || double.IsInfinity(value) ? min : Math.Max(min, Math.Min(max, value));
+
+        // Live session time only. No wall clock, offline awards, automatic hits or ticket generation.
+        public long AdvanceTime(double seconds, bool miningActive)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0 || seconds > 86400) throw new ArgumentOutOfRangeException(nameof(seconds));
+            double produced = Progress.productionCarry + ProductionMilli / 1000d * seconds;
+            long whole = (long)Math.Floor(produced + 1e-9);
+            Progress.productionCarry = Math.Max(0, produced - whole);
+            long before = Progress.coins; AddCoins(whole);
+            long earned = Progress.coins - before;
+            Progress.totalProduced = Math.Min(CoinLimit, Progress.totalProduced + earned);
+            if (miningActive && !HasPendingRoll)
+            {
+                Progress.veinOfferLeft = Math.Max(0, Progress.veinOfferLeft - seconds);
+                Progress.veinBoostLeft = Math.Max(0, Progress.veinBoostLeft - seconds);
+            }
+            return earned;
+        }
+
+        public bool ActivateVein()
+        {
+            if (HasPendingRoll || !VeinOffered || VeinActive) return false;
+            Progress.veinOfferLeft = 0; Progress.veinBoostLeft = VeinBoostSeconds;
+            return true;
+        }
+
         public bool Upgrade()
         {
             return BuyUpgrade(UpgradeKind.Pickaxe);
@@ -252,6 +306,10 @@ namespace MineLoot
                 case UpgradeKind.Efficiency: return Progress.efficiencyLevel;
                 case UpgradeKind.Press: return Progress.pressLevel;
                 case UpgradeKind.Treasure: return Progress.treasureLevel;
+                case UpgradeKind.Worker: return Progress.workerCount;
+                case UpgradeKind.Drill: return Progress.drillCount;
+                case UpgradeKind.Cart: return Progress.cartCount;
+                case UpgradeKind.Rails: return Progress.railLevel;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
@@ -265,6 +323,10 @@ namespace MineLoot
                 case UpgradeKind.Swap: return 3;
                 case UpgradeKind.Efficiency: case UpgradeKind.Treasure: return 10;
                 case UpgradeKind.Press: return 6;
+                case UpgradeKind.Worker: return 100;
+                case UpgradeKind.Drill: return 50;
+                case UpgradeKind.Cart: return 25;
+                case UpgradeKind.Rails: return 10;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
@@ -278,6 +340,10 @@ namespace MineLoot
                 case UpgradeKind.Efficiency: return 2 + rank * 2;
                 case UpgradeKind.Press: return 4 + rank * 3;
                 case UpgradeKind.Treasure: return 6 + rank * 2;
+                case UpgradeKind.Worker: return 2;
+                case UpgradeKind.Drill: return 5;
+                case UpgradeKind.Cart: return 8;
+                case UpgradeKind.Rails: return 8 + rank * 2;
                 default: return 1;
             }
         }
@@ -294,12 +360,18 @@ namespace MineLoot
                 case UpgradeKind.Efficiency: start = 300; growth = 1.58; break;
                 case UpgradeKind.Press: start = 550; growth = 1.9; break;
                 case UpgradeKind.Treasure: start = 800; growth = 1.65; break;
+                case UpgradeKind.Worker: start = 300; growth = 1.18; break;
+                case UpgradeKind.Drill: start = 1800; growth = 1.24; break;
+                case UpgradeKind.Cart: start = 1400; growth = 1.30; break;
+                case UpgradeKind.Rails: start = 900; growth = 1.65; break;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
             return (long)Math.Min(CoinLimit, Math.Round(start * Math.Pow(growth, rank)));
         }
 
-        public bool CanBuyUpgrade(UpgradeKind kind) => !HasPendingRoll && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
+        public UpgradeKind? UpgradePrerequisite(UpgradeKind kind) => kind == UpgradeKind.Drill ? UpgradeKind.Worker : kind == UpgradeKind.Cart ? UpgradeKind.Drill : kind == UpgradeKind.Rails ? UpgradeKind.Cart : (UpgradeKind?)null;
+        public bool HasUpgradePrerequisite(UpgradeKind kind) => !UpgradePrerequisite(kind).HasValue || UpgradeLevel(UpgradePrerequisite(kind).Value) > 0;
+        public bool CanBuyUpgrade(UpgradeKind kind) => !HasPendingRoll && HasUpgradePrerequisite(kind) && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
 
         public bool BuyUpgrade(UpgradeKind kind)
         {
@@ -316,6 +388,10 @@ namespace MineLoot
                     if (Progress.hits >= HitsRequired) { Progress.hits -= HitsRequired; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
                     break;
                 case UpgradeKind.Treasure: Progress.treasureLevel++; break;
+                case UpgradeKind.Worker: Progress.workerCount++; break;
+                case UpgradeKind.Drill: Progress.drillCount++; break;
+                case UpgradeKind.Cart: Progress.cartCount++; break;
+                case UpgradeKind.Rails: Progress.railLevel++; break;
             }
             return true;
         }
@@ -541,7 +617,7 @@ namespace MineLoot
     public struct MineHit
     {
         public int ore, damage, coins, experience, levels, tickets;
-        public bool broken;
+        public bool broken, rich, veinFound;
     }
 
     public sealed class RollResult

@@ -150,6 +150,7 @@ namespace MineLoot
             Check(demo.Game.Progress.claimedContracts == 1 && demo.Game.Progress.coins == previousCoins + 100, "Claim once");
             yield return new WaitForSecondsRealtime(.3f);
             yield return VerifyWorkshop(demo, stage, shaft);
+            yield return VerifyProduction(demo, stage);
             yield return VerifyMilestones(demo);
             // Exercise a later biome and partial block damage in the same built player.
             demo.Game.Progress.stratum = 4;
@@ -250,6 +251,8 @@ namespace MineLoot
                 Capture("unity-" + size.x + "x" + size.y + ".png");
                 demo.ShowPage(true); yield return null; CheckLayout();
                 demo.ShowWorkshop(); yield return null; CheckLayout(); Capture("unity-workshop-" + size.x + "x" + size.y + ".png");
+                Click("Production section"); yield return null; CheckLayout(); Capture("unity-production-" + size.x + "x" + size.y + ".png");
+                Click("Equipment section"); yield return null;
                 Click("Open milestones"); yield return null;
                 for (int page = 0; page < 4; page++)
                 {
@@ -284,6 +287,74 @@ namespace MineLoot
             File.WriteAllText(Path.Combine(output, "runtime-check.json"), "{\"result\":\"" + (errors == 0 ? "PASS" : "FAIL") + "\",\"errors\":" + errors + ",\"unity\":\"" + Application.unityVersion + "\"}");
             Debug.Log("MINE_LOOT_RUNTIME_CHECK: " + (errors == 0 ? "PASS" : "FAIL"));
             Application.Quit(errors == 0 ? 0 : 1);
+        }
+
+        private IEnumerator VerifyProduction(DemoController demo, VoxelStage stage)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            demo.RestoreForSmoke(new MineProgress()); demo.ShowWorkshop(); Click("Production section");
+            Check(!FindButton("Buy Worker").interactable && !FindButton("Buy Drill").interactable && FindButton("Buy Pickaxe") == null, "Production reuses workshop slots and respects initial level locks");
+            CheckLayout(); Capture("unity-production-locked.png");
+            demo.RestoreForSmoke(new MineProgress { coins = 10000, experience = MineGame.ExperienceForLevel(8) });
+            demo.ShowWorkshop(); Click("Production section");
+            Check(FindButton("Buy Worker").interactable && !FindButton("Buy Drill").interactable, "Worker is available while dependent machinery is locked");
+            Click("Buy Worker"); Click("Buy Drill"); Click("Buy Cart"); Click("Buy Rails");
+            Check(demo.Game.Progress.coins == 5600 && demo.Game.ProductionMilli == 15680 && stage.VisibleWorkers == 1 && stage.DrillVisible, "Real buttons buy the production chain at its listed prices and reveal machinery");
+            int tickets = demo.Game.Progress.tickets; long experience = demo.Game.Progress.experience, clicks = demo.Game.Progress.totalClicks;
+            demo.AdvanceForSmoke(10, false);
+            Check(demo.Game.Progress.coins == 5756 && demo.Game.Progress.totalProduced == 156 && demo.Game.Progress.tickets == tickets && demo.Game.Progress.experience == experience && demo.Game.Progress.totalClicks == clicks, "Clock credits passive coins without generating tickets or mining progress");
+            CheckLayout(); Capture("unity-production.png");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress))); demo.ShowWorkshop(); Click("Production section");
+            Check(Math.Abs(demo.Game.Progress.productionCarry - .8) < .000001 && demo.Game.Progress.coins == 5756 && demo.Game.Progress.workerCount == 1 && demo.Game.Progress.railLevel == 1, "Workshop reload restores purchased machines and the saved fractional coin");
+            demo.ShowPage(false); float drillBefore = stage.DrillAngle;
+            yield return new WaitForSecondsRealtime(.25f);
+            Check(Mathf.Abs(Mathf.DeltaAngle(stage.DrillAngle, drillBefore)) > 1, "Purchased drill spindle animates in the mining world");
+            CheckLayout(); Capture("unity-production-world.png");
+            demo.RestoreForSmoke(new MineProgress { coins = 0, workerCount = 1 });
+            demo.UseLiveClockForSmoke(true); yield return new WaitForSecondsRealtime(1.2f); demo.UseLiveClockForSmoke(false);
+            Check(demo.Game.Progress.coins >= 2 && demo.Game.Progress.coins <= 5 && demo.Game.Progress.totalClicks == 0 && demo.Game.Progress.tickets == 2, "Player Update drives passive income without synthetic clicks");
+            demo.RestoreForSmoke(new MineProgress { coins = 1000, oreDamage = 5, veinCharge = 23 });
+            yield return new WaitForSecondsRealtime(.1f); Click("Mine rock");
+            Check(demo.Game.VeinOffered && FindButton("Activate rich vein") != null && stage.VeinVisible, "Breaking the qualifying ore reveals the rich vein button and world glints");
+            yield return new WaitForSecondsRealtime(.3f); CheckLayout(); Capture("unity-rich-vein-offer.png");
+            demo.AdvanceForSmoke(3, true); demo.ShowWorkshop(); demo.AdvanceForSmoke(5, false);
+            Check(demo.Game.Progress.veinOfferLeft == 17, "Workshop time does not consume a manual mining opportunity");
+            demo.ShowPage(false); Click("Activate rich vein");
+            Check(demo.Game.VeinActive && !demo.Game.VeinOffered && FindButton("Activate rich vein") == null && stage.VeinVisible, "Claiming the vein replaces its button with a live boost timer");
+            long coins = demo.Game.Progress.coins;
+            yield return new WaitForSecondsRealtime(.1f); Click("Mine rock");
+            Check(demo.Game.LastHit.rich && demo.Game.LastHit.coins == 24 && demo.Game.Progress.coins == coins + 24, "Real mining input applies the manual coin multiplier");
+            demo.AdvanceForSmoke(4.5, true);
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+            Check(demo.Game.Progress.veinBoostLeft == 7.5 && demo.Game.ManualMultiplier == 3, "Reload keeps exact remaining boost time");
+            yield return new WaitForSecondsRealtime(.2f);
+            CheckLayout(); Capture("unity-rich-vein-active.png");
+            demo.AdvanceForSmoke(7.5, true);
+            Check(!demo.Game.VeinActive && !stage.VeinVisible && demo.Game.ManualMultiplier == 1, "Expired boost hides its effects and restores normal manual income");
+            demo.RestoreForSmoke(new MineProgress { coins = 0, workerCount = 1, swapLevel = 1, veinOfferLeft = 9 }); demo.ShowPage(true);
+            int draw = 0; demo.SpinForSmoke(() => ++draw == 2 ? .99 : 0); yield return WaitForChoice(demo);
+            coins = demo.Game.Progress.coins; demo.AdvanceForSmoke(3, true);
+            Check(demo.Game.Progress.coins == coins + 6 && demo.Game.Progress.veinOfferLeft == 9 && demo.Game.HasPendingRoll && demo.Game.Progress.pendingTypes[1] == 4, "Passive clock works during pick choice while preserving the draw and freezing the manual event");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+            Check(demo.Game.Progress.coins == coins + 6 && demo.AwaitingPickChoice && demo.Game.SwapsRemaining == 1, "Paid choice reload retains passive income and the exchange allowance");
+            demo.Spin(); yield return FinishRoll(demo);
+            demo.RestoreForSmoke(new MineProgress { coins = 9000, experience = MineGame.ExperienceForLevel(50), workerCount = 100, drillCount = 50, cartCount = 25, railLevel = 10, forgeLevel = 10 });
+            demo.ShowWorkshop(); Click("Production section");
+            foreach (var kind in new[] { UpgradeKind.Worker, UpgradeKind.Drill, UpgradeKind.Cart, UpgradeKind.Rails }) Check(!FindButton("Buy " + kind).interactable, "Capped production is disabled: " + kind);
+            CheckLayout(); Capture("unity-production-max.png");
+            demo.ShowPage(false);
+            int meshes = stage.OwnedMeshCount;
+            for (int i = 0; i < 100; i++) stage.SetProduction(i % 11, i % 3, i % 2, i % 2 == 0);
+            Check(stage.OwnedMeshCount == meshes, "Production toggles reuse prepared worker, drill and glint meshes");
+            stage.SetProduction(10, 3, 2, true);
+            var times = new System.Text.StringBuilder(); float started = Time.realtimeSinceStartup;
+            for (int frame = 0; frame < 32; frame++)
+            {
+                times.AppendLine((Time.realtimeSinceStartup - started).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                Capture("unity-production-animation-" + frame.ToString("00") + ".png"); yield return new WaitForSecondsRealtime(.05f);
+            }
+            File.WriteAllText(Path.Combine(output, "production-animation-times.txt"), times.ToString());
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }
 
         private IEnumerator VerifyMilestones(DemoController demo)
@@ -379,7 +450,7 @@ namespace MineLoot
             Check(demo.Game.Progress.tickets == 0 && !demo.Game.HasPendingRoll, "Three exchanges confirm without another ticket");
             demo.RestoreForSmoke(new MineProgress { coins = 8000, upgradeLevel = 100, forgeLevel = 10, swapLevel = 3, efficiencyLevel = 10, pressLevel = 6, treasureLevel = 10, experience = MineGame.ExperienceForLevel(50) });
             demo.ShowWorkshop();
-            foreach (var kind in Enum.GetValues(typeof(UpgradeKind))) Check(!FindButton("Buy " + kind).interactable, "Capped workshop action is disabled: " + kind);
+            for (int kind = 0; kind < (int)UpgradeKind.Worker; kind++) Check(!FindButton("Buy " + (UpgradeKind)kind).interactable, "Capped workshop action is disabled: " + (UpgradeKind)kind);
             CheckLayout(); Capture("unity-workshop-max.png");
             demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }

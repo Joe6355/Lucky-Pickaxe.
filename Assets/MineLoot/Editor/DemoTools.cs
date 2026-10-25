@@ -28,7 +28,7 @@ public static class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.11.0";
+        PlayerSettings.bundleVersion = "0.12.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -94,7 +94,7 @@ public static class DemoTools
         game.Roll(() => 0);
         Check(game.Relics == 1 && game.ClickPower == 9, "Three floors grant permanent relic");
         var legacy = new MineGame(ProgressStore.Decode("{\"version\":1,\"coins\":1240,\"tickets\":3,\"hits\":4,\"upgradeLevel\":2,\"stratum\":4,\"depths\":[1,2,3,4,5]}"));
-        Check(legacy.Progress.version == 7 && legacy.Progress.boardSeed == 0 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress without inserting hazards");
+        Check(legacy.Progress.version == 8 && legacy.Progress.boardSeed == 0 && legacy.Progress.coins == 1240 && legacy.Progress.tickets == 3 && legacy.Progress.upgradeLevel == 2 && legacy.Progress.depths[4] == 5, "v1 migration preserves progress without inserting hazards");
         game = new MineGame();
         for (int i = 0; i < 5; i++) game.Mine();
         Check(game.Progress.oreDamage == 5 && game.Progress.oresMined == 0 && game.Progress.experience == 5, "Ore accumulates damage and click experience");
@@ -152,6 +152,7 @@ public static class DemoTools
         VerifyExchangeRules(Check);
         VerifyUpgradeRules(Check);
         VerifyMilestoneRules(Check);
+        VerifyProductionRules(Check);
         Directory.CreateDirectory("Logs");
         File.WriteAllText("Logs/rules-check.json", "{\"result\":\"PASS\",\"assertions\":" + assertions + ",\"unity\":\"" + Application.unityVersion + "\"}");
         Debug.Log("MINE_LOOT_RULES: PASS (" + assertions + " assertions)");
@@ -278,7 +279,7 @@ public static class DemoTools
         check(restored.Progress.stratum == 2 && restored.Progress.pendingNewStratum && restored.Progress.boardSeed == seed && restored.Progress.tickets == 0, "New-floor seed and spent last ticket survive pending reload");
         check(restored.ResolveRoll().newStratum && restored.Progress.stratum == 2, "Restoring a pending new floor cannot advance twice");
         var v4 = new MineGame(ProgressStore.Decode("{\"version\":4,\"boardSeed\":17,\"tickets\":7,\"coins\":123,\"depths\":[1,2,2,3,4],\"damage\":[0,0,0,1,0],\"lostColumns\":[false,false,true,false,false]}"));
-        check(v4.Progress.version == 7 && !v4.HasPendingRoll && v4.Progress.boardSeed == 17 && v4.Progress.lostColumns[2] && v4.Progress.damage[3] == 1 && v4.Progress.coins == 123 && v4.Progress.tickets == 7, "v4 migration preserves hazards, losses and partial damage");
+        check(v4.Progress.version == 8 && !v4.HasPendingRoll && v4.Progress.boardSeed == 17 && v4.Progress.lostColumns[2] && v4.Progress.damage[3] == 1 && v4.Progress.coins == 123 && v4.Progress.tickets == 7, "v4 migration preserves hazards, losses and partial damage");
         string key = "LuckyPickaxe.Exchange.Tests." + Guid.NewGuid().ToString("N");
         try
         {
@@ -327,7 +328,7 @@ public static class DemoTools
         foreach (bool used in new[] { false, true })
         {
             var legacy = new MineGame(ProgressStore.Decode("{\"version\":5,\"coins\":125,\"tickets\":1,\"rollPending\":true,\"pendingTypes\":[1,4,1,1,1],\"pendingSwapUsed\":" + (used ? "true" : "false") + "}"));
-            check(legacy.Progress.version == 7 && legacy.Progress.swapLevel == 0 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 1 && legacy.SwapsRemaining == (used ? 0 : 1), "v5 paid draw keeps only its previously available exchange");
+            check(legacy.Progress.version == 8 && legacy.Progress.swapLevel == 0 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 1 && legacy.SwapsRemaining == (used ? 0 : 1), "v5 paid draw keeps only its previously available exchange");
             legacy = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(legacy.Progress)));
             check(legacy.SwapsRemaining == (used ? 0 : 1), "Repeated migration load cannot renew spent exchanges");
             legacy.ResolveRoll(); legacy.BeginRoll(() => .6);
@@ -382,10 +383,10 @@ public static class DemoTools
         game.ResolveRoll();
         check(game.CanClaimMilestone(0) && game.CanClaimMilestone(4) && game.Progress.milestoneClaims == 0, "Resolving a draw restores claim availability without automatic rewards");
         var legacy = new MineGame(ProgressStore.Decode("{\"version\":6,\"coins\":745,\"tickets\":4,\"totalClicks\":36,\"swapLevel\":2,\"efficiencyLevel\":3,\"pressLevel\":2,\"treasureLevel\":4,\"hits\":8,\"experience\":1000}"));
-        check(legacy.Progress.version == 7 && legacy.Progress.coins == 745 && legacy.Progress.tickets == 4 && legacy.Progress.hits == 8 && legacy.Progress.swapLevel == 2 && legacy.Progress.efficiencyLevel == 3 && legacy.Progress.pressLevel == 2 && legacy.Progress.treasureLevel == 4, "v6 migration preserves the wallet and every purchased branch");
+        check(legacy.Progress.version == 8 && legacy.Progress.coins == 745 && legacy.Progress.tickets == 4 && legacy.Progress.hits == 8 && legacy.Progress.swapLevel == 2 && legacy.Progress.efficiencyLevel == 3 && legacy.Progress.pressLevel == 2 && legacy.Progress.treasureLevel == 4, "v6 migration preserves the wallet and every purchased branch");
         check(legacy.ClaimedMilestones == 0 && legacy.CanClaimMilestone(0) && legacy.MilestoneValue(0) == 30, "Existing lifetime progress counts toward unclaimed goals without automatic payouts");
         legacy = new MineGame(ProgressStore.Decode("{\"version\":6,\"coins\":125,\"tickets\":0,\"totalClicks\":30,\"swapLevel\":2,\"rollPending\":true,\"pendingTypes\":[4,1,2,1,1],\"pendingSwapLimit\":2,\"pendingSwapCount\":1}"));
-        check(legacy.HasPendingRoll && legacy.Progress.version == 7 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 0 && legacy.Progress.swapLevel == 2 && legacy.SwapsRemaining == 1 && legacy.Progress.pendingTypes[0] == 4 && !legacy.ClaimMilestone(0), "v6 paid draw keeps its fixed picks, spent last ticket and remaining purchased exchange");
+        check(legacy.HasPendingRoll && legacy.Progress.version == 8 && legacy.Progress.coins == 125 && legacy.Progress.tickets == 0 && legacy.Progress.swapLevel == 2 && legacy.SwapsRemaining == 1 && legacy.Progress.pendingTypes[0] == 4 && !legacy.ClaimMilestone(0), "v6 paid draw keeps its fixed picks, spent last ticket and remaining purchased exchange");
         legacy = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(legacy.Progress)));
         check(legacy.SwapsRemaining == 1 && legacy.ClaimedMilestones == 0 && legacy.ResolveRoll() != null && legacy.ResolveRoll() == null && legacy.CanClaimMilestone(0), "Repeated v7 reload cannot renew the migrated exchange budget or resolve its draw twice");
         game = new MineGame(new MineProgress { coins = 0, tickets = 0, totalClicks = 30, oresMined = 10, totalRolls = 5, upgradeLevel = 20, totalBlocks = 50, experience = MineGame.ExperienceForLevel(50), swapLevel = 1, efficiencyLevel = 3, stratum = 10, forgeLevel = 6, pressLevel = 3, treasureLevel = 5 });
@@ -410,28 +411,118 @@ public static class DemoTools
         check(game.MilestoneValue(0) == 30 && game.ClaimMilestone(0) && game.Progress.coins == MineGame.CoinLimit && game.Progress.tickets == 1000000, "Goal progress display and rewards respect existing currency caps");
     }
 
+    private static void VerifyProductionRules(Action<bool, string> check)
+    {
+        var game = new MineGame(new MineProgress { coins = 10000 });
+        check(game.ProductionMilli == 0 && game.AdvanceTime(60, false) == 0 && game.Progress.coins == 10000 && !game.BuyUpgrade(UpgradeKind.Worker), "Production starts empty and the first worker requires miner level two");
+        var gated = new MineGame(new MineProgress { coins = 10000, workerCount = 1, experience = MineGame.ExperienceForLevel(4) });
+        check(!gated.BuyUpgrade(UpgradeKind.Drill) && gated.Progress.coins == 10000, "Drill level gate applies even with a hired worker");
+        gated.Progress.experience = MineGame.ExperienceForLevel(5);
+        check(gated.BuyUpgrade(UpgradeKind.Drill) && gated.Progress.coins == 8200, "Drill opens exactly at miner level five");
+        gated.Progress.experience = MineGame.ExperienceForLevel(7);
+        check(!gated.BuyUpgrade(UpgradeKind.Cart) && gated.Progress.coins == 8200, "Cart level gate applies even with a purchased drill");
+        gated.Progress.experience = MineGame.ExperienceForLevel(8);
+        check(gated.BuyUpgrade(UpgradeKind.Cart) && gated.Progress.coins == 6800, "Cart opens exactly at miner level eight");
+        game.Progress.experience = MineGame.ExperienceForLevel(8);
+        check(!game.BuyUpgrade(UpgradeKind.Drill) && !game.BuyUpgrade(UpgradeKind.Cart) && !game.BuyUpgrade(UpgradeKind.Rails), "Production dependencies cannot be skipped with a full wallet");
+        check(game.UpgradePrice(UpgradeKind.Worker) == 300 && game.BuyUpgrade(UpgradeKind.Worker) && game.Progress.coins == 9700 && game.ProductionMilli == 2000, "First worker costs 300 and produces two coins each second");
+        check(game.UpgradePrice(UpgradeKind.Worker) == 354 && game.UpgradePrice(UpgradeKind.Drill) == 1800 && game.BuyUpgrade(UpgradeKind.Drill) && game.Progress.coins == 7900 && game.ProductionMilli == 14000, "Owned worker unlocks a drill with twelve base coins per second");
+        check(game.BuyUpgrade(UpgradeKind.Cart) && game.Progress.coins == 6500 && game.ProductionMilli == 15400 && game.CartBonus == 10, "Cart multiplies both workers and drills by ten percent");
+        check(game.BuyUpgrade(UpgradeKind.Rails) && game.Progress.coins == 5600 && game.CartBonus == 12 && game.ProductionMilli == 15680, "Rails raise the contribution of every cart by two percentage points");
+        check(!game.BuyUpgrade(UpgradeKind.Rails) && game.UpgradeUnlock(UpgradeKind.Rails) == 10, "Next rails rank has its own miner level requirement");
+        game.Progress.forgeLevel = 2;
+        check(game.ProductionMilli == 18368 && game.DrillBonus == 20, "Forge boosts drill output before the shared logistics multiplier");
+        int tickets = game.Progress.tickets; long clicks = game.Progress.totalClicks, experience = game.Progress.experience, ores = game.Progress.oresMined;
+        int hits = game.Progress.hits;
+        check(game.AdvanceTime(1.25, false) == 22 && Math.Abs(game.Progress.productionCarry - .96) < .000001 && game.Progress.totalProduced == 22, "Fractional production keeps its remainder instead of rounding up");
+        var restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        long before = restored.Progress.coins;
+        check(restored.Progress.coins == game.Progress.coins && restored.ProductionMilli == 18368 && restored.Progress.totalProduced == 22 && Math.Abs(restored.Progress.productionCarry - .96) < .000001, "Production quantities, totals and fractions survive reload without offline awards");
+        check(restored.AdvanceTime(.25, true) == 5 && restored.Progress.coins == before + 5 && Math.Abs(restored.Progress.productionCarry - .552) < .000001, "Saved production fraction is consumed once on the next tick");
+        check(restored.Progress.tickets == tickets && restored.Progress.totalClicks == clicks && restored.Progress.experience == experience && restored.Progress.oresMined == ores && restored.Progress.hits == hits, "Automatic production never grants clicks, experience, ore progress or tickets");
+        var split = new MineGame(new MineProgress { coins = 0, workerCount = 1, drillCount = 1, cartCount = 1, railLevel = 1, forgeLevel = 2 });
+        var whole = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(split.Progress)));
+        for (int i = 0; i < 600; i++) split.AdvanceTime(1d / 60, false);
+        whole.AdvanceTime(10, false);
+        check(split.Progress.coins == whole.Progress.coins && Math.Abs(split.Progress.productionCarry - whole.Progress.productionCarry) < .000001, "Production is independent of frame subdivision");
+        game = new MineGame(new MineProgress { coins = 0, workerCount = 1, swapLevel = 1, totalClicks = 30, veinOfferLeft = 10 });
+        int draw = 0; game.BeginRoll(() => ++draw == 2 ? .99 : 0); string types = string.Join(",", game.Progress.pendingTypes);
+        check(game.AdvanceTime(3, true) == 6 && game.HasPendingRoll && game.Progress.veinOfferLeft == 10 && game.Progress.tickets == 1 && !game.BuyUpgrade(UpgradeKind.Worker) && !game.ActivateVein(), "Paid draw keeps passive income but freezes vein timers, purchases and activation");
+        restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        check(restored.Progress.coins == 6 && restored.SwapsRemaining == 1 && string.Join(",", restored.Progress.pendingTypes) == types && restored.ResolveRoll() != null && restored.ResolveRoll() == null, "Reload preserves income and the same pending draw with a single payout");
+        foreach (double invalid in new[] { -1d, double.NaN, double.PositiveInfinity, 86401d })
+        {
+            string unchanged = JsonUtility.ToJson(restored.Progress); bool rejected = false;
+            try { restored.AdvanceTime(invalid, true); } catch (ArgumentOutOfRangeException) { rejected = true; }
+            check(rejected && JsonUtility.ToJson(restored.Progress) == unchanged, "Invalid clock input cannot mutate the economy: " + invalid);
+        }
+        game = new MineGame(new MineProgress { coins = MineGame.CoinLimit - 1, workerCount = 1 });
+        check(game.AdvanceTime(10, false) == 1 && game.Progress.coins == MineGame.CoinLimit && game.Progress.totalProduced == 1, "Production respects the wallet cap and counts only credited coins");
+        check(game.AdvanceTime(10, false) == 0 && game.Progress.totalProduced == 1, "A full wallet never records phantom production");
+        game = new MineGame(new MineProgress { coins = MineGame.CoinLimit, workerCount = 100, drillCount = 50, cartCount = 25, railLevel = 10, forgeLevel = 10, experience = MineGame.ExperienceForLevel(50) });
+        check(game.ProductionMilli == 11900000 && game.ProductionMilli / 1000 == 11900, "Maximum production is bounded at 11900 coins per second");
+        foreach (var kind in new[] { UpgradeKind.Worker, UpgradeKind.Drill, UpgradeKind.Cart, UpgradeKind.Rails })
+            check(!game.BuyUpgrade(kind) && game.Progress.coins == MineGame.CoinLimit, "Capped production purchase never spends: " + kind);
+        game = new MineGame(new MineProgress { workerCount = 999, drillCount = 999, cartCount = 999, railLevel = 999, productionCarry = double.NaN, totalProduced = -1, veinOfferLeft = double.PositiveInfinity, veinBoostLeft = -5, veinCharge = 99 });
+        check(game.Progress.workerCount == 100 && game.Progress.drillCount == 50 && game.Progress.cartCount == 25 && game.Progress.railLevel == 10 && game.Progress.productionCarry == 0 && game.Progress.totalProduced == 0 && !game.VeinOffered && !game.VeinActive && game.Progress.veinCharge == 23, "Production and vein save fields clamp malformed values");
+        var legacy = new MineGame(ProgressStore.Decode("{\"version\":7,\"coins\":745,\"tickets\":4,\"totalClicks\":36,\"swapLevel\":2,\"milestoneClaims\":5,\"hits\":8,\"experience\":1000}"));
+        check(legacy.Progress.version == 8 && legacy.Progress.coins == 745 && legacy.Progress.tickets == 4 && legacy.Progress.hits == 8 && legacy.Progress.swapLevel == 2 && legacy.Progress.milestoneClaims == 5 && legacy.ProductionMilli == 0 && !legacy.VeinOffered, "v7 migration preserves paid progress and claims without free machinery or retrospective events");
+        game = new MineGame(new MineProgress { veinCharge = 23, oreDamage = 5 }); game.Mine();
+        check(game.LastHit.broken && game.LastHit.veinFound && game.VeinOffered && game.Progress.veinCharge == 0 && game.Progress.veinOfferLeft == 20 && !game.VeinActive, "Every twenty-fourth eligible broken ore reveals an unactivated rich vein");
+        game.AdvanceTime(5, false);
+        check(game.Progress.veinOfferLeft == 20 && game.Progress.coins == 100, "Offer time pauses away from the mining screen without a free payout");
+        game.AdvanceTime(3, true);
+        check(game.Progress.veinOfferLeft == 17 && game.ActivateVein() && !game.ActivateVein() && game.ManualMultiplier == 3 && game.Progress.veinBoostLeft == 12 && !game.VeinOffered, "Claiming the live offer starts a single twelve-second manual boost");
+        game.Mine();
+        check(game.LastHit.rich && game.LastHit.coins == 24 && game.LastHit.experience == 1 && game.LastHit.tickets == 0 && game.Progress.veinCharge == 0, "Rich vein triples click coins without boosting experience or tickets");
+        game = new MineGame(new MineProgress { veinBoostLeft = 12, oreDamage = 5, workerCount = 1 }); game.Mine();
+        check(game.LastHit.coins == 60 && game.LastHit.broken && game.LastHit.experience == 7 && !game.LastHit.veinFound && game.Progress.veinCharge == 0, "Boost triples ore-break money but cannot charge another vein while active");
+        check(game.AdvanceTime(1, true) == 2 && game.Progress.veinBoostLeft == 11 && game.ProductionMilli == 2000, "Manual boost leaves automatic production unchanged");
+        game = new MineGame(new MineProgress { experience = 39, veinBoostLeft = 12 }); game.Mine();
+        check(game.LastHit.coins == 104 && game.LastHit.levels == 1 && game.LastHit.tickets == 1, "Miner-level reward is added once without the rich-vein multiplier");
+        restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        restored.AdvanceTime(4.5, true);
+        check(restored.Progress.veinBoostLeft == 7.5 && restored.ManualMultiplier == 3, "Reload preserves remaining boost time instead of renewing it");
+        restored.AdvanceTime(7.5, true);
+        check(!restored.VeinActive && restored.ManualMultiplier == 1 && !restored.ActivateVein(), "Expired boost returns to ordinary mining and cannot reactivate itself");
+        game = new MineGame(new MineProgress { veinOfferLeft = 1 }); game.AdvanceTime(1, true);
+        check(!game.VeinOffered && !game.ActivateVein() && game.Progress.veinCharge == 0, "Missed offer expires without paying coins or reappearing on reload");
+        game = new MineGame(new MineProgress { coins = 100000, workerCount = 3, drillCount = 2, cartCount = 2, railLevel = 2, forgeLevel = 3, productionCarry = .75, totalProduced = 33, veinOfferLeft = 9, veinCharge = 10 });
+        string key = "LuckyPickaxe.Production.Tests." + Guid.NewGuid().ToString("N");
+        try
+        {
+            ProgressStore.Save(game, key); PlayerPrefs.SetString(key, "not-json"); restored = ProgressStore.Load(key);
+            check(restored.Progress.workerCount == 3 && restored.Progress.drillCount == 2 && restored.Progress.cartCount == 2 && restored.Progress.railLevel == 2 && restored.Progress.productionCarry == .75 && restored.Progress.totalProduced == 33 && restored.Progress.veinOfferLeft == 9 && restored.Progress.veinCharge == 10 && restored.Progress.coins == 100000, "Backup restores production, fractional coins and the exact saved offer time");
+        }
+        finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
+    }
+
     [MenuItem("Mine Loot/Simulate balance")]
     public static void SimulateBalance()
     {
         const int runs = 100;
-        var rows = new System.Text.StringBuilder("strategy,seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks,zero_rewards,lost_chests,reroutes,exchanges,swap_level,efficiency_level,press_level,treasure_level,milestones\n");
+        var rows = new System.Text.StringBuilder("strategy,seed,minute,floor,pick_level,forge_level,miner_level,ores,coins,rolls,blocks,zero_rewards,lost_chests,reroutes,exchanges,swap_level,efficiency_level,press_level,treasure_level,milestones,workers,drills,carts,rails,coins_per_second,produced\n");
         int[] checkpoints = { 60, 300, 600, 1200 };
-        var sums = new double[2, 4, 10];
-        var totalMisses = new int[2]; var totalLosses = new int[2]; var totalReroutes = new int[2]; var totalExchanges = new int[2];
-        for (int run = 0; run < runs * 2; run++)
+        var sums = new double[3, 4, 16];
+        var totalMisses = new int[3]; var totalLosses = new int[3]; var totalReroutes = new int[3]; var totalExchanges = new int[3];
+        for (int run = 0; run < runs * 3; run++)
         {
             int strategy = run / runs, seed = run % runs;
             var rng = new System.Random(seed);
             var game = new MineGame(); int wait = 0, emptyStreak = 0, misses = 0, losses = 0, reroutes = 0, exchanges = 0;
             for (int second = 1; second <= 1200; second++)
             {
+                if (wait == 0 && game.VeinOffered) game.ActivateVein();
+                game.AdvanceTime(1, wait == 0);
                 if (wait > 0) wait--;
                 else
                 {
                     for (int tap = 0; tap < 6; tap++) game.Mine();
+                    if (game.VeinOffered) game.ActivateVein();
                     if (game.CanClaim) game.ClaimContract();
                     for (int goal = 0; goal < MineGame.MilestoneCount; goal++) game.ClaimMilestone(goal);
-                    if (strategy == 0 || !BuyAdditionalUpgrade(game))
+                    bool productionPurchase = strategy == 2 && second % 5 == 0 && BuyProductionUpgrade(game);
+                    if (!productionPurchase && (strategy == 0 || !BuyAdditionalUpgrade(game)))
                     {
                         if (game.CanForge && game.Progress.forgeLevel < Math.Min(10, 2 * game.Hardness)) game.Forge();
                         else if (game.CanUpgrade) game.Upgrade();
@@ -440,7 +531,7 @@ public static class DemoTools
                     else if (game.Progress.tickets > 0)
                     {
                         game.BeginRoll(() => rng.NextDouble());
-                        while (strategy == 1 && ExchangeForVisibleObsidian(game)) exchanges++;
+                        while (strategy > 0 && ExchangeForVisibleObsidian(game)) exchanges++;
                         var roll = game.ResolveRoll(); wait = 2;
                         if (roll.reward == 0) { misses++; emptyStreak++; } else emptyStreak = 0;
                         losses += roll.lostChests;
@@ -448,36 +539,56 @@ public static class DemoTools
                 }
                 for (int i = 0; i < checkpoints.Length; i++) if (second == checkpoints[i])
                 {
-                    rows.AppendLine($"{strategy},{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks},{misses},{losses},{reroutes},{exchanges},{game.Progress.swapLevel},{game.Progress.efficiencyLevel},{game.Progress.pressLevel},{game.Progress.treasureLevel},{game.ClaimedMilestones}");
+                    rows.AppendLine(FormattableString.Invariant($"{strategy},{seed},{second / 60},{game.Progress.stratum},{game.Progress.upgradeLevel},{game.Progress.forgeLevel},{game.MinerLevel},{game.Progress.oresMined},{game.Progress.coins},{game.Progress.totalRolls},{game.Progress.totalBlocks},{misses},{losses},{reroutes},{exchanges},{game.Progress.swapLevel},{game.Progress.efficiencyLevel},{game.Progress.pressLevel},{game.Progress.treasureLevel},{game.ClaimedMilestones},{game.Progress.workerCount},{game.Progress.drillCount},{game.Progress.cartCount},{game.Progress.railLevel},{game.ProductionMilli / 1000d},{game.Progress.totalProduced}"));
                     sums[strategy, i, 0] += game.Progress.stratum; sums[strategy, i, 1] += game.Progress.upgradeLevel; sums[strategy, i, 2] += game.Progress.forgeLevel;
                     sums[strategy, i, 3] += game.MinerLevel; sums[strategy, i, 4] += game.Progress.oresMined;
                     sums[strategy, i, 5] += game.Progress.swapLevel; sums[strategy, i, 6] += game.Progress.efficiencyLevel;
                     sums[strategy, i, 7] += game.Progress.pressLevel; sums[strategy, i, 8] += game.Progress.treasureLevel;
                     sums[strategy, i, 9] += game.ClaimedMilestones;
+                    sums[strategy, i, 10] += game.Progress.workerCount; sums[strategy, i, 11] += game.Progress.drillCount;
+                    sums[strategy, i, 12] += game.Progress.cartCount; sums[strategy, i, 13] += game.Progress.railLevel;
+                    sums[strategy, i, 14] += game.ProductionMilli / 1000d; sums[strategy, i, 15] += game.Progress.totalProduced;
                 }
             }
             if (game.Progress.stratum < 10 || game.Progress.coins < 0 || game.Progress.tickets < 0 || game.UnlockedOres != 5 || game.Progress.oreDamage >= game.OreHealth || game.HasPendingRoll) throw new Exception("Balance regression strategy " + strategy + ", seed " + seed);
+            if (strategy == 2 && (game.Progress.totalProduced <= 0 || game.Progress.workerCount == 0 || game.Progress.drillCount == 0 || game.Progress.cartCount == 0 || game.Progress.railLevel == 0)) throw new Exception("Production strategy did not develop all branches: " + seed);
             totalMisses[strategy] += misses; totalLosses[strategy] += losses; totalReroutes[strategy] += reroutes; totalExchanges[strategy] += exchanges;
         }
-        for (int s = 0; s < 2; s++) if (totalMisses[s] == 0 || totalLosses[s] == 0 || totalReroutes[s] == 0 || s == 1 && totalExchanges[s] == 0) throw new Exception("Risk simulation has no actual losses or exchanges");
+        for (int s = 0; s < 3; s++) if (totalMisses[s] == 0 || totalLosses[s] == 0 || totalReroutes[s] == 0 || s > 0 && totalExchanges[s] == 0) throw new Exception("Risk simulation has no actual losses or exchanges");
         Directory.CreateDirectory("Logs"); Directory.CreateDirectory("Docs");
         File.WriteAllText("Logs/balance-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.11\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Обе стратегии забирают контракты и готовые разовые награды книги целей (не более 14140 монет и 34 жетонов за всё прохождение). Базовый приоритет покупок: кузница до уровня min(10, 2 × прочность), затем кирка при наличии монет. После трёх розыгрышей без награды бот меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 покупает только кирку и кузницу, обмен закрыт. Стратегия 1 покупает новые ветки за монеты с соблюдением уровней: перестановку до 3, остроту до min(10, уровень/4), пресс до min(6, уровень/5), сокровища до min(10, уровень/5). Если новая покупка недоступна, действует базовый приоритет кузницы и кирки. Использует до купленного лимита обменов, передавая алмаз на раскрытый обсидиан. Скрытые слои бот не читает.\n");
-        for (int s = 0; s < 2; s++)
+        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.12\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Все стратегии забирают контракты и готовые разовые награды книги целей (не более 14140 монет и 34 жетонов за всё прохождение). Базовый приоритет покупок: кузница до уровня min(10, 2 × прочность), затем кирка при наличии монет. После трёх розыгрышей без награды бот меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 покупает только кирку и кузницу, обмен закрыт. Стратегия 1 покупает новые ветки за монеты с соблюдением уровней: перестановку до 3, остроту до min(10, уровень/4), пресс до min(6, уровень/5), сокровища до min(10, уровень/5). Если новая покупка недоступна, действует базовый приоритет кузницы и кирки. Использует до купленного лимита обменов, передавая алмаз на раскрытый обсидиан. Скрытые слои бот не читает.\n");
+        doc.Append("\nВо всех стратегиях бот активирует богатую жилу при появлении. Таймер жилы идёт только во время ручной добычи; за время рулетки производство монет продолжается. Стратегия 2 повторяет стратегию 1 и раз в 5 секунд проверяет покупку производства: шахтёры до min(30, уровень), буры до min(15, уровень/3), вагонетки до min(10, уровень/4), рельсы до min(10, уровень/4). Офлайн-доход не моделируется.\n");
+        for (int s = 0; s < 3; s++)
         {
-            doc.Append(s == 0 ? "\n## Без обмена\n" : "\n## Все ветки прокачки\n");
+            doc.Append(s == 0 ? "\n## Без обмена\n" : s == 1 ? "\n## Снаряжение без производства\n" : "\n## Снаряжение и производство\n");
             doc.Append("\n| Минута | Средний пласт | Уровень кирки | Кузница | Уровень шахтёра | Разрушено руд | Наград за цели |\n|---|---:|---:|---:|---:|---:|---:|\n");
             for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} | {6:F1} |", checkpoints[i] / 60, sums[s, i, 0] / runs, sums[s, i, 1] / runs, sums[s, i, 2] / runs, sums[s, i, 3] / runs, sums[s, i, 4] / runs, sums[s, i, 9] / runs));
             doc.Append($"\nВсего за 100 прогонов: {totalMisses[s]} розыгрышей без монет, {totalLosses[s]} сундуков потеряно из-за бедрока, {totalReroutes[s]} смен раскладки за жетон, {totalExchanges[s]} обменов кирок.\n");
-            if (s == 1)
+            if (s > 0)
             {
                 doc.Append("\n| Минута | Перестановка | Острота | Пресс | Сокровища |\n|---|---:|---:|---:|---:|\n");
                 for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} |", checkpoints[i] / 60, sums[s, i, 5] / runs, sums[s, i, 6] / runs, sums[s, i, 7] / runs, sums[s, i, 8] / runs));
             }
+            if (s == 2)
+            {
+                doc.Append("\n| Минута | Шахтёры | Буры | Вагонетки | Рельсы | Монет/с | Монет произведено |\n|---|---:|---:|---:|---:|---:|---:|\n");
+                for (int i = 0; i < 4; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F1} | {2:F1} | {3:F1} | {4:F1} | {5:F1} | {6:F1} |", checkpoints[i] / 60, sums[s, i, 10] / runs, sums[s, i, 11] / runs, sums[s, i, 12] / runs, sums[s, i, 13] / runs, sums[s, i, 14] / runs, sums[s, i, 15] / runs));
+            }
         }
         doc.Append("\nФормулы и шансы находятся в `Assets/MineLoot/Scripts/MineGame.cs`. Сырые результаты: `Logs/balance-runs.csv` после запуска меню Mine Loot → Simulate balance. Прочность растёт каждые 3 пласта до 4, награды растут до 100-го пласта. Для проверки удержания и удобства нужен плейтест.\n");
         File.WriteAllText("Docs/Balance.md", doc.ToString().Replace("\r\n", "\n"));
-        Debug.Log("LUCKY_PICKAXE_BALANCE: PASS (200 seeded runs, two exchange strategies)");
+        Debug.Log("LUCKY_PICKAXE_BALANCE: PASS (300 seeded runs, three progression strategies)");
+    }
+
+    private static bool BuyProductionUpgrade(MineGame game)
+    {
+        foreach (var kind in new[] { UpgradeKind.Worker, UpgradeKind.Drill, UpgradeKind.Cart, UpgradeKind.Rails })
+        {
+            int desired = kind == UpgradeKind.Worker ? Math.Min(30, game.MinerLevel) : kind == UpgradeKind.Drill ? Math.Min(15, game.MinerLevel / 3) : Math.Min(10, game.MinerLevel / 4);
+            if (game.UpgradeLevel(kind) < desired && game.BuyUpgrade(kind)) return true;
+        }
+        return false;
     }
 
     private static bool BuyAdditionalUpgrade(MineGame game)
@@ -507,7 +618,7 @@ public static class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.11.0";
+        PlayerSettings.bundleVersion = "0.12.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");

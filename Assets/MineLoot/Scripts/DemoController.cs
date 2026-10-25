@@ -15,7 +15,7 @@ namespace MineLoot
         private static readonly string[] CampNames = { "ЛАГЕРЬ I", "ШТОЛЬНЯ II", "РУДНИК III", "ПРИИСК IV", "АЛМАЗНЫЙ V" };
         private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари" };
         private static readonly string[] ForgeFeatures = { "", "Печь и наковальня", "Дымоход и стойка", "Навес мастерской", "Оснащение мастера" };
-        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Острота", "Пресс жетонов", "Сокровища" };
+        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Острота", "Пресс жетонов", "Сокровища", "Шахтёры", "Буры", "Вагонетки", "Рельсы" };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[] picks = new Image[5];
         private readonly Text[] powers = new Text[5];
@@ -49,6 +49,10 @@ namespace MineLoot
         private float visualHealth = 1, visualExperience, visualTicket, upgradePulse, noticeTime;
         private int previousLevel, previousOre = -1;
         private int selectedPick = -1;
+        private bool applicationPaused;
+        private bool skipEconomyFrame;
+        private float nextEconomyRefresh;
+        private bool smokeClockRunning;
         public bool FastRoll { get; private set; }
         public MineGame Game => game;
         public bool IsBusy => busy;
@@ -57,7 +61,7 @@ namespace MineLoot
 
         private void Awake()
         {
-            if (SmokeMode) Application.runInBackground = true;
+            Application.runInBackground = true;
             game = SmokeMode ? new MineGame() : ProgressStore.Load();
             random = SmokeMode ? new System.Random(6355) : new System.Random();
             sounds = gameObject.AddComponent<GameAudio>();
@@ -70,6 +74,7 @@ namespace MineLoot
         private void RestorePresentation()
         {
             busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
+            productionTab = false;
             noticeTime = 0; noticeGroup.alpha = 0;
             mineStatus.text = "Нажимай или удерживай блок";
             Array.Copy(game.Progress.depths, shownDepths, 5);
@@ -90,6 +95,8 @@ namespace MineLoot
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
             float dt = Time.unscaledDeltaTime;
+            if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !busy && modal == null && Application.isFocused);
+            skipEconomyFrame = false;
             rockPulse = Mathf.MoveTowards(rockPulse, 0, dt * 4.5f);
             upgradePulse = Mathf.MoveTowards(upgradePulse, 0, dt * 2);
             float strike = rockPulse * rockPulse, follow = Mathf.Sin((1 - rockPulse) * Mathf.PI) * rockPulse;
@@ -142,8 +149,35 @@ namespace MineLoot
             }
             else { gainCoins += hit.coins; gainExperience += hit.experience; }
             if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel);
+            else if (hit.veinFound) Notice("БОГАТАЯ ЖИЛА", "Нажми золотую кнопку рядом с рудой\nВременное усиление ручной добычи");
             if (game.Progress.hits == 0) visualTicket = 0;
             Persist(); if (hit.broken || hit.levels > 0) Flush(); Refresh();
+        }
+
+        private void TickEconomy(double seconds, bool miningActive, bool forceRefresh = false)
+        {
+            bool offer = game.VeinOffered, boost = game.VeinActive;
+            long earned = game.AdvanceTime(seconds, miningActive);
+            if (game.ProductionMilli > 0 || miningActive && (offer || boost)) Persist();
+            bool expired = offer != game.VeinOffered || boost != game.VeinActive;
+            if (expired) Flush();
+            if (forceRefresh || expired || (earned > 0 || offer || boost) && Time.unscaledTime >= nextEconomyRefresh)
+            {
+                nextEconomyRefresh = Time.unscaledTime + .25f; Refresh();
+            }
+        }
+
+        internal void AdvanceForSmoke(double seconds, bool miningActive)
+        {
+            if (SmokeMode) TickEconomy(seconds, miningActive, true);
+        }
+        internal void UseLiveClockForSmoke(bool enabled) { if (SmokeMode) smokeClockRunning = enabled; }
+
+        public void ActivateRichVein()
+        {
+            if (busy || modal != null || !game.ActivateVein()) return;
+            Persist(); Flush(); Refresh(); sounds.Play("crystal");
+            Notice("БОГАТАЯ ЖИЛА · ×3", "Монеты от ручной добычи\n12 секунд на экране шахты");
         }
 
         public void Upgrade()
@@ -605,7 +639,9 @@ namespace MineLoot
             coinLabel.resizeTextForBestFit = true; coinLabel.resizeTextMinSize = 16; coinLabel.resizeTextMaxSize = 28;
             ticketLabel.text = game.Progress.tickets.ToString("N0");
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
-            powerLabel.text = "+" + game.ClickPower + " за удар";
+            powerLabel.text = "+" + game.ManualClickPower + " за удар";
+            richVeinButton.gameObject.SetActive(game.VeinOffered);
+            richVeinTimer.text = game.VeinActive ? "×3 · " + (int)Math.Ceiling(game.Progress.veinBoostLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
             progressLabel.text = game.Progress.hits + " / " + game.HitsRequired;
             levelLabel.text = "ШАХТЁР · УР. " + game.MinerLevel;
             stageBadge.text = game.LevelGoal == 0 ? "МАКС. УРОВЕНЬ" : game.LevelExperience + "/" + game.LevelGoal + " ОПЫТА";
@@ -629,7 +665,7 @@ namespace MineLoot
             campLabel.text = CampNames[game.PickTier];
             for (int i = 0; i < campSteps.Length; i++) campSteps[i].color = i <= game.PickTier ? Hex("d4ed96") : Hex("455742");
             forgeTitle.text = "Кузница " + game.Progress.forgeLevel;
-            upgradeHint.text = "Реликвий: " + game.Relics;
+            upgradeHint.text = game.ProductionMilli > 0 ? "+" + Rate(game.ProductionMilli) + " монет/с" : "Реликвий: " + game.Relics;
             upgradeButton.interactable = !busy && game.CanUpgrade;
             forgeButton.interactable = !busy && game.CanForge;
             forgeLabel.text = game.Progress.forgeLevel == MineGame.MaxForge ? "Максимум" : game.ForgeCost.ToString("N0") + " монет";
@@ -672,6 +708,7 @@ namespace MineLoot
             floorHint.text = "Прочность " + game.Hardness;
             stage.SetBiome(game.Biome);
             stage.SetDevelopment(game.PickTier, game.Progress.forgeLevel);
+            stage.SetProduction(game.Progress.workerCount, game.Progress.drillCount, game.Progress.cartCount, game.VeinOffered || game.VeinActive);
             stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
             clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
         }
@@ -679,7 +716,7 @@ namespace MineLoot
         public static bool SmokeMode => Array.IndexOf(Environment.GetCommandLineArgs(), "-demoSmokeTest") >= 0;
         private void Persist() { if (!dirty) nextSave = Time.unscaledTime + 3; dirty = true; }
         private void Flush() { if (game != null && !SmokeMode && dirty) ProgressStore.Save(game); dirty = false; }
-        private void OnApplicationPause(bool pause) { if (pause) { holding = false; Flush(); } }
+        private void OnApplicationPause(bool pause) { applicationPaused = pause; skipEconomyFrame = true; if (pause) { holding = false; Flush(); } }
         private void OnApplicationFocus(bool focus) { if (!focus) { holding = false; Flush(); } }
         private void OnApplicationQuit() { Flush(); }
         private void OnDestroy() => art.Dispose();

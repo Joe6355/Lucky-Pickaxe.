@@ -12,6 +12,12 @@ namespace MineLoot
         private Transform cart, hoistWheel, hoistBucket, hoistRope, crystalSign;
         private MeshRenderer cartBody, cartCargo;
         private Vector3 smokeOrigin;
+        private readonly Transform[] workers = new Transform[3], workerTools = new Transform[3], veinSparks = new Transform[6];
+        private Transform drillRig, drillSpindle;
+        public int VisibleWorkers { get { int count = 0; foreach (var worker in workers) if (worker != null && worker.gameObject.activeSelf) count++; return count; } }
+        public bool DrillVisible => drillRig != null && drillRig.gameObject.activeSelf;
+        public float DrillAngle => drillSpindle == null ? 0 : drillSpindle.localEulerAngles.y;
+        public bool VeinVisible => veinSparks[0] != null && veinSparks[0].gameObject.activeSelf;
         private static readonly int[] ForgeMilestones = { 1, 3, 6, 10 };
         public int DevelopmentTier { get; private set; } = -1;
         public int ForgeStage { get; private set; }
@@ -148,6 +154,52 @@ namespace MineLoot
                 forgeSmoke[i] = MakeMesh("Chimney smoke " + i, puff, GetMaterial("smoke")).transform;
                 forgeSmoke[i].gameObject.SetActive(false);
             }
+            BuildProduction();
+        }
+
+        private void BuildProduction()
+        {
+            Vector3[] positions = { new Vector3(-2.45f, 0, -1.4f), new Vector3(.6f, 0, 2), new Vector3(2.8f, 0, 1.5f) };
+            for (int i = 0; i < workers.Length; i++)
+            {
+                var batch = new Dictionary<string, Geometry>();
+                foreach (float x in new[] { -.14f, .14f }) Block(new Vector3(x, .26f, 0), new Vector3(.2f, .52f, .25f), "metal-dark", batch: batch);
+                Block(new Vector3(0, .78f, 0), new Vector3(.55f, .57f, .3f), "water", batch: batch);
+                Block(new Vector3(0, 1.23f, 0), new Vector3(.43f, .4f, .4f), "sand", batch: batch);
+                Block(new Vector3(0, 1.47f, -.02f), new Vector3(.56f, .16f, .5f), "metal-gold", batch: batch);
+                Block(new Vector3(0, 1.43f, -.29f), new Vector3(.16f, .13f, .07f), "diamond", batch: batch);
+                foreach (float x in new[] { -.1f, .1f }) Block(new Vector3(x, 1.25f, -.205f), Vector3.one * .06f, "black", batch: batch);
+                workers[i] = DevelopmentGroup("Working miner " + i, batch, positions[i]);
+                batch = new Dictionary<string, Geometry>();
+                Block(new Vector3(0, -.12f, 0), new Vector3(.1f, .5f, .1f), "wood", batch: batch);
+                Block(new Vector3(0, .13f, 0), new Vector3(.5f, .1f, .13f), "iron", batch: batch);
+                workerTools[i] = DevelopmentGroup("Miner tool " + i, batch, Vector3.zero);
+                workerTools[i].SetParent(workers[i], false); workerTools[i].localPosition = new Vector3(.34f, 1, -.2f); workerTools[i].gameObject.SetActive(true);
+            }
+            var rig = new Dictionary<string, Geometry>();
+            Block(new Vector3(0, .16f, 0), new Vector3(1.1f, .32f, .8f), "metal-dark", batch: rig);
+            foreach (float x in new[] { -.4f, .4f }) Block(new Vector3(x, .9f, .2f), new Vector3(.13f, 1.5f, .15f), "metal-gold", batch: rig);
+            Block(new Vector3(0, 1.65f, .1f), new Vector3(1.1f, .3f, .65f), "iron", batch: rig);
+            drillRig = DevelopmentGroup("Automatic mine drill", rig, new Vector3(3.8f, 0, 1.45f));
+            var spindle = new Geometry();
+            for (int i = 0; i < 4; i++) AddCube(spindle, new Vector3(0, -.22f * i, 0), Vector3.one * (.4f - i * .07f), 1);
+            drillSpindle = MakeMesh("Turning drill spindle", spindle, GetMaterial("metal-dark")).transform;
+            drillSpindle.SetParent(drillRig, false); drillSpindle.localPosition = new Vector3(0, 1.32f, -.15f);
+            for (int i = 0; i < veinSparks.Length; i++)
+            {
+                var spark = new Geometry(); AddCube(spark, Vector3.zero, Vector3.one * .17f, 1);
+                veinSparks[i] = MakeMesh("Rich vein glint " + i, spark, GetMaterial("metal-gold")).transform;
+                veinSparks[i].gameObject.SetActive(false);
+            }
+        }
+
+        public void SetProduction(int workerCount, int drillCount, int carts, bool richVein)
+        {
+            if (IsExpedition) return;
+            for (int i = 0; i < workers.Length; i++) workers[i].gameObject.SetActive(workerCount >= (i == 0 ? 1 : i == 1 ? 5 : 10));
+            drillRig.gameObject.SetActive(drillCount > 0);
+            if (carts > 0 && !cart.gameObject.activeSelf) { cart.gameObject.SetActive(true); mineBuildTime[0] = 1; cart.localScale = Vector3.one; }
+            for (int i = 0; i < veinSparks.Length; i++) veinSparks[i].gameObject.SetActive(richVein);
         }
 
         public void SetDevelopment(int pickTier, int forgeLevel, bool animate = true)
@@ -183,6 +235,14 @@ namespace MineLoot
         private void UpdateDevelopment(float dt)
         {
             if (DevelopmentTier < 0) return;
+            for (int i = 0; i < workers.Length; i++) if (workers[i].gameObject.activeSelf) workerTools[i].localEulerAngles = new Vector3(Mathf.Sin(clock * 3 + i * 2) * 42, 0, -22);
+            if (DrillVisible) drillSpindle.localEulerAngles = new Vector3(0, clock * 250, 0);
+            if (VeinVisible) for (int i = 0; i < veinSparks.Length; i++)
+            {
+                float angle = clock * 1.1f + i * Mathf.PI / 3;
+                veinSparks[i].localPosition = new Vector3(-.4f + Mathf.Cos(angle) * 1.35f, 1.35f + Mathf.Sin(angle * 2) * .38f, -.8f + Mathf.Sin(angle) * 1.35f);
+                veinSparks[i].localEulerAngles = new Vector3(clock * 35, clock * 55, 45);
+            }
             for (int i = 0; i < 4; i++)
             {
                 if (mineStructures[i].gameObject.activeSelf)

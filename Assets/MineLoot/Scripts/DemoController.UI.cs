@@ -18,6 +18,12 @@ namespace MineLoot
         private readonly Text[] workshopLevels = new Text[6], workshopEffects = new Text[6], workshopStates = new Text[6];
         private readonly Image[] workshopProgress = new Image[6];
         private readonly Image[] workshopIcons = new Image[6];
+        private readonly Text[] workshopTitles = new Text[6];
+        private readonly GameObject[] workshopCards = new GameObject[6];
+        private Button equipmentTab, productionTabButton, richVeinButton;
+        private Text workshopFootnote, productionRateLabel, productionBreakdown, productionSynergy, productionTotal, richVeinTimer;
+        private GameObject productionSummary;
+        private bool productionTab;
         private Image workshopNavMark;
         private Image experienceFill, oreFill, workshopPick;
         private readonly Image[] oreSlots = new Image[5], oreIcons = new Image[5], reels = new Image[5];
@@ -140,6 +146,9 @@ namespace MineLoot
             pickHome = clickPick.rectTransform.anchoredPosition;
             Card(hero, "Tap hint", 12, 240, 408, 29, new Color(.2f,.24f,.18f,.92f));
             mineStatus = Label(hero, "Нажимай или удерживай блок", 12, 240, 408, 29, 17, Hex("eff5dc"), FontStyle.Normal, TextAnchor.MiddleCenter);
+            richVeinButton = ButtonAt(hero, "ЖИЛА!", 318, 66, 96, 42, ActivateRichVein, Color.white, Hex("35291c"));
+            richVeinButton.image.sprite = art.Get("ui-brass"); richVeinButton.name = "Activate rich vein";
+            richVeinTimer = Label(hero, "", 281, 43, 138, 22, 16, Hex("fff0aa"), FontStyle.Bold, TextAnchor.MiddleCenter);
 
             for (int i = 0; i < 5; i++)
             {
@@ -227,23 +236,39 @@ namespace MineLoot
             Card(page, "Workshop header", 24, 0, 432, 58, Color.white, "ui-timber");
             Label(page, "МАСТЕРСКАЯ", 40, 2, 400, 32, 27, Hex("ffe6aa"), FontStyle.Bold);
             Label(page, "Шахта · рулетка · добыча", 40, 34, 400, 22, 16, Hex("d1c5a7"));
-            string[] icons = { "pick4", "forge", "swap", "pick-head2", "ticket", "chest" };
+            equipmentTab = ButtonAt(page, "СНАРЯЖЕНИЕ", 24, 68, 211, 31, () => SetWorkshopSection(false), Panel, Ink);
+            equipmentTab.name = "Equipment section";
+            productionTabButton = ButtonAt(page, "ПРОИЗВОДСТВО", 245, 68, 211, 31, () => SetWorkshopSection(true), Panel, Ink);
+            productionTabButton.name = "Production section";
+            equipmentTab.GetComponentInChildren<Text>().fontSize = productionTabButton.GetComponentInChildren<Text>().fontSize = 18;
             for (int i = 0; i < workshopButtons.Length; i++)
             {
-                var kind = (UpgradeKind)i;
-                int x = 24 + i % 2 * 221, y = 68 + i / 2 * 172;
-                Card(page, "Upgrade card " + kind, x, y, 211, 164, Panel);
-                workshopIcons[i] = Icon(page, icons[i], x + 12, y + 12, 34, 34);
-                Label(page, UpgradeNames[i], x + 54, y + 7, 145, 27, 20, Ink, FontStyle.Bold);
-                workshopLevels[i] = Label(page, "", x + 54, y + 34, 145, 20, 16, Muted);
-                workshopEffects[i] = Label(page, "", x + 12, y + 57, 187, 36, 16, Ink);
-                workshopStates[i] = Label(page, "", x + 12, y + 94, 187, 20, 16, Muted);
-                PanelAt(page, "Upgrade progress track " + kind, Hex("717b6a"), x + 12, y + 112, 187, 3);
-                workshopProgress[i] = PanelAt(page, "Upgrade progress " + kind, Hex("a6cb6a"), x + 12, y + 112, 0, 3);
-                workshopButtons[i] = ButtonAt(page, "", x + 12, y + 119, 187, 37, () => Purchase(kind), Hex("d9bd80"), Hex("352b20"));
-                workshopButtons[i].name = "Buy " + kind;
+                int slot = i, x = 24 + i % 2 * 221, y = 108 + i / 2 * 156;
+                var card = Card(page, "Upgrade card " + i, x, y, 211, 156, Panel); workshopCards[i] = card.gameObject;
+                workshopIcons[i] = Icon(card.transform, "pick1", 12, 12, 34, 34);
+                workshopTitles[i] = Label(card.transform, "", 54, 7, 145, 25, 20, Ink, FontStyle.Bold);
+                workshopLevels[i] = Label(card.transform, "", 54, 32, 145, 20, 16, Muted);
+                workshopEffects[i] = Label(card.transform, "", 12, 54, 187, 34, 16, Ink);
+                workshopStates[i] = Label(card.transform, "", 12, 88, 187, 20, 16, Muted);
+                PanelAt(card.transform, "Upgrade progress track " + i, Hex("717b6a"), 12, 108, 187, 3);
+                workshopProgress[i] = PanelAt(card.transform, "Upgrade progress " + i, Hex("a6cb6a"), 12, 108, 0, 3);
+                workshopButtons[i] = ButtonAt(card.transform, "", 12, 115, 187, 32, () => Purchase(WorkshopKind(slot)), Hex("d9bd80"), Hex("352b20"));
             }
-            Label(page, "Каждая покупка сохраняется сразу", 24, 589, 432, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+            productionSummary = Card(page, "Production summary", 24, 420, 432, 156, Hex("b1c197")).gameObject;
+            Label(productionSummary.transform, "РУДНИК РАБОТАЕТ", 14, 8, 404, 28, 23, Ink, FontStyle.Bold);
+            productionRateLabel = Label(productionSummary.transform, "", 14, 38, 404, 31, 26, Ink, FontStyle.Bold);
+            productionBreakdown = Label(productionSummary.transform, "", 14, 76, 404, 22, 16, Muted);
+            productionSynergy = Label(productionSummary.transform, "", 14, 100, 404, 22, 16, Muted);
+            productionTotal = Label(productionSummary.transform, "", 14, 125, 404, 22, 16, Muted);
+            workshopFootnote = Label(page, "", 24, 589, 432, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+        }
+
+        private UpgradeKind WorkshopKind(int slot) => (UpgradeKind)(productionTab ? (int)UpgradeKind.Worker + slot : slot);
+        private static string Rate(long milli) => (milli / 1000d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
+        private void SetWorkshopSection(bool production)
+        {
+            if (busy || modal != null) return;
+            productionTab = production; RefreshWorkshop();
         }
 
         private string UpgradeEffect(UpgradeKind kind, bool preview)
@@ -257,21 +282,35 @@ namespace MineLoot
                 case UpgradeKind.Swap: return "Обменов: " + Value(rank, target) + "\nВ рулетке";
                 case UpgradeKind.Efficiency: return "Урон: " + Value(game.MiningDamage, 1 + game.Progress.upgradeLevel / 5 + target) + "\nДобыча руды";
                 case UpgradeKind.Press: return "Ударов: " + Value(game.HitsRequired, MineGame.HitsPerTicket - target) + "\nЗа один жетон";
-                default: return "Сундук: +" + Value(rank * 15, target * 15) + "%\nНаграды в рулетке";
+                case UpgradeKind.Treasure: return "Сундук: +" + Value(rank * 15, target * 15) + "%\nНаграды в рулетке";
+                case UpgradeKind.Worker: return "По 2 монеты/с\nШахтёры: " + Value(rank, target);
+                case UpgradeKind.Drill: return "По " + Rate(12000L * (10 + game.Progress.forgeLevel) / 10) + " монет/с\nКузница: +" + game.DrillBonus + "%";
+                case UpgradeKind.Cart: return "+" + (10 + 2 * game.Progress.railLevel) + "% каждая\nК общей добыче";
+                default: return "Бонус: " + Value(10 + 2 * rank, 10 + 2 * target) + "%\nКаждой вагонетке";
             }
         }
 
         private void RefreshWorkshop()
         {
-            workshopIcons[0].sprite = art.Get(PickSprites[game.PickTier]);
+            string[] icons = { PickSprites[game.PickTier], "forge", "swap", "pick-head2", "ticket", "chest", "worker", "drill", "cart", "rails" };
+            equipmentTab.image.color = productionTab ? Panel : Hex("a4c975"); productionTabButton.image.color = productionTab ? Hex("a4c975") : Panel;
+            productionSummary.SetActive(productionTab);
+            productionRateLabel.text = "+" + Rate(game.ProductionMilli) + " монет / сек.";
+            productionBreakdown.text = "Шахтёры: " + game.Progress.workerCount + " · буры: " + game.Progress.drillCount + " · вагонетки: " + game.Progress.cartCount;
+            productionSynergy.text = "Буры: +" + game.DrillBonus + "% · логистика: +" + game.CartBonus + "%";
+            productionTotal.text = "Заработано: " + ShortAmount(game.Progress.totalProduced) + " монет";
+            workshopFootnote.text = productionTab ? "Автодобыча даёт только монеты" : "Каждая покупка сохраняется сразу";
             for (int i = 0; i < workshopButtons.Length; i++)
             {
-                var kind = (UpgradeKind)i;
+                bool visible = !productionTab || i < 4; workshopCards[i].SetActive(visible); if (!visible) continue;
+                var kind = WorkshopKind(i);
+                workshopTitles[i].text = UpgradeNames[(int)kind]; workshopIcons[i].sprite = art.Get(icons[(int)kind]); workshopButtons[i].name = "Buy " + kind;
                 int rank = game.UpgradeLevel(kind), max = MineGame.UpgradeMax(kind), unlock = game.UpgradeUnlock(kind);
                 bool capped = rank == max, locked = game.MinerLevel < unlock;
                 workshopLevels[i].text = "Ур. " + rank + " / " + max;
                 workshopEffects[i].text = UpgradeEffect(kind, true);
-                workshopStates[i].text = capped ? "Полностью улучшено" : locked ? "Нужен шахтёр ур. " + unlock : game.HasPendingRoll ? "Заверши бросок" : game.CanBuyUpgrade(kind) ? "Можно улучшить" : "Нужно ещё: " + ShortAmount(game.UpgradePrice(kind) - game.Progress.coins);
+                string prerequisite = game.HasUpgradePrerequisite(kind) ? "" : "Нужен: " + UpgradeNames[(int)game.UpgradePrerequisite(kind).Value];
+                workshopStates[i].text = capped ? "Полностью улучшено" : locked ? "Нужен шахтёр ур. " + unlock : game.HasPendingRoll ? "Заверши бросок" : prerequisite.Length > 0 ? prerequisite : game.CanBuyUpgrade(kind) ? "Можно улучшить" : "Нужно ещё: " + ShortAmount(game.UpgradePrice(kind) - game.Progress.coins);
                 workshopStates[i].color = locked ? Hex("805644") : Muted;
                 workshopProgress[i].rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 187f * rank / max);
                 var button = workshopButtons[i]; button.interactable = !busy && game.CanBuyUpgrade(kind);
