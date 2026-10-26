@@ -1,0 +1,13 @@
+{
+  "name": "lucky-pickaxe-web-checks",
+  "private": true,
+  "scripts": {
+    "check": "node web-platform-check.cjs",
+    "check:browser": "node web-browser-check.cjs",
+    "preview": "sdk-dev-proxy -p ../Builds/WebGL --dev-mode=true --port 8126"
+  },
+  "devDependencies": {
+    "@yandex-games/sdk-dev-proxy": "0.0.2",
+    "playwright": "1.62.1"
+  }
+}

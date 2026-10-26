@@ -11,6 +11,13 @@ namespace MineLoot
 
         public static MineGame Load(string key = Key)
         {
+            // A synchronous browser journal closes the gap before IndexedDB finishes flushing.
+            string journal = BrowserPlatform.ReadProgress(key);
+            if (!string.IsNullOrEmpty(journal))
+            {
+                try { return new MineGame(Decode(journal)); }
+                catch (Exception) { Debug.LogWarning("Lucky Pickaxe: invalid browser journal; trying PlayerPrefs."); }
+            }
             string[] candidates = key == Key ? new[] { key, key + ".backup", LegacyKey } : new[] { key, key + ".backup" };
             foreach (string candidate in candidates)
             {
@@ -36,6 +43,7 @@ namespace MineLoot
         {
             // Both copies contain the paid pending draw, or the completed reward transaction.
             string json = JsonUtility.ToJson(game.Progress);
+            BrowserPlatform.WriteProgress(key, json);
             PlayerPrefs.SetString(key + ".backup", json);
             PlayerPrefs.SetString(key, json);
             PlayerPrefs.Save();

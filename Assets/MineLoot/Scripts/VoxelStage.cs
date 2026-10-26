@@ -186,8 +186,10 @@ namespace MineLoot
             if (IsExpedition) { SetExpeditionBiome(index); return; }
             view.backgroundColor = index == 0 ? ColorOf("8fcaea") : index == 1 ? ColorOf("a8d9ee") : ColorOf("efcc9b");
         }
+        public bool Paused { get; set; }
         private void Update()
         {
+            if (Paused) return;
             clock += Time.unscaledDeltaTime;
             if (IsExpedition) UpdateExpedition();
             else

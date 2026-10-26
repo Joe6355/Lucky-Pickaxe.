@@ -80,7 +80,7 @@ namespace MineLoot
 
         private void FollowGuide()
         {
-            if (busy || modal != null || !game.GuideActive) return;
+            if (applicationPaused || busy || modal != null || !game.GuideActive) return;
             switch (game.Progress.guideStep)
             {
                 case 2: ShowPage(game.Progress.tickets > 0); break;
@@ -98,13 +98,13 @@ namespace MineLoot
 
         private void SkipMiningGuide()
         {
-            if (busy || modal != null || !game.SkipGuide()) return;
+            if (applicationPaused || busy || modal != null || !game.SkipGuide()) return;
             Persist(); Flush(); Refresh();
         }
 
         private void StartMiningGuide()
         {
-            if (busy || game.HasPendingRoll) return;
+            if (applicationPaused || busy || game.HasPendingRoll) return;
             CloseModal();
             bool active = game.StartGuide(); Persist(); Flush(); ShowPage(false); Refresh();
             if (!active) Notice("ОСНОВЫ УЖЕ ОСВОЕНЫ", "Добыча, кирка, рулетка, рабочие и цели");

@@ -30,6 +30,7 @@ namespace MineLoot
             Screen.SetResolution(480, 960, false);
             yield return new WaitForSecondsRealtime(.8f);
             Canvas.ForceUpdateCanvases();
+            yield return VerifyPlatform(demo);
             yield return VerifyGuide(demo);
             demo.RestoreForSmoke(new MineProgress());
             yield return new WaitForSecondsRealtime(.8f);
@@ -669,6 +670,34 @@ namespace MineLoot
             Check(demo.Game.Progress.coins == walletBefore - upgradeCost - forgeCost && demo.Game.Progress.tickets == tickets && stage.OwnedMeshCount == meshCount, "Development preserves upgrade prices, tickets and mesh count");
             demo.RestoreForSmoke(ProgressStore.Decode(original));
             yield return new WaitForSecondsRealtime(.15f);
+        }
+
+        private IEnumerator VerifyPlatform(DemoController demo)
+        {
+            demo.RestoreForSmoke(new MineProgress { coins = 500, workerCount = 1 });
+            var audio = GetComponent<GameAudio>(); bool muted = audio.Muted;
+            demo.FocusForSmoke(false);
+            Check(audio.Suspended && audio.Muted == muted, "Losing focus silences active audio without changing the player's sound preference");
+            demo.FocusForSmoke(true);
+            Check(!audio.Suspended && audio.Muted == muted, "Returning focus restores the user's sound preference");
+            demo.OnBrowserPause("1"); string paused = JsonUtility.ToJson(demo.Game.Progress);
+            Check(demo.IsPaused && !GetComponentInChildren<CanvasGroup>().interactable && !GetComponentInChildren<CanvasGroup>().blocksRaycasts && audio.Suspended, "Host pause freezes input, pointer events and sound");
+            demo.Mine(); demo.Upgrade(); demo.Forge(); demo.Spin(); demo.ClaimContract(); demo.ActivateRichVein(); demo.AdvanceForSmoke(60, true);
+            demo.UseLiveClockForSmoke(true); yield return new WaitForSecondsRealtime(.4f);
+            Check(JsonUtility.ToJson(demo.Game.Progress) == paused, "Paused game cannot mine, buy, roll, activate a vein or earn live production");
+            demo.PauseForSmoke(true); demo.OnBrowserPause("0");
+            Check(demo.IsPaused && audio.Suspended, "Clearing the host pause cannot clear an independent engine pause");
+            demo.PauseForSmoke(false); demo.UseLiveClockForSmoke(false);
+            Check(!demo.IsPaused && GetComponentInChildren<CanvasGroup>().interactable && !audio.Suspended, "Input and sound return only after every pause reason clears");
+            demo.RestoreForSmoke(new MineProgress { coins = 500, workerCount = 1, swapLevel = 1, tickets = 1 });
+            demo.ShowPage(true); demo.SpinForSmoke(() => 0);
+            yield return new WaitForSecondsRealtime(.2f);
+            demo.OnBrowserPause("1"); paused = JsonUtility.ToJson(demo.Game.Progress); int settled = demo.SettledReels;
+            yield return new WaitForSecondsRealtime(1);
+            Check(demo.RollPhase == "reels" && demo.SettledReels == settled && JsonUtility.ToJson(demo.Game.Progress) == paused, "Host pause freezes a paid reel animation and retains its fixed picks and spent ticket");
+            demo.OnBrowserPause("0"); yield return FinishRoll(demo);
+            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.totalRolls == 1, "Resuming the same paid draw resolves exactly once");
+            demo.RestoreForSmoke(new MineProgress());
         }
 
         private IEnumerator VerifyGuide(DemoController demo)

@@ -9,6 +9,7 @@ namespace MineLoot
         private readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();
         private AudioSource source;
         public bool Muted { get; private set; }
+        public bool Suspended { get; private set; }
         private void Awake()
         {
             source = gameObject.AddComponent<AudioSource>(); source.playOnAwake = false; source.volume = .22f;
@@ -30,7 +31,12 @@ namespace MineLoot
         }
         public void Play(string name)
         {
-            if (!Muted && clips.TryGetValue(name, out var clip)) source.PlayOneShot(clip);
+            if (!Muted && !Suspended && clips.TryGetValue(name, out var clip)) source.PlayOneShot(clip);
+        }
+        public void SetSuspended(bool suspended)
+        {
+            Suspended = suspended; source.mute = suspended;
+            if (suspended) source.Stop();
         }
         private void Create(string name, float frequency, float duration, bool melody)
         {

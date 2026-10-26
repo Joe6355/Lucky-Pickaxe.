@@ -63,6 +63,7 @@ namespace MineLoot
             var canvasObject = new GameObject("Game UI", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
             canvasObject.transform.SetParent(transform, false);
             canvas = canvasObject.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            platformInput = canvasObject.AddComponent<CanvasGroup>();
             var backdrop = PanelAt(canvasObject.transform, "Backdrop", Back, 0, 0, 480, 960).rectTransform;
             backdrop.anchorMin = Vector2.zero; backdrop.anchorMax = Vector2.one; backdrop.sizeDelta = Vector2.zero; backdrop.anchoredPosition = Vector2.zero;
             shell = MakeRect(canvasObject.transform, "Portrait game", 0, 0, 480, 960);
@@ -284,7 +285,7 @@ namespace MineLoot
         private static string Rate(long milli) => (milli / 1000d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
         private void SetWorkshopSection(bool production)
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             productionTab = production; RefreshWorkshop(); RefreshGuide();
         }
 
@@ -350,7 +351,7 @@ namespace MineLoot
 
         public void ShowPrestige()
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             holding = false; prestigeWindowOpen = true;
             modal = MakeRect(shell, "Prestige modal", 0, 0, 480, 960).gameObject;
             var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .92f), 0, 0, 480, 960); dim.raycastTarget = true;
@@ -422,7 +423,7 @@ namespace MineLoot
 
         public void ShowOfflineReward()
         {
-            if (busy || modal != null || game.HasPendingRoll) return;
+            if (applicationPaused || busy || modal != null || game.HasPendingRoll) return;
             holding = false; offlineNoticeQueued = false; offlineWindowOpen = true;
             modal = MakeRect(shell, "Offline reward modal", 0, 0, 480, 960).gameObject;
             var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
@@ -473,7 +474,7 @@ namespace MineLoot
 
         private void ShowOdds()
         {
-            if (modal != null) return;
+            if (applicationPaused || modal != null) return;
             holding = false;
             modal = MakeRect(shell, "Rules modal", 0, 0, 480, 960).gameObject;
             var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
@@ -504,7 +505,7 @@ namespace MineLoot
 
         public void ShowMilestones()
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             holding = false; milestonePage = 0;
             int firstUnclaimed = -1, firstReady = -1;
             for (int i = 0; i < MineGame.MilestoneCount; i++)
@@ -598,7 +599,7 @@ namespace MineLoot
             float elapsed = 0;
             while (elapsed < .65f)
             {
-                elapsed += Time.unscaledDeltaTime;
+                elapsed += PlayDelta;
                 label.text = "+" + ShortAmount(gainCoins) + " монет\n+" + gainExperience + " опыта";
                 label.rectTransform.anchoredPosition = new Vector2(x, -y + (1 - Mathf.Pow(1 - elapsed / .65f, 3)) * 54);
                 label.color = new Color(1, .94f, .72f, Mathf.Clamp01((.65f - elapsed) / .23f)); yield return null;

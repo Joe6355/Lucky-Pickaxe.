@@ -110,7 +110,8 @@ namespace MineLoot
         private void Update()
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
-            float dt = Time.unscaledDeltaTime;
+            if (applicationPaused) return;
+            float dt = PlayDelta;
             if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !busy && modal == null && Application.isFocused);
             skipEconomyFrame = false;
             if (offlineNoticeQueued && !busy && modal == null && !game.HasPendingRoll) ShowOfflineReward();
@@ -153,7 +154,7 @@ namespace MineLoot
 
         public void Mine()
         {
-            if (busy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
+            if (applicationPaused || busy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
             lastMineTime = Time.unscaledTime;
             game.Mine(); var hit = game.LastHit; rockPulse = 1;
             mineStatus.text = hit.broken ? OreNames[hit.ore] + " добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
@@ -187,7 +188,7 @@ namespace MineLoot
 
         internal void AdvanceForSmoke(double seconds, bool miningActive)
         {
-            if (SmokeMode) TickEconomy(seconds, miningActive, true);
+            if (SmokeMode && !applicationPaused) TickEconomy(seconds, miningActive, true);
         }
         internal void UseLiveClockForSmoke(bool enabled) { if (SmokeMode) smokeClockRunning = enabled; }
         internal void ReturnForSmoke(long utc)
@@ -201,6 +202,7 @@ namespace MineLoot
         }
         internal void AdvanceSessionForSmoke(int seconds) { if (SmokeMode) sessionUtc += seconds; }
         internal void PauseForSmoke(bool pause) { if (SmokeMode) OnApplicationPause(pause); }
+        internal void FocusForSmoke(bool focus) { if (SmokeMode) OnApplicationFocus(focus); }
         internal void SaveSessionForSmoke() { if (SmokeMode) Flush(true); }
 
         private void PrepareReturn(long utc)
@@ -212,7 +214,7 @@ namespace MineLoot
 
         public void ClaimOfflineReward()
         {
-            if (busy || !offlineWindowOpen) return;
+            if (applicationPaused || busy || !offlineWindowOpen) return;
             long before = game.Progress.coins;
             if (!game.ClaimOffline()) return;
             long credit = game.Progress.coins - before;
@@ -222,21 +224,21 @@ namespace MineLoot
 
         public void ActivateRichVein()
         {
-            if (busy || modal != null || !game.ActivateVein()) return;
+            if (applicationPaused || busy || modal != null || !game.ActivateVein()) return;
             Persist(); Flush(); Refresh(); sounds.Play("crystal");
             Notice("БОГАТАЯ ЖИЛА · ×" + game.RichVeinMultiplier, "Монеты от ручной добычи\n" + game.RichVeinDuration + " секунд на экране шахты");
         }
 
         public void BuyPrestigeUpgrade(int index)
         {
-            if (busy || !prestigeWindowOpen || !prestigeTree.activeSelf || !game.BuyPrestigeUpgrade(index)) return;
+            if (applicationPaused || busy || !prestigeWindowOpen || !prestigeTree.activeSelf || !game.BuyPrestigeUpgrade(index)) return;
             Persist(); Flush(); Refresh(); sounds.Play("upgrade");
             Notice(MineGame.PrestigeUpgradeAt(index).title.ToUpperInvariant(), "Постоянное улучшение сохранено");
         }
 
         public void ConfirmPrestige()
         {
-            if (busy || !prestigeWindowOpen || !prestigeConfirmation.activeSelf) return;
+            if (applicationPaused || busy || !prestigeWindowOpen || !prestigeConfirmation.activeSelf) return;
             int reward = game.PrestigeReward;
             if (!game.Prestige(() => random.NextDouble())) return;
             // Save the new run and awarded crystals together, before changing any presentation.
@@ -248,7 +250,7 @@ namespace MineLoot
 
         public void Upgrade()
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             int tier = game.PickTier;
             if (!game.Upgrade()) return;
             mineStatus.text = "Кирка улучшена! +" + game.ClickPower + " за удар";
@@ -261,7 +263,7 @@ namespace MineLoot
         public void Forge()
         {
             int previousStage = stage.ForgeStage;
-            if (busy || modal != null || !game.Forge()) return;
+            if (applicationPaused || busy || modal != null || !game.Forge()) return;
             sounds.Play("upgrade"); mineStatus.text = "Кузница: алмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus;
             Persist(); Flush(); Refresh();
             if (stage.ForgeStage > previousStage) Notice("КУЗНИЦА УЛУЧШЕНА", ForgeFeatures[stage.ForgeStage] + "\nАлмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus);
@@ -269,7 +271,7 @@ namespace MineLoot
 
         public void ClaimContract()
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             int reward = game.ContractReward;
             if (!game.ClaimContract()) return;
             sounds.Play("reward"); Notice("КОНТРАКТ ВЫПОЛНЕН", "+" + reward + " монет · +1 жетон"); Persist(); Flush(); Refresh();
@@ -277,7 +279,7 @@ namespace MineLoot
 
         public void ClaimMilestone(int index)
         {
-            if (busy || !milestoneBookOpen || !game.ClaimMilestone(index)) return;
+            if (applicationPaused || busy || !milestoneBookOpen || !game.ClaimMilestone(index)) return;
             var goal = MineGame.MilestoneAt(index);
             Persist(); Flush(); Refresh(); RefreshMilestoneBook();
             sounds.Play("reward"); Notice("ЦЕЛЬ ВЫПОЛНЕНА", goal.title + "\n+" + goal.coins + " монет · +" + goal.tickets + " жет.");
@@ -287,7 +289,7 @@ namespace MineLoot
         {
             if (kind == UpgradeKind.Pickaxe) { Upgrade(); return; }
             if (kind == UpgradeKind.Forge) { Forge(); return; }
-            if (busy || modal != null || !game.BuyUpgrade(kind)) return;
+            if (applicationPaused || busy || modal != null || !game.BuyUpgrade(kind)) return;
             sounds.Play("upgrade");
             Notice(UpgradeNames[(int)kind].ToUpperInvariant(), "Уровень " + game.UpgradeLevel(kind) + "\n" + UpgradeEffect(kind, false).Replace("\n", " · "));
             Persist(); Flush(); Refresh();
@@ -309,12 +311,13 @@ namespace MineLoot
 
         public void ToggleSpeed()
         {
+            if (applicationPaused) return;
             FastRoll = !FastRoll;
             foreach (var button in rollPage.GetComponentsInChildren<Button>())
                     if (button.name == "Toggle speed") button.GetComponentInChildren<Text>().text = "×" + (FastRoll ? "2" : "1");
         }
 
-        public void ToggleSound() { sounds.Toggle(); Refresh(); }
+        public void ToggleSound() { if (!applicationPaused) { sounds.Toggle(); Refresh(); } }
 
         public void ShowPage(bool showRoulette)
         {
@@ -325,7 +328,7 @@ namespace MineLoot
 
         private void SelectPage(int page)
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             holding = false;
             roulette = page == 1;
             minePage.SetActive(page == 0); rollPage.SetActive(roulette); workshopPage.SetActive(page == 2);
@@ -349,7 +352,7 @@ namespace MineLoot
 
         private void StartRoll(Func<double> draw)
         {
-            if (busy || modal != null) return;
+            if (applicationPaused || busy || modal != null) return;
             if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (game.HitsRequired - game.Progress.hits) + " ударов"; return; }
             if (!game.BeginRoll(draw)) return;
             busy = true;
@@ -364,7 +367,7 @@ namespace MineLoot
 
         private void CommitPicks()
         {
-            if (!AwaitingPickChoice || modal != null) return;
+            if (applicationPaused || !AwaitingPickChoice || modal != null) return;
             long walletBefore = game.Progress.coins;
             var result = game.ResolveRoll();
             if (result == null) return;
@@ -406,7 +409,7 @@ namespace MineLoot
 
         public void SelectPick(int column)
         {
-            if (!AwaitingPickChoice || modal != null || !game.CanSwap || !game.IsActiveColumn(column)) return;
+            if (applicationPaused || !AwaitingPickChoice || modal != null || !game.CanSwap || !game.IsActiveColumn(column)) return;
             if (selectedPick == column)
             {
                 selectedPick = -1; rollStatus.text = "Нажми две разные кирки или копай сразу"; Refresh(); return;
@@ -437,7 +440,7 @@ namespace MineLoot
             float t = 0;
             while (t < 1)
             {
-                t = Mathf.Min(1, t + Time.unscaledDeltaTime / (FastRoll ? .22f : .36f));
+                t = Mathf.Min(1, t + PlayDelta / (FastRoll ? .22f : .36f));
                 float ease = t * t * (3 - 2 * t), arc = Mathf.Sin(t * Mathf.PI) * 24;
                 picks[first].rectTransform.anchoredPosition = Vector2.Lerp(start, end, ease) + Vector2.up * arc;
                 picks[second].rectTransform.anchoredPosition = Vector2.Lerp(end, start, ease) - Vector2.up * arc;
@@ -494,7 +497,7 @@ namespace MineLoot
             var indices = new int[5];
             while (elapsed < 1.85f)
             {
-                elapsed += Time.unscaledDeltaTime / speed;
+                elapsed += PlayDelta / speed;
                 for (int c = 0; c < 5; c++)
                 {
                     if (powerValues[c] == 0) continue;
@@ -564,7 +567,7 @@ namespace MineLoot
                 float phase = 0;
                 while (phase < 1)
                 {
-                    phase = Mathf.Min(1, phase + Time.unscaledDeltaTime / (.13f * speed));
+                    phase = Mathf.Min(1, phase + PlayDelta / (.13f * speed));
                     float ease = phase * phase;
                     for (int c = 0; c < 5; c++) if (step < result.usedPower[c] && shownDepths[c] < 5 && !shownLost[c])
                     {
@@ -610,7 +613,7 @@ namespace MineLoot
                 phase = 0;
                 while (phase < 1)
                 {
-                    phase = Mathf.Min(1, phase + Time.unscaledDeltaTime / (.12f * speed));
+                    phase = Mathf.Min(1, phase + PlayDelta / (.12f * speed));
                     for (int c = 0; c < 5; c++) if (step < result.usedPower[c] && origins[c] != targets[c])
                     {
                         picks[c].rectTransform.localEulerAngles = new Vector3(0, 0, Mathf.Lerp(-40, -12, phase));
@@ -623,7 +626,7 @@ namespace MineLoot
             float returning = 0;
             while (returning < 1)
             {
-                returning = Mathf.Min(1, returning + Time.unscaledDeltaTime / (.19f * speed));
+                returning = Mathf.Min(1, returning + PlayDelta / (.19f * speed));
                 float ease = 1 - Mathf.Pow(1 - returning, 3);
                 for (int c = 0; c < 5; c++)
                 {
@@ -643,7 +646,7 @@ namespace MineLoot
             float count = 0;
             while (count < 1)
             {
-                count = Mathf.Min(1, count + Time.unscaledDeltaTime / (.32f * speed));
+                count = Mathf.Min(1, count + PlayDelta / (.32f * speed));
                 float ease = 1 - Mathf.Pow(1 - count, 3);
                 displayedCoins = walletBefore + (long)Math.Round((game.Progress.coins - walletBefore) * ease);
                 coinLabel.text = displayedCoins.ToString("N0");
@@ -667,7 +670,7 @@ namespace MineLoot
             float elapsed = 0;
             while (elapsed < .55f)
             {
-                elapsed += Time.unscaledDeltaTime;
+                elapsed += PlayDelta;
                 image.rectTransform.anchoredPosition = origin + new Vector2(column % 2 == 0 ? -65 : 65, 135) * elapsed + Vector2.down * (340 * elapsed * elapsed);
                 image.rectTransform.localEulerAngles = new Vector3(0, 0, -40 + elapsed * 300);
                 image.color = new Color(1, 1, 1, 1 - elapsed / .55f); yield return null;
@@ -677,7 +680,7 @@ namespace MineLoot
 
         public void AbandonFloor()
         {
-            if (busy || modal != null || !game.Abandon(() => random.NextDouble())) return;
+            if (applicationPaused || busy || modal != null || !game.Abandon(() => random.NextDouble())) return;
             Array.Copy(game.Progress.depths, shownDepths, 5); Array.Copy(game.Progress.damage, shownDamage, 5); Array.Copy(game.Progress.lostColumns, shownLost, 5);
             for (int c = 0; c < 5; c++) { picks[c].sprite = art.Get("pick1"); picks[c].color = Color.white; powers[c].text = PowerText(1 + game.PowerBonus); powers[c].color = Hex("ead9ad"); }
             rollGain.text = "НОВАЯ РАСКЛАДКА"; rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
@@ -797,15 +800,15 @@ namespace MineLoot
         }
         private void OnApplicationPause(bool pause)
         {
-            bool wasPaused = applicationPaused;
-            if (pause) { holding = false; Flush(true); }
-            applicationPaused = pause; skipEconomyFrame = true;
-            if (!pause && wasPaused && (!SmokeMode || smokeSessionKey != null))
-            {
-                PrepareReturn(SessionUtc);
-            }
+            enginePaused = pause;
+            if (game != null && platformInput != null) ApplyPlatformPause();
         }
-        private void OnApplicationFocus(bool focus) { if (!focus) { holding = false; Flush(true); } }
+        private void OnApplicationFocus(bool focus)
+        {
+            audioFocused = focus;
+            if (sounds != null) sounds.SetSuspended(!focus || applicationPaused);
+            if (!focus) { holding = false; Flush(true); }
+        }
         private void OnApplicationQuit() { Flush(true); }
         private void OnDestroy() => art.Dispose();
     }

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#514a3e">
+  <title>Кирка удачи</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#514a3e;color:#fff4b4;font-family:monospace;overscroll-behavior:none}
+    body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+    #game{position:relative;width:100%;height:100%}canvas{display:block;width:100%;height:100%;outline:none;touch-action:none;user-select:none;-webkit-user-select:none}
+    #loading,#paused{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#514a3e;z-index:2;padding:20px}
+    .card{width:min(360px,100%);padding:28px 22px;text-align:center;border:4px solid #292c25;outline:2px solid #b8b4a0;background:#6a654e;box-shadow:inset 2px 2px #b8b4a0,inset -2px -2px #363a2e}
+    h1{margin:0 0 22px;font-size:27px}p{line-height:1.5}#track{height:12px;border:2px solid #303b29;background:#424b38}#progress{height:100%;width:0;background:#bddb7d;transition:width .15s}
+    button{padding:10px 20px;color:#29362c;background:#bed18b;border:3px solid #303b29;font:bold 17px monospace;cursor:pointer}button:focus-visible{outline:3px solid #fff4b4}
+    #paused{background:#252a22bb;pointer-events:none}#paused .card{width:auto;font-size:24px}#local{position:absolute;top:4px;left:4px;font-size:11px;color:#e2e6d7;background:#29362cdd;padding:3px 6px;pointer-events:none}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <main id="game">
+    <canvas id="unity-canvas" tabindex="0" aria-label="Кирка удачи — шахта и рулетка"></canvas>
+    <div id="loading" role="status"><div class="card"><h1>КИРКА УДАЧИ</h1><p id="message">Загружаем шахту…</p><div id="track"><div id="progress"></div></div><p id="error" hidden>Не удалось запустить игру. Проверь соединение и повтори.</p><button id="retry" hidden>Повторить</button></div></div>
+    <div id="paused" hidden><div class="card">ПАУЗА</div></div>
+    <span id="local" hidden>Локальная демоверсия</span>
+  </main>
+  <script src="platform.js"></script>
+  <script>
+    "use strict";
+    const canvas = document.getElementById("unity-canvas");
+    const loading = document.getElementById("loading");
+    function showError(error) {
+      console.error(error); loading.hidden = false;
+      document.getElementById("message").hidden = true;
+      document.getElementById("track").hidden = true;
+      document.getElementById("error").hidden = false;
+      document.getElementById("retry").hidden = false;
+    }
+    document.getElementById("retry").addEventListener("click", () => location.reload());
+    canvas.addEventListener("contextmenu", event => event.preventDefault());
+    LuckyPickaxe.init({
+      onReady(local) { loading.hidden = true; document.getElementById("local").hidden = !local; },
+      onPause(paused) { document.getElementById("paused").hidden = !paused; },
+      onError: showError
+    }).catch(() => {});
+    const buildUrl = "Build";
+    const config = {
+      dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+      frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+      codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+      productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+      productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+      devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      showBanner(message, type) { if (type === "error") showError(message); else console.warn(message); }
+    };
+    const loader = document.createElement("script");
+    loader.src = buildUrl + "/{{{ LOADER_FILENAME }}}";
+    loader.onerror = showError;
+    loader.onload = () => createUnityInstance(canvas, config, progress => {
+      document.getElementById("progress").style.width = Math.round(progress * 100) + "%";
+      if (progress === 1) document.getElementById("message").textContent = "Открываем шахту…";
+    }).then(instance => LuckyPickaxe.attachUnity(instance)).catch(showError);
+    document.body.appendChild(loader);
+  </script>
+</body>
+</html>

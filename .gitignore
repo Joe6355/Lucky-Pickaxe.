@@ -5,6 +5,7 @@
 /[Ll]ogs/
 /[Uu]ser[Ss]ettings/
 /_test-concept/
+/Tools/node_modules/
 /.vs/
 /.idea/
 *.csproj
