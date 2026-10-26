@@ -4,7 +4,8 @@
   "scripts": {
     "check": "node web-platform-check.cjs",
     "check:browser": "node web-browser-check.cjs",
-    "preview": "sdk-dev-proxy -p ../Builds/WebGL --dev-mode=true --port 8126"
+    "preview": "sdk-dev-proxy -p ../Builds/WebGL --dev-mode=true --port 8126",
+    "preview:draft": "sdk-dev-proxy -p ../Builds/WebGL --app-id 639502 --port 8127 --csp"
   },
   "devDependencies": {
     "@yandex-games/sdk-dev-proxy": "0.0.2",
