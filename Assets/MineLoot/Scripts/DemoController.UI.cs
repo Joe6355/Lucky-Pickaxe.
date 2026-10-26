@@ -92,15 +92,17 @@ namespace MineLoot
             workshopPage = MakeRect(shell, "Workshop page", 0, 168, 480, 614).gameObject;
             BuildMine(minePage.transform); BuildRoll(rollPage.transform); BuildWorkshop(workshopPage.transform);
 
-            Card(shell, "Contract card", 24, 798, 432, 73, Hex("d4ccaf"));
-            Icon(shell, "ticket", 38, 818, 35, 31);
-            Label(shell, "КОНТРАКТ", 88, 806, 153, 26, 20, Ink, FontStyle.Bold);
-            milestoneButton = ButtonAt(shell, "ЦЕЛИ", 247, 803, 96, 27, ShowMilestones, Hex("a8b78e"), Ink);
+            contractCard = MakeRect(shell, "Contract section", 0, 0, 480, 960).gameObject;
+            var contract = contractCard.transform;
+            Card(contract, "Contract card", 24, 798, 432, 73, Hex("d4ccaf"));
+            Icon(contract, "ticket", 38, 818, 35, 31);
+            Label(contract, "КОНТРАКТ", 88, 806, 153, 26, 20, Ink, FontStyle.Bold);
+            milestoneButton = ButtonAt(contract, "ЦЕЛИ", 247, 803, 96, 27, ShowMilestones, Hex("a8b78e"), Ink);
             milestoneButton.name = "Open milestones"; milestoneButtonLabel = milestoneButton.GetComponentInChildren<Text>(); milestoneButtonLabel.fontSize = 16;
-            contractDetail = Label(shell, "", 88, 836, 247, 22, 15, Muted);
-            PanelAt(shell, "Contract track", Hex("7d7966"), 88, 862, 240, 4);
-            contractFill = PanelAt(shell, "Contract progress", Hex("79ba45"), 88, 862, 0, 4);
-            contractButton = ButtonAt(shell, "", 347, 817, 96, 38, ClaimContract, Hex("dcb979"), Hex("30291e"));
+            contractDetail = Label(contract, "", 88, 836, 247, 22, 15, Muted);
+            PanelAt(contract, "Contract track", Hex("7d7966"), 88, 862, 240, 4);
+            contractFill = PanelAt(contract, "Contract progress", Hex("79ba45"), 88, 862, 0, 4);
+            contractButton = ButtonAt(contract, "", 347, 817, 96, 38, ClaimContract, Hex("dcb979"), Hex("30291e"));
             contractButton.name = "Claim contract"; contractLabel = contractButton.GetComponentInChildren<Text>();
             contractLabel.fontSize = 16;
 
@@ -113,6 +115,7 @@ namespace MineLoot
             mineNavMark = PanelAt(shell, "Mine selected", Hex("d8ed88"), 68, 940, 66, 3);
             rollNavMark = PanelAt(shell, "Roll selected", Hex("d8ed88"), 207, 940, 66, 3);
             workshopNavMark = PanelAt(shell, "Workshop selected", Hex("d8ed88"), 346, 940, 66, 3);
+            BuildGuide();
             var notice = Card(shell, "Progress notification", 24, 10, 374, 76, Hex("cfdfa1"));
             noticeRect = notice.rectTransform; noticeGroup = notice.gameObject.AddComponent<CanvasGroup>();
             noticeGroup.alpha = 0; noticeGroup.blocksRaycasts = false; noticeGroup.interactable = false;
@@ -282,7 +285,7 @@ namespace MineLoot
         private void SetWorkshopSection(bool production)
         {
             if (busy || modal != null) return;
-            productionTab = production; RefreshWorkshop();
+            productionTab = production; RefreshWorkshop(); RefreshGuide();
         }
 
         private string UpgradeEffect(UpgradeKind kind, bool preview)
@@ -495,7 +498,8 @@ namespace MineLoot
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
             Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
-            ButtonAt(modal.transform, "Продолжить добычу", 47, 783, 386, 50, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
+            ButtonAt(modal.transform, "Подсказки", 47, 783, 184, 50, StartMiningGuide, Hex("bed18b"), Ink).name = "Start guide";
+            ButtonAt(modal.transform, "Понятно", 243, 783, 190, 50, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
 
         public void ShowMilestones()

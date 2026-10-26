@@ -8,7 +8,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 10;
+        public int version = 11;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -47,6 +47,7 @@ namespace MineLoot
         public int prestigeCount, crystals, totalCrystals, prestigeUpgrades;
         public int experienceCarry;
         public long[] milestoneBest = new long[16];
+        public int guideStep;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -62,6 +63,7 @@ namespace MineLoot
         public const int VeinOreTarget = 24, VeinOfferSeconds = 20, VeinBoostSeconds = 12, VeinMultiplier = 3;
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
         public const int PrestigeUpgradeCount = 9, MaxPrestiges = 1000000, MaxCrystals = 10000000;
+        public const int GuideStepCount = 5;
         private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 14875000;
         private static readonly PrestigeUpgrade[] PrestigeUpgrades = {
             new PrestigeUpgrade("Верный удар", "+25% монет\nза удар и руду", "pick4", 2),
@@ -167,6 +169,7 @@ namespace MineLoot
             get { for (int c = 0; c < Columns; c++) if (Progress.depths[c] < Rows && !Progress.lostColumns[c]) return false; return true; }
         }
         public bool HasPendingRoll => Progress.rollPending;
+        public bool GuideActive => Progress.guideStep < GuideStepCount;
         public bool CanAbandon => !HasPendingRoll && Progress.tickets > 0 && !IsComplete;
         public bool IsActiveColumn(int column) => column >= 0 && column < Columns && Progress.depths[column] < Rows && !Progress.lostColumns[column];
         public int PendingPower(int column) => HasPendingRoll && column >= 0 && column < Columns && Progress.pendingTypes[column] > 0 ? Progress.pendingTypes[column] + PowerBonus : 0;
@@ -189,7 +192,10 @@ namespace MineLoot
             bool legacyBoard = Progress.version < 4;
             bool legacyRoll = Progress.version < 5;
             bool legacyUpgrades = Progress.version < 6;
-            Progress.version = 10;
+            bool legacyGuide = Progress.version < 11;
+            Progress.version = 11;
+            // Existing players opt in through Rules; an update never covers their contract card.
+            Progress.guideStep = legacyGuide ? GuideStepCount : Math.Max(0, Math.Min(GuideStepCount, Progress.guideStep));
             Progress.prestigeCount = Math.Max(0, Math.Min(MaxPrestiges, Progress.prestigeCount));
             Progress.experienceCarry = Math.Max(0, Math.Min(99, Progress.experienceCarry));
             Progress.totalCrystals = Math.Max(0, Math.Min(MaxCrystals, Progress.totalCrystals));
@@ -283,6 +289,44 @@ namespace MineLoot
             }
             Progress.pendingSwapUsed = false; // v5 migration field; v6 uses the saved counter.
             ObserveMilestones();
+            AdvanceGuide();
+        }
+
+        // Presentation checkpoints only: no gifts, automatic purchases or changes to the economy.
+        public bool AdvanceGuide()
+        {
+            if (HasPendingRoll || !GuideActive) return false;
+            int before = Progress.guideStep;
+            if (Progress.prestigeCount > 0) Progress.guideStep = GuideStepCount;
+            while (GuideActive)
+            {
+                bool complete;
+                switch (Progress.guideStep)
+                {
+                    case 0: complete = Progress.oresMined > 0; break;
+                    case 1: complete = Progress.upgradeLevel > 0; break;
+                    case 2: complete = Progress.totalRolls > 0; break;
+                    case 3: complete = Progress.workerCount > 0; break;
+                    default: complete = Progress.milestoneClaims != 0; break;
+                }
+                if (!complete) break;
+                Progress.guideStep++;
+            }
+            return before != Progress.guideStep;
+        }
+
+        public bool SkipGuide()
+        {
+            if (HasPendingRoll || !GuideActive) return false;
+            Progress.guideStep = GuideStepCount;
+            return true;
+        }
+
+        public bool StartGuide()
+        {
+            if (HasPendingRoll) return false;
+            Progress.guideStep = 0; AdvanceGuide();
+            return GuideActive;
         }
 
         public bool Mine()
@@ -618,6 +662,7 @@ namespace MineLoot
                 prestigeCount = previous.prestigeCount + 1, crystals = previous.crystals + reward,
                 totalCrystals = previous.totalCrystals + reward, prestigeUpgrades = previous.prestigeUpgrades,
                 milestoneClaims = previous.milestoneClaims, milestoneBest = (long[])previous.milestoneBest.Clone(),
+                guideStep = GuideStepCount,
                 totalClicks = previous.totalClicks, oresMined = previous.oresMined, totalRolls = previous.totalRolls,
                 totalBlocks = previous.totalBlocks, claimedContracts = previous.claimedContracts,
                 totalProduced = previous.totalProduced, totalOfflineCoins = previous.totalOfflineCoins,

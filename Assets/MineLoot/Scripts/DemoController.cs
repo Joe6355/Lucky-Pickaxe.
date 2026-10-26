@@ -100,9 +100,10 @@ namespace MineLoot
             if (game.HasPendingRoll) EnterPickChoice();
         }
 
-        internal void RestoreForSmoke(MineProgress progress)
+        internal void RestoreForSmoke(MineProgress progress, bool showGuide = false)
         {
             if (!SmokeMode) return;
+            if (!showGuide) progress.guideStep = MineGame.GuideStepCount;
             game = new MineGame(progress); RestorePresentation();
         }
 
@@ -139,6 +140,7 @@ namespace MineLoot
                 holdRepeated = true; nextHold = Time.unscaledTime + .16f; Mine();
             }
             if (dirty && Time.unscaledTime >= nextSave) Flush();
+            AnimateGuide();
         }
 
         private void FitScreen()
@@ -334,6 +336,7 @@ namespace MineLoot
             rollTab.GetComponentInChildren<Text>().color = Ink;
             mineNavMark.enabled = page == 0; rollNavMark.enabled = roulette; workshopNavMark.enabled = page == 2;
             stage.gameObject.SetActive(page == 0); shaft.gameObject.SetActive(roulette);
+            RefreshGuide();
         }
 
         public void Spin()
@@ -778,10 +781,11 @@ namespace MineLoot
             stage.SetProduction(game.Progress.workerCount, game.Progress.drillCount, game.Progress.cartCount, game.VeinOffered || game.VeinActive);
             stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
             clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
+            RefreshGuide();
         }
 
         public static bool SmokeMode => Array.IndexOf(Environment.GetCommandLineArgs(), "-demoSmokeTest") >= 0;
-        private void Persist() { if (!dirty) nextSave = Time.unscaledTime + 3; dirty = true; }
+        private void Persist() { game.AdvanceGuide(); if (!dirty) nextSave = Time.unscaledTime + 3; dirty = true; }
         private void Flush(bool force = false)
         {
             if (game != null && (!SmokeMode || smokeSessionKey != null) && (dirty || force))

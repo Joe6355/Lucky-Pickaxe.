@@ -30,6 +30,9 @@ namespace MineLoot
             Screen.SetResolution(480, 960, false);
             yield return new WaitForSecondsRealtime(.8f);
             Canvas.ForceUpdateCanvases();
+            yield return VerifyGuide(demo);
+            demo.RestoreForSmoke(new MineProgress());
+            yield return new WaitForSecondsRealtime(.8f);
             Check(Resources.Load<Texture2D>("Art/mine-cavern-v3") == null && Resources.Load<Texture2D>("Art/ore-hero-v3") == null && Resources.Load<Texture2D>("Art/items-atlas-v3") == null, "Painted assets excluded");
             Check(Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Д') && Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Я'), "Pixel Cyrillic font packaged");
             var stage = FindObjectOfType<VoxelStage>();
@@ -666,6 +669,63 @@ namespace MineLoot
             Check(demo.Game.Progress.coins == walletBefore - upgradeCost - forgeCost && demo.Game.Progress.tickets == tickets && stage.OwnedMeshCount == meshCount, "Development preserves upgrade prices, tickets and mesh count");
             demo.RestoreForSmoke(ProgressStore.Decode(original));
             yield return new WaitForSecondsRealtime(.15f);
+        }
+
+        private IEnumerator VerifyGuide(DemoController demo)
+        {
+            demo.RestoreForSmoke(new MineProgress(), true);
+            Check(demo.Game.GuideActive && FindButton("Guide action") != null && FindButton("Open milestones") == null, "First session replaces the contract with nonmodal guide controls");
+            CheckLayout(); Capture("unity-guide-start.png");
+            var pointer = new PointerEventData(EventSystem.current) { position = new Vector2(Screen.width * .45f, Screen.height * .58f) };
+            var hits = new List<RaycastResult>(); EventSystem.current.RaycastAll(pointer, hits);
+            bool oreHit = false; foreach (var hit in hits) if (hit.gameObject.name == "Mine rock") oreHit = true;
+            Check(oreHit, "Guide focus does not intercept input to the ore");
+            for (int i = 0; i < 6; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
+            Check(demo.Game.Progress.guideStep == 1 && demo.Game.Progress.coins == 140, "Real mining completes the first hint without extra rewards");
+            CheckLayout(); Capture("unity-guide-upgrade.png");
+            Click("Guide action"); Click("Upgrade pickaxe");
+            Check(demo.Game.Progress.guideStep == 2 && demo.Game.Progress.coins == 20, "Ordinary paid upgrade advances the first-session hint");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)), true);
+            Click("Guide action");
+            Check(FindButton("ЗАПУСТИТЬ КИРКИ") != null && demo.Game.Progress.tickets == 2, "Hint navigation opens roulette without spending a ticket");
+            CheckLayout(); Capture("unity-guide-roulette.png");
+            demo.SpinForSmoke(() => 0); yield return null;
+            Check(FindButton("Skip guide") == null && demo.Game.HasPendingRoll, "Paid draw hides guide actions until the actual result");
+            yield return FinishRoll(demo);
+            Check(demo.Game.Progress.guideStep == 3, "Resolved draw advances the worker hint");
+            demo.ShowPage(false);
+            float deadline = Time.realtimeSinceStartup + 10;
+            while (!demo.Game.CanBuyUpgrade(UpgradeKind.Worker) && Time.realtimeSinceStartup < deadline)
+            { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
+            Click("Guide action");
+            Check(FindButton("Buy Worker") != null && FindButton("Buy Worker").interactable, "Worker hint opens the existing production tab when its real requirements are met");
+            CheckLayout(); Capture("unity-guide-worker.png");
+            Click("Buy Worker");
+            Check(demo.Game.Progress.workerCount == 1 && demo.Game.Progress.guideStep == 4, "Hiring one worker opens the book hint");
+            demo.ShowPage(false);
+            while (demo.Game.ReadyMilestones == 0 && Time.realtimeSinceStartup < deadline)
+            { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
+            CheckLayout(); Capture("unity-guide-goals.png");
+            Click("Guide action"); yield return null;
+            Check(FindButton("Skip guide") == null && FindButton("Claim milestone 0") != null, "Book modal hides guide without blocking its real reward");
+            Click("Claim milestone 0"); Click("Close milestones"); yield return null;
+            Check(!demo.Game.GuideActive && FindButton("Open milestones") != null && FindButton("Guide action") == null, "Claiming the existing goal restores normal contract controls");
+            long coins = demo.Game.Progress.coins;
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)), true);
+            Check(!demo.Game.GuideActive && demo.Game.Progress.coins == coins, "Completed first-session guide stays finished after reload");
+            demo.RestoreForSmoke(new MineProgress(), true); Click("Skip guide");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)), true);
+            Check(!demo.Game.GuideActive && demo.Game.Progress.coins == 80 && demo.Game.Progress.tickets == 2, "Explicit skip persists without changing the initial wallet");
+            demo.ShowPage(true); Click("ШАНСЫ И ПРАВИЛА"); Click("Start guide"); yield return null;
+            Check(demo.Game.GuideActive && FindButton("Mine rock") != null && GameObject.Find("Rules modal") == null, "Rules can explicitly reenable skipped hints without resetting the game");
+            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.3f);
+                CheckLayout(); Capture("unity-guide-" + size.x + "x" + size.y + ".png");
+            }
+            Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(new MineProgress { version = 10 }, true);
+            Check(!demo.Game.GuideActive && FindButton("Open milestones") != null, "Existing v0.14 player sees the usual contract immediately after update");
         }
 
         private void CheckLayout()
