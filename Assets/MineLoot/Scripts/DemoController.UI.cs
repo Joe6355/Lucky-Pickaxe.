@@ -24,6 +24,9 @@ namespace MineLoot
         private Text workshopFootnote, productionRateLabel, productionBreakdown, productionSynergy, productionTotal, richVeinTimer;
         private GameObject productionSummary;
         private bool productionTab;
+        private Button offlineButton, offlineClaimButton;
+        private Text offlineButtonLabel, offlineAmountLabel, offlineStateLabel;
+        private bool offlineWindowOpen;
         private Image workshopNavMark;
         private Image experienceFill, oreFill, workshopPick;
         private readonly Image[] oreSlots = new Image[5], oreIcons = new Image[5], reels = new Image[5];
@@ -254,13 +257,16 @@ namespace MineLoot
                 workshopProgress[i] = PanelAt(card.transform, "Upgrade progress " + i, Hex("a6cb6a"), 12, 108, 0, 3);
                 workshopButtons[i] = ButtonAt(card.transform, "", 12, 115, 187, 32, () => Purchase(WorkshopKind(slot)), Hex("d9bd80"), Hex("352b20"));
             }
-            productionSummary = Card(page, "Production summary", 24, 420, 432, 156, Hex("b1c197")).gameObject;
-            Label(productionSummary.transform, "РУДНИК РАБОТАЕТ", 14, 8, 404, 28, 23, Ink, FontStyle.Bold);
-            productionRateLabel = Label(productionSummary.transform, "", 14, 38, 404, 31, 26, Ink, FontStyle.Bold);
-            productionBreakdown = Label(productionSummary.transform, "", 14, 76, 404, 22, 16, Muted);
-            productionSynergy = Label(productionSummary.transform, "", 14, 100, 404, 22, 16, Muted);
-            productionTotal = Label(productionSummary.transform, "", 14, 125, 404, 22, 16, Muted);
+            productionSummary = Card(page, "Production summary", 245, 420, 211, 156, Hex("b1c197")).gameObject;
+            Label(productionSummary.transform, "РУДНИК", 12, 8, 187, 28, 23, Ink, FontStyle.Bold);
+            productionRateLabel = Label(productionSummary.transform, "", 12, 38, 187, 31, 22, Ink, FontStyle.Bold);
+            productionRateLabel.resizeTextForBestFit = true; productionRateLabel.resizeTextMinSize = 16; productionRateLabel.resizeTextMaxSize = 22;
+            productionBreakdown = Label(productionSummary.transform, "", 12, 76, 187, 22, 16, Muted);
+            productionSynergy = Label(productionSummary.transform, "", 12, 100, 187, 22, 16, Muted);
+            productionTotal = Label(productionSummary.transform, "", 12, 125, 187, 22, 16, Muted);
             workshopFootnote = Label(page, "", 24, 589, 432, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+            offlineButton = ButtonAt(page, "", 24, 584, 432, 32, ShowOfflineReward, Hex("b5c48f"), Ink);
+            offlineButton.name = "Open warehouse"; offlineButtonLabel = offlineButton.GetComponentInChildren<Text>(); offlineButtonLabel.fontSize = 18;
         }
 
         private UpgradeKind WorkshopKind(int slot) => (UpgradeKind)(productionTab ? (int)UpgradeKind.Worker + slot : slot);
@@ -286,23 +292,27 @@ namespace MineLoot
                 case UpgradeKind.Worker: return "По 2 монеты/с\nШахтёры: " + Value(rank, target);
                 case UpgradeKind.Drill: return "По " + Rate(12000L * (10 + game.Progress.forgeLevel) / 10) + " монет/с\nКузница: +" + game.DrillBonus + "%";
                 case UpgradeKind.Cart: return "+" + (10 + 2 * game.Progress.railLevel) + "% каждая\nК общей добыче";
-                default: return "Бонус: " + Value(10 + 2 * rank, 10 + 2 * target) + "%\nКаждой вагонетке";
+                case UpgradeKind.Rails: return "Бонус: " + Value(10 + 2 * rank, 10 + 2 * target) + "%\nКаждой вагонетке";
+                default: return "Часов: " + Value(game.OfflineHours, 4 + target * 2) + "\nОфлайн: 50% дохода";
             }
         }
 
         private void RefreshWorkshop()
         {
-            string[] icons = { PickSprites[game.PickTier], "forge", "swap", "pick-head2", "ticket", "chest", "worker", "drill", "cart", "rails" };
+            string[] icons = { PickSprites[game.PickTier], "forge", "swap", "pick-head2", "ticket", "chest", "worker", "drill", "cart", "rails", "warehouse" };
             equipmentTab.image.color = productionTab ? Panel : Hex("a4c975"); productionTabButton.image.color = productionTab ? Hex("a4c975") : Panel;
             productionSummary.SetActive(productionTab);
-            productionRateLabel.text = "+" + Rate(game.ProductionMilli) + " монет / сек.";
-            productionBreakdown.text = "Шахтёры: " + game.Progress.workerCount + " · буры: " + game.Progress.drillCount + " · вагонетки: " + game.Progress.cartCount;
-            productionSynergy.text = "Буры: +" + game.DrillBonus + "% · логистика: +" + game.CartBonus + "%";
-            productionTotal.text = "Заработано: " + ShortAmount(game.Progress.totalProduced) + " монет";
-            workshopFootnote.text = productionTab ? "Автодобыча даёт только монеты" : "Каждая покупка сохраняется сразу";
+            productionRateLabel.text = "+" + Rate(game.ProductionMilli) + " монет/с";
+            productionBreakdown.text = "Буры: +" + game.DrillBonus + "%";
+            productionSynergy.text = "Логистика: +" + game.CartBonus + "%";
+            productionTotal.text = "Добыто: " + ShortAmount(game.Progress.totalProduced);
+            workshopFootnote.gameObject.SetActive(!productionTab); workshopFootnote.text = "Каждая покупка сохраняется сразу";
+            offlineButton.gameObject.SetActive(productionTab); offlineButton.interactable = !busy;
+            offlineButtonLabel.text = game.HasOfflineReward ? "СКЛАД: " + ShortAmount(game.Progress.offlineCoins) + " МОНЕТ" : "СКЛАД · ОФЛАЙН ДО " + game.OfflineHours + " Ч.";
+            offlineButton.image.color = game.HasOfflineReward ? Hex("d9bd80") : Hex("b5c48f");
             for (int i = 0; i < workshopButtons.Length; i++)
             {
-                bool visible = !productionTab || i < 4; workshopCards[i].SetActive(visible); if (!visible) continue;
+                bool visible = !productionTab || i < 5; workshopCards[i].SetActive(visible); if (!visible) continue;
                 var kind = WorkshopKind(i);
                 workshopTitles[i].text = UpgradeNames[(int)kind]; workshopIcons[i].sprite = art.Get(icons[(int)kind]); workshopButtons[i].name = "Buy " + kind;
                 int rank = game.UpgradeLevel(kind), max = MineGame.UpgradeMax(kind), unlock = game.UpgradeUnlock(kind);
@@ -318,6 +328,46 @@ namespace MineLoot
                 var label = button.GetComponentInChildren<Text>(); label.text = capped ? "Максимум" : ShortAmount(game.UpgradePrice(kind)) + " монет";
                 label.resizeTextForBestFit = true; label.resizeTextMinSize = 16; label.resizeTextMaxSize = 20;
             }
+        }
+
+        private static string Duration(long seconds)
+        {
+            if (seconds < 60) return seconds + " сек.";
+            if (seconds < 3600) return seconds / 60 + " мин.";
+            return seconds / 3600 + " ч. " + seconds % 3600 / 60 + " мин.";
+        }
+
+        public void ShowOfflineReward()
+        {
+            if (busy || modal != null || game.HasPendingRoll) return;
+            holding = false; offlineNoticeQueued = false; offlineWindowOpen = true;
+            modal = MakeRect(shell, "Offline reward modal", 0, 0, 480, 960).gameObject;
+            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
+            Card(modal.transform, "Offline reward card", 24, 169, 432, 608, Panel);
+            Icon(modal.transform, "warehouse", 46, 188, 48, 48);
+            Label(modal.transform, "СКЛАД РУДНИКА", 110, 189, 323, 35, 27, Ink, FontStyle.Bold);
+            Label(modal.transform, "Рабочие добывают, пока ты отдыхаешь", 47, 245, 386, 25, 16, Muted);
+            Card(modal.transform, "Stored reward", 47, 283, 386, 114, Hex("d0d9af"));
+            offlineAmountLabel = Label(modal.transform, "", 61, 295, 358, 43, 32, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
+            offlineAmountLabel.resizeTextForBestFit = true; offlineAmountLabel.resizeTextMinSize = 20; offlineAmountLabel.resizeTextMaxSize = 32;
+            offlineStateLabel = Label(modal.transform, "", 61, 344, 358, 39, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+            bool pending = game.HasOfflineReward;
+            long capacity = pending ? game.Progress.offlineRewardCapacity : game.OfflineHours * 3600;
+            string detail = pending ? "Тебя не было: " + Duration(game.Progress.offlineElapsedSeconds) + "\nУчтено: " + Duration(game.Progress.offlineRewardSeconds) + " из " + capacity / 3600 + " ч. лимита\nДоход: 50% от " + Rate(game.Progress.offlineRewardRateMilli) + " монет/с" : "Офлайн-доход: 50% производства\nВремя накопления: до " + game.OfflineHours + " ч.\n" + (game.ProductionMilli > 0 ? "Производство: " + Rate(game.ProductionMilli) + " монет/с" : "Найми шахтёров в производстве");
+            Label(modal.transform, detail, 48, 419, 384, 75, 18, Ink);
+            Label(modal.transform, "Только монеты: без опыта и жетонов.\nНаграда ждёт получения. Пока она\nлежит на складе, новая не копится.", 48, 506, 384, 72, 16, Muted);
+            offlineClaimButton = ButtonAt(modal.transform, "Забрать монеты", 47, 600, 386, 48, ClaimOfflineReward, Hex("d9bd80"), Ink);
+            offlineClaimButton.name = "Claim offline reward";
+            ButtonAt(modal.transform, "Позже", 47, 672, 386, 43, CloseModal, Panel, Ink).name = "Close warehouse";
+            RefreshOfflineWindow();
+        }
+
+        private void RefreshOfflineWindow()
+        {
+            if (!offlineWindowOpen || modal == null) return;
+            offlineAmountLabel.text = game.HasOfflineReward ? "+" + game.Progress.offlineCoins.ToString("N0") + " монет" : "Пока пусто";
+            offlineStateLabel.text = game.HasOfflineReward ? game.Progress.coins == MineGame.CoinLimit ? "Кошелёк заполнен\nПотрать монеты и вернись за наградой" : "Готово к получению" : "Оставь рабочим время на добычу";
+            offlineClaimButton.interactable = !busy && game.CanClaimOffline;
         }
 
         private Image Hero(Transform parent, string name, float x, float y, float width, float height)
@@ -443,7 +493,7 @@ namespace MineLoot
         private void CloseModal()
         {
             if (modal == null) return;
-            milestoneBookOpen = false; Destroy(modal); modal = null; Refresh();
+            milestoneBookOpen = offlineWindowOpen = false; Destroy(modal); modal = null; Refresh();
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")

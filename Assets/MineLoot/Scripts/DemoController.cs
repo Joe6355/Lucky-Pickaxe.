@@ -15,7 +15,7 @@ namespace MineLoot
         private static readonly string[] CampNames = { "ЛАГЕРЬ I", "ШТОЛЬНЯ II", "РУДНИК III", "ПРИИСК IV", "АЛМАЗНЫЙ V" };
         private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари" };
         private static readonly string[] ForgeFeatures = { "", "Печь и наковальня", "Дымоход и стойка", "Навес мастерской", "Оснащение мастера" };
-        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Острота", "Пресс жетонов", "Сокровища", "Шахтёры", "Буры", "Вагонетки", "Рельсы" };
+        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Острота", "Пресс жетонов", "Сокровища", "Шахтёры", "Буры", "Вагонетки", "Рельсы", "Склад" };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[] picks = new Image[5];
         private readonly Text[] powers = new Text[5];
@@ -53,6 +53,12 @@ namespace MineLoot
         private bool skipEconomyFrame;
         private float nextEconomyRefresh;
         private bool smokeClockRunning;
+        private bool offlineNoticeQueued;
+        private long sessionUtc;
+        private double sessionRealtime;
+        private string smokeSessionKey;
+        // Session time advances from a monotonic clock; changing the wall clock while playing has no effect.
+        private long SessionUtc => sessionUtc + (long)Math.Max(0, Time.realtimeSinceStartupAsDouble - sessionRealtime);
         public bool FastRoll { get; private set; }
         public MineGame Game => game;
         public bool IsBusy => busy;
@@ -63,6 +69,12 @@ namespace MineLoot
         {
             Application.runInBackground = true;
             game = SmokeMode ? new MineGame() : ProgressStore.Load();
+            sessionUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); sessionRealtime = Time.realtimeSinceStartupAsDouble;
+            if (!SmokeMode)
+            {
+                game.PrepareOffline(SessionUtc);
+                ProgressStore.Save(game); // Save the prepared crate and timestamp before exposing its claim button.
+            }
             random = SmokeMode ? new System.Random(6355) : new System.Random();
             sounds = gameObject.AddComponent<GameAudio>();
             Application.targetFrameRate = 60;
@@ -74,6 +86,9 @@ namespace MineLoot
         private void RestorePresentation()
         {
             busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
+            if (modal != null) { Destroy(modal); modal = null; }
+            milestoneBookOpen = offlineWindowOpen = false;
+            offlineNoticeQueued = game.HasOfflineReward;
             productionTab = false;
             noticeTime = 0; noticeGroup.alpha = 0;
             mineStatus.text = "Нажимай или удерживай блок";
@@ -97,6 +112,7 @@ namespace MineLoot
             float dt = Time.unscaledDeltaTime;
             if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !busy && modal == null && Application.isFocused);
             skipEconomyFrame = false;
+            if (offlineNoticeQueued && !busy && modal == null && !game.HasPendingRoll) ShowOfflineReward();
             rockPulse = Mathf.MoveTowards(rockPulse, 0, dt * 4.5f);
             upgradePulse = Mathf.MoveTowards(upgradePulse, 0, dt * 2);
             float strike = rockPulse * rockPulse, follow = Mathf.Sin((1 - rockPulse) * Mathf.PI) * rockPulse;
@@ -172,6 +188,35 @@ namespace MineLoot
             if (SmokeMode) TickEconomy(seconds, miningActive, true);
         }
         internal void UseLiveClockForSmoke(bool enabled) { if (SmokeMode) smokeClockRunning = enabled; }
+        internal void ReturnForSmoke(long utc)
+        {
+            if (SmokeMode) PrepareReturn(utc);
+        }
+        internal void ConfigureSessionForSmoke(long utc, string key)
+        {
+            if (!SmokeMode) return;
+            sessionUtc = utc; sessionRealtime = Time.realtimeSinceStartupAsDouble; smokeSessionKey = key;
+        }
+        internal void AdvanceSessionForSmoke(int seconds) { if (SmokeMode) sessionUtc += seconds; }
+        internal void PauseForSmoke(bool pause) { if (SmokeMode) OnApplicationPause(pause); }
+        internal void SaveSessionForSmoke() { if (SmokeMode) Flush(true); }
+
+        private void PrepareReturn(long utc)
+        {
+            game.PrepareOffline(utc); Persist(); Flush(true);
+            if (offlineWindowOpen) CloseModal();
+            offlineNoticeQueued = game.HasOfflineReward; Refresh();
+        }
+
+        public void ClaimOfflineReward()
+        {
+            if (busy || !offlineWindowOpen) return;
+            long before = game.Progress.coins;
+            if (!game.ClaimOffline()) return;
+            long credit = game.Progress.coins - before;
+            Persist(); Flush(); CloseModal(); sounds.Play("reward");
+            Notice("СКЛАД РАЗГРУЖЕН", "+" + ShortAmount(credit) + " монет" + (game.HasOfflineReward ? "\nОстаток сохранён на складе" : ""));
+        }
 
         public void ActivateRichVein()
         {
@@ -698,6 +743,7 @@ namespace MineLoot
             milestoneButtonLabel.text = game.ReadyMilestones > 0 ? "ЦЕЛИ " + game.ReadyMilestones : "ЦЕЛИ";
             milestoneButton.image.color = game.ReadyMilestones > 0 ? Hex("c8d981") : Hex("a8b78e");
             RefreshWorkshop();
+            RefreshOfflineWindow();
             if (!busy && RollPhase == "idle")
             {
                 rollGain.text = game.Progress.swapLevel == 0 ? "ОБМЕН В ПРОКАЧКЕ" : "ПЕРЕСТАНОВКА · УР. " + game.Progress.swapLevel;
@@ -715,10 +761,27 @@ namespace MineLoot
 
         public static bool SmokeMode => Array.IndexOf(Environment.GetCommandLineArgs(), "-demoSmokeTest") >= 0;
         private void Persist() { if (!dirty) nextSave = Time.unscaledTime + 3; dirty = true; }
-        private void Flush() { if (game != null && !SmokeMode && dirty) ProgressStore.Save(game); dirty = false; }
-        private void OnApplicationPause(bool pause) { applicationPaused = pause; skipEconomyFrame = true; if (pause) { holding = false; Flush(); } }
-        private void OnApplicationFocus(bool focus) { if (!focus) { holding = false; Flush(); } }
-        private void OnApplicationQuit() { Flush(); }
+        private void Flush(bool force = false)
+        {
+            if (game != null && (!SmokeMode || smokeSessionKey != null) && (dirty || force))
+            {
+                if (!applicationPaused) game.RecordSession(SessionUtc);
+                ProgressStore.Save(game, SmokeMode ? smokeSessionKey : ProgressStore.Key);
+            }
+            dirty = false;
+        }
+        private void OnApplicationPause(bool pause)
+        {
+            bool wasPaused = applicationPaused;
+            if (pause) { holding = false; Flush(true); }
+            applicationPaused = pause; skipEconomyFrame = true;
+            if (!pause && wasPaused && (!SmokeMode || smokeSessionKey != null))
+            {
+                PrepareReturn(SessionUtc);
+            }
+        }
+        private void OnApplicationFocus(bool focus) { if (!focus) { holding = false; Flush(true); } }
+        private void OnApplicationQuit() { Flush(true); }
         private void OnDestroy() => art.Dispose();
     }
 }

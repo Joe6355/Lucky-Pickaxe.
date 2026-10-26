@@ -151,6 +151,7 @@ namespace MineLoot
             yield return new WaitForSecondsRealtime(.3f);
             yield return VerifyWorkshop(demo, stage, shaft);
             yield return VerifyProduction(demo, stage);
+            yield return VerifyOffline(demo);
             yield return VerifyMilestones(demo);
             // Exercise a later biome and partial block damage in the same built player.
             demo.Game.Progress.stratum = 4;
@@ -354,6 +355,96 @@ namespace MineLoot
                 Capture("unity-production-animation-" + frame.ToString("00") + ".png"); yield return new WaitForSecondsRealtime(.05f);
             }
             File.WriteAllText(Path.Combine(output, "production-animation-times.txt"), times.ToString());
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+        }
+
+        private IEnumerator VerifyOffline(DemoController demo)
+        {
+            const long epoch = 1700000000;
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            demo.RestoreForSmoke(new MineProgress()); demo.ShowWorkshop(); Click("Production section");
+            Check(!FindButton("Buy Warehouse").interactable, "Warehouse expansion is visible but initially locked");
+            Click("Open warehouse"); yield return null;
+            Check(GameObject.Find("Offline reward modal") != null && !FindButton("Claim offline reward").interactable, "Empty warehouse explains offline income without a free reward");
+            CheckLayout(); Capture("unity-offline-empty.png"); Click("Close warehouse"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { coins = 1500, workerCount = 1, experience = MineGame.ExperienceForLevel(6) });
+            demo.ShowWorkshop(); Click("Production section"); Click("Buy Warehouse");
+            Check(demo.Game.Progress.coins == 0 && demo.Game.Progress.warehouseLevel == 1 && demo.Game.OfflineHours == 6 && !FindButton("Buy Warehouse").interactable, "Real storage purchase pays 1500, raises capacity to six hours and locks the next level");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress))); demo.ShowWorkshop(); Click("Production section");
+            CheckLayout(); Capture("unity-warehouse-upgrade.png");
+            demo.RestoreForSmoke(new MineProgress { coins = 1000, workerCount = 1, drillCount = 1, cartCount = 1, railLevel = 1, hits = 7, veinBoostLeft = 8 });
+            demo.Game.RecordSession(epoch); demo.ReturnForSmoke(epoch + 7200); yield return null;
+            Check(GameObject.Find("Offline reward modal") != null && demo.Game.Progress.offlineCoins == 56448 && demo.Game.Progress.coins == 1000 && demo.Game.Progress.hits == 7 && demo.Game.Progress.veinBoostLeft == 8, "Returning prepares the saved-rate two-hour crate and opens its modal without changing the wallet or manual progress");
+            CheckLayout(); Capture("unity-offline-ready.png");
+            demo.Mine(); demo.Upgrade(); demo.Forge(); demo.ShowPage(true);
+            Check(demo.Game.Progress.coins == 1000 && demo.Game.Progress.totalClicks == 0 && demo.Game.Progress.upgradeLevel == 0 && FindButton("Mine rock") != null, "Offline window blocks background purchases, mining and navigation");
+            Click("Close warehouse"); yield return null;
+            Check(demo.Game.Progress.offlineCoins == 56448 && demo.Game.Progress.coins == 1000, "Later keeps the reward available without automatic credit");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+            demo.ReturnForSmoke(epoch + 10800); yield return null;
+            Check(demo.Game.Progress.offlineCoins == 56448 && demo.Game.Progress.offlineRewardSeconds == 7200 && GameObject.Find("Offline reward modal") != null, "Reload and another return keep the existing crate instead of stacking another absence");
+            demo.AdvanceForSmoke(1, false); Click("Claim offline reward"); demo.ClaimOfflineReward(); yield return null;
+            Check(!demo.Game.HasOfflineReward && demo.Game.Progress.coins == 57463 && demo.Game.Progress.totalOfflineCoins == 56448 && demo.Game.Progress.tickets == 2 && demo.Game.Progress.experience == 0, "Claim button credits offline coins once alongside independent live income");
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress))); yield return null;
+            Check(GameObject.Find("Offline reward modal") == null && !demo.Game.ClaimOffline() && demo.Game.Progress.coins == 57463, "Reloading a claimed reward does not reopen or pay it again");
+            demo.ShowWorkshop(); Click("Production section"); Click("Open warehouse"); yield return null;
+            Check(!FindButton("Claim offline reward").interactable, "Claimed warehouse remains empty when reopened manually");
+            CheckLayout(); Capture("unity-offline-claimed.png"); Click("Close warehouse"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { coins = 0, workerCount = 1, warehouseLevel = 2 }); demo.Game.RecordSession(epoch);
+            demo.ReturnForSmoke(epoch + 86400); yield return null;
+            Check(demo.Game.Progress.offlineCoins == 28800 && demo.Game.Progress.offlineRewardSeconds == 28800 && demo.Game.Progress.offlineElapsedSeconds == 86400, "Return modal shows a full-day absence capped by the purchased eight-hour warehouse");
+            CheckLayout(); Capture("unity-offline-capped.png");
+            string capped = JsonUtility.ToJson(demo.Game.Progress);
+            Click("Close warehouse"); yield return null;
+            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.25f);
+                demo.RestoreForSmoke(ProgressStore.Decode(capped)); yield return null;
+                CheckLayout(); Capture("unity-offline-" + size.x + "x" + size.y + ".png");
+                Click("Close warehouse"); yield return null;
+            }
+            Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(new MineProgress { coins = MineGame.CoinLimit, workerCount = 1 }); demo.Game.RecordSession(epoch);
+            demo.ReturnForSmoke(epoch + 3600); yield return null;
+            Check(!FindButton("Claim offline reward").interactable && demo.Game.Progress.offlineCoins == 3600, "A full wallet disables claim and retains all offline money");
+            CheckLayout(); Capture("unity-offline-full.png"); Click("Close warehouse"); yield return null;
+            Click("Upgrade pickaxe"); demo.ShowOfflineReward(); Click("Claim offline reward"); yield return null;
+            Check(demo.Game.Progress.coins == MineGame.CoinLimit && demo.Game.Progress.offlineCoins == 3480 && demo.Game.Progress.totalOfflineCoins == 120, "After spending money the real claim button takes only the available space and saves the rest");
+            demo.RestoreForSmoke(new MineProgress { coins = 0, workerCount = 1, tickets = 1, swapLevel = 1 }); demo.Game.RecordSession(epoch); demo.ShowPage(true);
+            int draw = 0; demo.SpinForSmoke(() => ++draw == 2 ? .99 : 0); yield return WaitForChoice(demo);
+            demo.ReturnForSmoke(epoch + 3600); yield return null;
+            Check(GameObject.Find("Offline reward modal") == null && demo.Game.HasOfflineReward && demo.AwaitingPickChoice && !demo.Game.CanClaimOffline, "Pending draw defers the return modal and blocks its payout");
+            demo.Spin(); yield return FinishRoll(demo); yield return null;
+            Check(GameObject.Find("Offline reward modal") != null && demo.Game.Progress.offlineCoins == 3600 && demo.Game.Progress.tickets == 0 && !demo.Game.HasPendingRoll, "Return modal opens only after the paid draw has resolved");
+            Click("Claim offline reward"); yield return null;
+            Check(demo.Game.Progress.totalOfflineCoins == 3600 && !demo.Game.HasOfflineReward, "Deferred offline reward pays once after the draw");
+            string sessionKey = "LuckyPickaxe.Runtime.Offline." + Guid.NewGuid().ToString("N");
+            try
+            {
+                demo.RestoreForSmoke(new MineProgress { coins = 0, workerCount = 1 });
+                demo.ConfigureSessionForSmoke(epoch, sessionKey); demo.SaveSessionForSmoke();
+                demo.PauseForSmoke(true); long departed = demo.Game.Progress.lastSeenUtc;
+                demo.AdvanceSessionForSmoke(600); demo.SaveSessionForSmoke();
+                var pausedSave = ProgressStore.Load(sessionKey);
+                Check(pausedSave.Progress.lastSeenUtc == departed && pausedSave.Progress.coins == 0, "Saving or quitting while paused keeps the departure timestamp and does not grant live income");
+                demo.PauseForSmoke(false); yield return null;
+                var resumedSave = ProgressStore.Load(sessionKey);
+                Check(resumedSave.Progress.offlineCoins >= 600 && resumedSave.Progress.offlineCoins <= 601 && resumedSave.Progress.coins == 0 && GameObject.Find("Offline reward modal") != null, "Real pause and resume handlers prepare and persist the bounded offline crate before its UI");
+                Click("Claim offline reward"); yield return null;
+                var claimedSave = ProgressStore.Load(sessionKey);
+                Check(claimedSave.Progress.coins >= 600 && claimedSave.Progress.coins <= 601 && !claimedSave.HasOfflineReward && !claimedSave.ClaimOffline(), "Controller claim saves the consumed crate and credited wallet together under an isolated key");
+            }
+            finally
+            {
+                demo.ConfigureSessionForSmoke(epoch, null); demo.PauseForSmoke(false);
+                PlayerPrefs.DeleteKey(sessionKey); PlayerPrefs.DeleteKey(sessionKey + ".backup"); PlayerPrefs.Save();
+            }
+            demo.RestoreForSmoke(new MineProgress { coins = 9000, workerCount = 100, drillCount = 50, cartCount = 25, railLevel = 10, forgeLevel = 10, warehouseLevel = 4, experience = MineGame.ExperienceForLevel(50) });
+            demo.ShowWorkshop(); Click("Production section"); Check(!FindButton("Buy Warehouse").interactable && demo.Game.OfflineHours == 12, "Maximum storage is disabled at twelve hours");
+            CheckLayout(); Capture("unity-warehouse-max.png");
+            demo.Game.RecordSession(epoch); demo.ReturnForSmoke(epoch + 86400); yield return null;
+            Check(demo.Game.Progress.offlineCoins == 257040000, "Maximum offline crate fits the actual reward UI");
+            CheckLayout(); Capture("unity-offline-max.png"); Click("Close warehouse"); yield return null;
             demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }
 

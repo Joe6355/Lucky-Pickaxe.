@@ -3,12 +3,12 @@ using System;
 namespace MineLoot
 {
     public enum BlockKind { Ore, Obsidian, Bedrock }
-    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure, Worker, Drill, Cart, Rails }
+    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure, Worker, Drill, Cart, Rails, Warehouse }
 
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 8;
+        public int version = 9;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -40,6 +40,10 @@ namespace MineLoot
         public long totalProduced;
         public int veinCharge;
         public double veinOfferLeft, veinBoostLeft;
+        public int warehouseLevel, offlineCapacitySeconds, offlineCarry;
+        public long lastSeenUtc, offlineRateMilli, totalOfflineCoins;
+        public long offlineCoins, offlineRewardSeconds, offlineElapsedSeconds, offlineRewardRateMilli;
+        public int offlineRewardCapacity;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -53,6 +57,8 @@ namespace MineLoot
         public const int MaxMinerLevel = 50;
         public const long CoinLimit = 1000000000000L;
         public const int VeinOreTarget = 24, VeinOfferSeconds = 20, VeinBoostSeconds = 12, VeinMultiplier = 3;
+        public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
+        private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 11900000;
         private static readonly int[] OreLevels = { 1, 2, 4, 7, 10 };
         private static readonly int[] OreHealths = { 6, 9, 12, 16, 20 };
         private static readonly int[] OreRewards = { 12, 28, 55, 95, 150 };
@@ -110,6 +116,9 @@ namespace MineLoot
         public int CartBonus => Progress.cartCount * (10 + 2 * Progress.railLevel);
         public int DrillBonus => Progress.forgeLevel * 10;
         public long ProductionMilli => (Progress.workerCount * 2000L + Progress.drillCount * 12000L * (10 + Progress.forgeLevel) / 10) * (100 + CartBonus) / 100;
+        public int OfflineHours => 4 + Progress.warehouseLevel * 2;
+        public bool HasOfflineReward => Progress.offlineCoins > 0;
+        public bool CanClaimOffline => HasOfflineReward && !HasPendingRoll && Progress.coins < CoinLimit;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
         public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
@@ -153,7 +162,24 @@ namespace MineLoot
             bool legacyBoard = Progress.version < 4;
             bool legacyRoll = Progress.version < 5;
             bool legacyUpgrades = Progress.version < 6;
-            Progress.version = 8;
+            Progress.version = 9;
+            Progress.warehouseLevel = Math.Max(0, Math.Min(MaxWarehouse, Progress.warehouseLevel));
+            Progress.lastSeenUtc = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.lastSeenUtc));
+            Progress.offlineRateMilli = Math.Max(0, Math.Min(MaxProductionMilli, Progress.offlineRateMilli));
+            Progress.offlineCapacitySeconds = Math.Max(0, Math.Min(MaxOfflineSeconds, Progress.offlineCapacitySeconds));
+            Progress.offlineCarry = Math.Max(0, Math.Min(1999, Progress.offlineCarry));
+            Progress.totalOfflineCoins = Math.Max(0, Math.Min(CoinLimit, Progress.totalOfflineCoins));
+            Progress.offlineCoins = Math.Max(0, Math.Min(CoinLimit, Progress.offlineCoins));
+            Progress.offlineRewardSeconds = Math.Max(0, Math.Min(MaxOfflineSeconds, Progress.offlineRewardSeconds));
+            Progress.offlineElapsedSeconds = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.offlineElapsedSeconds));
+            Progress.offlineRewardRateMilli = Math.Max(0, Math.Min(MaxProductionMilli, Progress.offlineRewardRateMilli));
+            Progress.offlineRewardCapacity = Math.Max(0, Math.Min(MaxOfflineSeconds, Progress.offlineRewardCapacity));
+            if (HasOfflineReward)
+            {
+                long maximum = Progress.offlineRewardRateMilli * Progress.offlineRewardSeconds / 2000 + 1;
+                if (Progress.offlineRewardSeconds == 0 || Progress.offlineRewardSeconds > Progress.offlineRewardCapacity || Progress.offlineElapsedSeconds < Progress.offlineRewardSeconds || Progress.offlineRewardRateMilli == 0 || Progress.offlineCoins > maximum) throw new FormatException("Invalid offline reward");
+            }
+            else ClearOfflineReward();
             Progress.workerCount = Math.Max(0, Math.Min(100, Progress.workerCount));
             Progress.drillCount = Math.Max(0, Math.Min(50, Progress.drillCount));
             Progress.cartCount = Math.Max(0, Math.Min(25, Progress.cartCount));
@@ -286,6 +312,57 @@ namespace MineLoot
             return true;
         }
 
+        private static void ValidateUtc(long utc)
+        {
+            if (utc < 1 || utc > MaxUtcSeconds) throw new ArgumentOutOfRangeException(nameof(utc));
+        }
+
+        // The monotonic high-water mark cannot move backwards when the device clock is rolled back.
+        public void RecordSession(long utc)
+        {
+            ValidateUtc(utc);
+            Progress.lastSeenUtc = Math.Max(Progress.lastSeenUtc, utc);
+            Progress.offlineRateMilli = ProductionMilli;
+            Progress.offlineCapacitySeconds = OfflineHours * 3600;
+        }
+
+        // Called once on launch/resume, before purchases. The pending crate is saved before showing UI.
+        public bool PrepareOffline(long utc)
+        {
+            ValidateUtc(utc);
+            long elapsed = Progress.lastSeenUtc > 0 ? Math.Max(0, utc - Progress.lastSeenUtc) : 0;
+            long rate = Progress.offlineRateMilli;
+            int capacity = Progress.offlineCapacitySeconds;
+            RecordSession(utc);
+            if (HasOfflineReward || elapsed == 0 || rate <= 0 || capacity <= 0) return false;
+            long seconds = Math.Min(elapsed, capacity);
+            long numerator = rate * seconds + Progress.offlineCarry;
+            Progress.offlineCarry = (int)(numerator % 2000);
+            long coins = numerator / 2000; // Half normal production; keep fractional coins across absences.
+            if (coins == 0) return false;
+            Progress.offlineCoins = coins; Progress.offlineRewardSeconds = seconds;
+            Progress.offlineElapsedSeconds = elapsed; Progress.offlineRewardRateMilli = rate;
+            Progress.offlineRewardCapacity = capacity;
+            return true;
+        }
+
+        public bool ClaimOffline()
+        {
+            if (!CanClaimOffline) return false;
+            long credit = Math.Min(CoinLimit - Progress.coins, Progress.offlineCoins);
+            AddCoins(credit); Progress.offlineCoins -= credit;
+            Progress.totalProduced = Math.Min(CoinLimit, Progress.totalProduced + credit);
+            Progress.totalOfflineCoins = Math.Min(CoinLimit, Progress.totalOfflineCoins + credit);
+            if (!HasOfflineReward) ClearOfflineReward();
+            return true;
+        }
+
+        private void ClearOfflineReward()
+        {
+            Progress.offlineCoins = Progress.offlineRewardSeconds = Progress.offlineElapsedSeconds = Progress.offlineRewardRateMilli = 0;
+            Progress.offlineRewardCapacity = 0;
+        }
+
         public bool Upgrade()
         {
             return BuyUpgrade(UpgradeKind.Pickaxe);
@@ -310,6 +387,7 @@ namespace MineLoot
                 case UpgradeKind.Drill: return Progress.drillCount;
                 case UpgradeKind.Cart: return Progress.cartCount;
                 case UpgradeKind.Rails: return Progress.railLevel;
+                case UpgradeKind.Warehouse: return Progress.warehouseLevel;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
@@ -327,6 +405,7 @@ namespace MineLoot
                 case UpgradeKind.Drill: return 50;
                 case UpgradeKind.Cart: return 25;
                 case UpgradeKind.Rails: return 10;
+                case UpgradeKind.Warehouse: return MaxWarehouse;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
@@ -344,6 +423,7 @@ namespace MineLoot
                 case UpgradeKind.Drill: return 5;
                 case UpgradeKind.Cart: return 8;
                 case UpgradeKind.Rails: return 8 + rank * 2;
+                case UpgradeKind.Warehouse: return 6 + rank * 4;
                 default: return 1;
             }
         }
@@ -364,12 +444,13 @@ namespace MineLoot
                 case UpgradeKind.Drill: start = 1800; growth = 1.24; break;
                 case UpgradeKind.Cart: start = 1400; growth = 1.30; break;
                 case UpgradeKind.Rails: start = 900; growth = 1.65; break;
+                case UpgradeKind.Warehouse: start = 1500; growth = 2.2; break;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
             return (long)Math.Min(CoinLimit, Math.Round(start * Math.Pow(growth, rank)));
         }
 
-        public UpgradeKind? UpgradePrerequisite(UpgradeKind kind) => kind == UpgradeKind.Drill ? UpgradeKind.Worker : kind == UpgradeKind.Cart ? UpgradeKind.Drill : kind == UpgradeKind.Rails ? UpgradeKind.Cart : (UpgradeKind?)null;
+        public UpgradeKind? UpgradePrerequisite(UpgradeKind kind) => kind == UpgradeKind.Drill || kind == UpgradeKind.Warehouse ? UpgradeKind.Worker : kind == UpgradeKind.Cart ? UpgradeKind.Drill : kind == UpgradeKind.Rails ? UpgradeKind.Cart : (UpgradeKind?)null;
         public bool HasUpgradePrerequisite(UpgradeKind kind) => !UpgradePrerequisite(kind).HasValue || UpgradeLevel(UpgradePrerequisite(kind).Value) > 0;
         public bool CanBuyUpgrade(UpgradeKind kind) => !HasPendingRoll && HasUpgradePrerequisite(kind) && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
 
@@ -392,6 +473,7 @@ namespace MineLoot
                 case UpgradeKind.Drill: Progress.drillCount++; break;
                 case UpgradeKind.Cart: Progress.cartCount++; break;
                 case UpgradeKind.Rails: Progress.railLevel++; break;
+                case UpgradeKind.Warehouse: Progress.warehouseLevel++; break;
             }
             return true;
         }
