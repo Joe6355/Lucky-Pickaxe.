@@ -8,7 +8,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 9;
+        public int version = 10;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -44,6 +44,9 @@ namespace MineLoot
         public long lastSeenUtc, offlineRateMilli, totalOfflineCoins;
         public long offlineCoins, offlineRewardSeconds, offlineElapsedSeconds, offlineRewardRateMilli;
         public int offlineRewardCapacity;
+        public int prestigeCount, crystals, totalCrystals, prestigeUpgrades;
+        public int experienceCarry;
+        public long[] milestoneBest = new long[16];
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -58,7 +61,20 @@ namespace MineLoot
         public const long CoinLimit = 1000000000000L;
         public const int VeinOreTarget = 24, VeinOfferSeconds = 20, VeinBoostSeconds = 12, VeinMultiplier = 3;
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
-        private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 11900000;
+        public const int PrestigeUpgradeCount = 9, MaxPrestiges = 1000000, MaxCrystals = 10000000;
+        private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 14875000;
+        private static readonly PrestigeUpgrade[] PrestigeUpgrades = {
+            new PrestigeUpgrade("Верный удар", "+25% монет\nза удар и руду", "pick4", 2),
+            new PrestigeUpgrade("Артель", "+25% дохода\nпроизводства", "worker", 3),
+            new PrestigeUpgrade("Секрет клада", "+25% награды\nсундуков", "chest", 5),
+            new PrestigeUpgrade("Запас монет", "+1000 монет\nв новой шахте", "coin", 2),
+            new PrestigeUpgrade("Каменный старт", "Стартовая\nкирка ур. 2", "pick-stone", 3),
+            new PrestigeUpgrade("Своя бригада", "Один шахтёр\nна старте", "worker", 5),
+            new PrestigeUpgrade("Чутьё", "Жила через\n20 блоков", "tile-gold", 2),
+            new PrestigeUpgrade("Долгая жила", "Усиление\nна 16 секунд", "ticket", 3),
+            new PrestigeUpgrade("Сила жилы", "Жила даёт\n×4 монеты", "tile-diamond", 5)
+        };
+        public static PrestigeUpgrade PrestigeUpgradeAt(int index) => PrestigeUpgrades[index];
         private static readonly int[] OreLevels = { 1, 2, 4, 7, 10 };
         private static readonly int[] OreHealths = { 6, 9, 12, 16, 20 };
         private static readonly int[] OreRewards = { 12, 28, 55, 95, 150 };
@@ -85,7 +101,7 @@ namespace MineLoot
         };
         public static int MilestoneCount => Milestones.Length;
         public static Milestone MilestoneAt(int index) => Milestones[index];
-        public MineProgress Progress { get; }
+        public MineProgress Progress { get; private set; }
         public MineHit LastHit { get; private set; }
         public int MinerLevel => LevelForExperience(Progress.experience);
         public long LevelExperience => Progress.experience - ExperienceForLevel(MinerLevel);
@@ -93,7 +109,7 @@ namespace MineLoot
         public int UnlockedOres { get { int count = 1; while (count < OreLevels.Length && MinerLevel >= OreLevels[count]) count++; return count; } }
         public string OreKey => OreKeys[Progress.oreKind];
         public int OreHealth => OreHealths[Progress.oreKind];
-        public int OreReward => OreRewards[Progress.oreKind];
+        public int OreReward => OreRewards[Progress.oreKind] * (HasPrestigeUpgrade(0) ? 125 : 100) / 100;
         public int MiningDamage => 1 + Progress.upgradeLevel / 5 + Progress.efficiencyLevel;
         public int HitsRequired => HitsPerTicket - Progress.pressLevel;
         public int PickTier => Progress.upgradeLevel >= 20 ? 4 : Progress.upgradeLevel >= 12 ? 3 : Progress.upgradeLevel >= 5 ? 2 : Progress.upgradeLevel >= 2 ? 1 : 0;
@@ -108,21 +124,32 @@ namespace MineLoot
             return level;
         }
         public int Relics => Math.Min(333333, Math.Max(0, Progress.stratum - 1 + (IsComplete ? 1 : 0) - Progress.failedFloors) / 3);
-        public int ClickPower => 8 + Progress.upgradeLevel * 4 + Relics;
+        public int ClickPower => (8 + Progress.upgradeLevel * 4 + Relics) * (HasPrestigeUpgrade(0) ? 125 : 100) / 100;
+        public int ClickUpgradeGain => HasPrestigeUpgrade(0) ? 5 : 4;
+        public int PrestigeProductionPercent => HasPrestigeUpgrade(1) ? 125 : 100;
+        public long WorkerProductionMilli => 2000L * PrestigeProductionPercent / 100;
+        public long DrillProductionMilli => 12000L * (10 + Progress.forgeLevel) / 10 * PrestigeProductionPercent / 100;
+        public int PrestigeStartCoins => HasPrestigeUpgrade(3) ? 1080 : 80;
+        public int PrestigeStartPick => HasPrestigeUpgrade(4) ? 2 : 0;
+        public int PrestigeStartWorkers => HasPrestigeUpgrade(5) ? 1 : 0;
+        public int PrestigeExperiencePercent => 100 + Math.Min(5, Progress.prestigeCount) * 15;
+        public int RichVeinTarget => HasPrestigeUpgrade(6) ? 20 : VeinOreTarget;
+        public int RichVeinDuration => HasPrestigeUpgrade(7) ? 16 : VeinBoostSeconds;
+        public int RichVeinMultiplier => HasPrestigeUpgrade(8) ? 4 : VeinMultiplier;
         public bool VeinOffered => Progress.veinOfferLeft > 0;
         public bool VeinActive => Progress.veinBoostLeft > 0;
-        public int ManualMultiplier => VeinActive ? VeinMultiplier : 1;
+        public int ManualMultiplier => VeinActive ? RichVeinMultiplier : 1;
         public int ManualClickPower => ClickPower * ManualMultiplier;
         public int CartBonus => Progress.cartCount * (10 + 2 * Progress.railLevel);
         public int DrillBonus => Progress.forgeLevel * 10;
-        public long ProductionMilli => (Progress.workerCount * 2000L + Progress.drillCount * 12000L * (10 + Progress.forgeLevel) / 10) * (100 + CartBonus) / 100;
+        public long ProductionMilli => (Progress.workerCount * 2000L + Progress.drillCount * 12000L * (10 + Progress.forgeLevel) / 10) * (100 + CartBonus) / 100 * (HasPrestigeUpgrade(1) ? 125 : 100) / 100;
         public int OfflineHours => 4 + Progress.warehouseLevel * 2;
         public bool HasOfflineReward => Progress.offlineCoins > 0;
         public bool CanClaimOffline => HasOfflineReward && !HasPendingRoll && Progress.coins < CoinLimit;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
         public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
-        public int ChestReward => (60 + 20 * Math.Min(99, Progress.stratum - 1)) * (100 + Progress.treasureLevel * 15) / 100;
+        public int ChestReward => (60 + 20 * Math.Min(99, Progress.stratum - 1)) * (100 + Progress.treasureLevel * 15) * (HasPrestigeUpgrade(2) ? 125 : 100) / 10000;
         public int FloorReward => 100 + 30 * Math.Min(99, Progress.stratum - 1);
         public int PowerBonus => Progress.forgeLevel / 2;
         public int DiamondChance => 10 + Progress.forgeLevel;
@@ -162,7 +189,21 @@ namespace MineLoot
             bool legacyBoard = Progress.version < 4;
             bool legacyRoll = Progress.version < 5;
             bool legacyUpgrades = Progress.version < 6;
-            Progress.version = 9;
+            Progress.version = 10;
+            Progress.prestigeCount = Math.Max(0, Math.Min(MaxPrestiges, Progress.prestigeCount));
+            Progress.experienceCarry = Math.Max(0, Math.Min(99, Progress.experienceCarry));
+            Progress.totalCrystals = Math.Max(0, Math.Min(MaxCrystals, Progress.totalCrystals));
+            Progress.crystals = Math.Max(0, Math.Min(Progress.totalCrystals, Progress.crystals));
+            Progress.prestigeUpgrades = Math.Max(0, Progress.prestigeUpgrades) & ((1 << PrestigeUpgradeCount) - 1);
+            for (int i = 0; i < PrestigeUpgradeCount; i++)
+                if (i % 3 > 0 && HasPrestigeUpgrade(i) && !HasPrestigeUpgrade(i - 1)) throw new FormatException("Invalid prestige upgrade branch");
+            if (Progress.milestoneBest == null || Progress.milestoneBest.Length != MilestoneCount)
+            {
+                var best = new long[MilestoneCount];
+                if (Progress.milestoneBest != null) Array.Copy(Progress.milestoneBest, best, Math.Min(Progress.milestoneBest.Length, best.Length));
+                Progress.milestoneBest = best;
+            }
+            for (int i = 0; i < MilestoneCount; i++) Progress.milestoneBest[i] = Math.Max(0, Math.Min(Milestones[i].target, Progress.milestoneBest[i]));
             Progress.warehouseLevel = Math.Max(0, Math.Min(MaxWarehouse, Progress.warehouseLevel));
             Progress.lastSeenUtc = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.lastSeenUtc));
             Progress.offlineRateMilli = Math.Max(0, Math.Min(MaxProductionMilli, Progress.offlineRateMilli));
@@ -186,9 +227,9 @@ namespace MineLoot
             Progress.railLevel = Math.Max(0, Math.Min(10, Progress.railLevel));
             Progress.productionCarry = FiniteClamp(Progress.productionCarry, 0, .999999999);
             Progress.totalProduced = Math.Max(0, Math.Min(CoinLimit, Progress.totalProduced));
-            Progress.veinCharge = Math.Max(0, Math.Min(VeinOreTarget - 1, Progress.veinCharge));
+            Progress.veinCharge = Math.Max(0, Math.Min(RichVeinTarget - 1, Progress.veinCharge));
             Progress.veinOfferLeft = FiniteClamp(Progress.veinOfferLeft, 0, VeinOfferSeconds);
-            Progress.veinBoostLeft = FiniteClamp(Progress.veinBoostLeft, 0, VeinBoostSeconds);
+            Progress.veinBoostLeft = FiniteClamp(Progress.veinBoostLeft, 0, RichVeinDuration);
             if (VeinActive) Progress.veinOfferLeft = 0;
             Progress.milestoneClaims = Math.Max(0, Progress.milestoneClaims) & ((1 << MilestoneCount) - 1);
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
@@ -241,6 +282,7 @@ namespace MineLoot
                 }
             }
             Progress.pendingSwapUsed = false; // v5 migration field; v6 uses the saved counter.
+            ObserveMilestones();
         }
 
         public bool Mine()
@@ -257,12 +299,12 @@ namespace MineLoot
                 hit.experience += 6 + Progress.oreKind * 4;
                 Progress.oresMined = Math.Min(CoinLimit, Progress.oresMined + 1);
                 Progress.oreDamage = 0;
-                if (!VeinOffered && !VeinActive && ++Progress.veinCharge >= VeinOreTarget)
+                if (!VeinOffered && !VeinActive && ++Progress.veinCharge >= RichVeinTarget)
                 {
                     Progress.veinCharge = 0; Progress.veinOfferLeft = VeinOfferSeconds; hit.veinFound = true;
                 }
             }
-            hit.coins += GainExperience(hit.experience, out hit.tickets);
+            hit.coins += GainExperience(hit.experience, out hit.tickets, out hit.experience);
             hit.levels = MinerLevel - previousLevel;
             if (hit.broken)
                 Progress.oreKind = UnlockedOres > previousUnlocks ? UnlockedOres - 1 : Math.Min(UnlockedOres - 1, OreCycle[Progress.oresMined % OreCycle.Length]);
@@ -275,10 +317,12 @@ namespace MineLoot
             return ticket;
         }
 
-        private int GainExperience(int amount, out int tickets)
+        private int GainExperience(int amount, out int tickets, out int awarded)
         {
+            int scaled = amount * PrestigeExperiencePercent + Progress.experienceCarry;
+            awarded = scaled / 100; Progress.experienceCarry = scaled % 100;
             int before = MinerLevel, coins = 0;
-            Progress.experience = Math.Min(ExperienceForLevel(MaxMinerLevel), Progress.experience + amount);
+            Progress.experience = Math.Min(ExperienceForLevel(MaxMinerLevel), Progress.experience + awarded);
             tickets = MinerLevel - before;
             for (int level = before + 1; level <= MinerLevel; level++) coins += 40 * level;
             Progress.tickets = Math.Min(1000000, Progress.tickets + tickets);
@@ -308,7 +352,7 @@ namespace MineLoot
         public bool ActivateVein()
         {
             if (HasPendingRoll || !VeinOffered || VeinActive) return false;
-            Progress.veinOfferLeft = 0; Progress.veinBoostLeft = VeinBoostSeconds;
+            Progress.veinOfferLeft = 0; Progress.veinBoostLeft = RichVeinDuration;
             return true;
         }
 
@@ -489,6 +533,14 @@ namespace MineLoot
 
         public long MilestoneValue(int index)
         {
+            Progress.milestoneBest[index] = Math.Max(Progress.milestoneBest[index], RawMilestoneValue(index));
+            return Progress.milestoneBest[index];
+        }
+
+        private void ObserveMilestones() { for (int i = 0; i < MilestoneCount; i++) MilestoneValue(i); }
+
+        private long RawMilestoneValue(int index)
+        {
             long value;
             switch (index)
             {
@@ -528,6 +580,52 @@ namespace MineLoot
             Progress.milestoneClaims |= 1 << index;
             AddCoins(Milestones[index].coins);
             Progress.tickets = Math.Min(1000000, Progress.tickets + Milestones[index].tickets);
+            return true;
+        }
+
+        public bool HasPrestigeUpgrade(int index) => index >= 0 && index < PrestigeUpgradeCount && (Progress.prestigeUpgrades & (1 << index)) != 0;
+        public bool PrestigePrerequisiteMet(int index) => index >= 0 && index < PrestigeUpgradeCount && (index % 3 == 0 || HasPrestigeUpgrade(index - 1));
+        public bool CanBuyPrestigeUpgrade(int index) => index >= 0 && index < PrestigeUpgradeCount && Progress.prestigeCount > 0 && !HasPendingRoll && !HasPrestigeUpgrade(index) && PrestigePrerequisiteMet(index) && Progress.crystals >= PrestigeUpgrades[index].cost;
+        public int PrestigeReward => Math.Min(MaxCrystals - Progress.totalCrystals, 3 + Math.Min(7, (Progress.stratum - 1) / 10));
+        public bool CanPrestige => MinerLevel == MaxMinerLevel && !HasPendingRoll && !HasOfflineReward && Progress.prestigeCount < MaxPrestiges && PrestigeReward > 0;
+
+        public bool BuyPrestigeUpgrade(int index)
+        {
+            if (!CanBuyPrestigeUpgrade(index)) return false;
+            Progress.crystals -= PrestigeUpgrades[index].cost;
+            Progress.prestigeUpgrades |= 1 << index;
+            // Starter purchases help immediately once, and are granted again by each later reset.
+            if (index == 3) AddCoins(1000);
+            if (index == 4) Progress.upgradeLevel = Math.Max(2, Progress.upgradeLevel);
+            if (index == 5) Progress.workerCount = Math.Max(1, Progress.workerCount);
+            if (index == 6 && !VeinOffered && !VeinActive && Progress.veinCharge >= RichVeinTarget)
+            {
+                Progress.veinCharge = 0; Progress.veinOfferLeft = VeinOfferSeconds;
+            }
+            ObserveMilestones();
+            return true;
+        }
+
+        public bool Prestige(Func<double> random)
+        {
+            if (!CanPrestige) return false;
+            int seed = DrawSeed(random); // Validate RNG before touching the wallet or permanent progress.
+            int reward = PrestigeReward; ObserveMilestones();
+            var previous = Progress;
+            Progress = new MineProgress {
+                boardSeed = seed, coins = PrestigeStartCoins,
+                upgradeLevel = PrestigeStartPick, workerCount = PrestigeStartWorkers,
+                prestigeCount = previous.prestigeCount + 1, crystals = previous.crystals + reward,
+                totalCrystals = previous.totalCrystals + reward, prestigeUpgrades = previous.prestigeUpgrades,
+                milestoneClaims = previous.milestoneClaims, milestoneBest = (long[])previous.milestoneBest.Clone(),
+                totalClicks = previous.totalClicks, oresMined = previous.oresMined, totalRolls = previous.totalRolls,
+                totalBlocks = previous.totalBlocks, claimedContracts = previous.claimedContracts,
+                totalProduced = previous.totalProduced, totalOfflineCoins = previous.totalOfflineCoins,
+                lastSeenUtc = previous.lastSeenUtc
+            };
+            Sanitize();
+            if (previous.lastSeenUtc > 0) RecordSession(previous.lastSeenUtc);
+            LastHit = default;
             return true;
         }
 
@@ -663,7 +761,7 @@ namespace MineLoot
                 if (result.perfect) { result.reward += FloorReward; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
                 else Progress.failedFloors++;
             }
-            result.levelCoins = GainExperience(result.broken, out result.levelTickets);
+            result.levelCoins = GainExperience(result.broken, out result.levelTickets, out result.experience);
             result.levelAfter = MinerLevel;
             result.reward += result.levelCoins;
             AddCoins(result.reward);
@@ -683,6 +781,16 @@ namespace MineLoot
         public RollResult Roll(Func<double> random) => BeginRoll(random) ? ResolveRoll() : null;
 
         private void AddCoins(long value) => Progress.coins = Math.Min(CoinLimit, Progress.coins + value);
+    }
+
+    public readonly struct PrestigeUpgrade
+    {
+        public readonly string title, detail, icon;
+        public readonly int cost;
+        public PrestigeUpgrade(string title, string detail, string icon, int cost)
+        {
+            this.title = title; this.detail = detail; this.icon = icon; this.cost = cost;
+        }
     }
 
     public readonly struct Milestone
@@ -721,6 +829,6 @@ namespace MineLoot
         public bool completed;
         public bool perfect;
         public int brokenPicks, lostChests;
-        public int levelBefore, levelAfter, levelCoins, levelTickets;
+        public int levelBefore, levelAfter, levelCoins, levelTickets, experience;
     }
 }

@@ -152,6 +152,7 @@ namespace MineLoot
             yield return VerifyWorkshop(demo, stage, shaft);
             yield return VerifyProduction(demo, stage);
             yield return VerifyOffline(demo);
+            yield return VerifyPrestige(demo);
             yield return VerifyMilestones(demo);
             // Exercise a later biome and partial block damage in the same built player.
             demo.Game.Progress.stratum = 4;
@@ -445,6 +446,66 @@ namespace MineLoot
             demo.Game.RecordSession(epoch); demo.ReturnForSmoke(epoch + 86400); yield return null;
             Check(demo.Game.Progress.offlineCoins == 257040000, "Maximum offline crate fits the actual reward UI");
             CheckLayout(); Capture("unity-offline-max.png"); Click("Close warehouse"); yield return null;
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+        }
+
+        private IEnumerator VerifyPrestige(DemoController demo)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            demo.RestoreForSmoke(new MineProgress()); demo.ShowWorkshop(); Click("Open prestige"); yield return null;
+            Check(GameObject.Find("Prestige modal") != null && !FindButton("Prepare prestige").interactable && !FindButton("Buy prestige 0").interactable, "Permanent tree is visible but locked for a fresh miner");
+            CheckLayout(); Capture("unity-prestige-locked.png"); Click("Close prestige"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { coins = 12345, tickets = 12, experience = MineGame.ExperienceForLevel(50), stratum = 51, upgradeLevel = 20, forgeLevel = 6, swapLevel = 2, efficiencyLevel = 3, workerCount = 3, totalClicks = 500, totalBlocks = 70, claimedContracts = 1, oresMined = 200, milestoneClaims = 5 });
+            demo.ShowWorkshop(); Click("Open prestige"); yield return null;
+            Check(FindButton("Prepare prestige").interactable && demo.Game.PrestigeReward == 8, "Level fifty enables the reset with its exact floor-based crystal preview");
+            string before = JsonUtility.ToJson(demo.Game.Progress);
+            Click("Prepare prestige"); yield return null;
+            Check(FindButton("Confirm prestige").interactable && FindButton("Buy prestige 0") == null && demo.Game.Progress.crystals == 0, "Confirmation lists losses before the reset and hides purchase controls");
+            CheckLayout(); Capture("unity-prestige-confirm.png");
+            Click("Cancel prestige"); yield return null;
+            Check(JsonUtility.ToJson(demo.Game.Progress) == before && FindButton("Prepare prestige").interactable, "Cancelling the confirmation does not spend, reset or grant anything");
+            Click("Prepare prestige"); Click("Confirm prestige"); demo.ConfirmPrestige(); yield return null;
+            Check(demo.Game.MinerLevel == 1 && demo.Game.Progress.coins == 80 && demo.Game.Progress.tickets == 2 && demo.Game.Progress.stratum == 1 && demo.Game.Progress.crystals == 8 && demo.Game.Progress.prestigeCount == 1 && demo.Game.Progress.upgradeLevel == 0 && demo.Game.Progress.workerCount == 0 && !FindButton("Prepare prestige").interactable, "Real confirmation resets the run once and opens the permanent shop with eight crystals");
+            Check(demo.Game.Progress.milestoneClaims == 5 && demo.Game.MilestoneValue(11) == 20 && demo.Game.CanClaimMilestone(15) && demo.Game.Progress.claimedContracts == 1, "New-run interface retains unclaimed completed goals and lifetime contract progress");
+            CheckLayout(); Capture("unity-prestige-reward.png");
+            Click("Buy prestige 3"); Click("Buy prestige 4"); Click("Buy prestige 0"); demo.BuyPrestigeUpgrade(0);
+            Check(demo.Game.Progress.crystals == 1 && demo.Game.Progress.coins == 1080 && demo.Game.Progress.upgradeLevel == 2 && demo.Game.ClickPower == 20 && demo.Game.HasPrestigeUpgrade(3) && demo.Game.HasPrestigeUpgrade(4) && demo.Game.HasPrestigeUpgrade(0) && !FindButton("Buy prestige 0").interactable && !FindButton("Buy prestige 1").interactable, "Real permanent purchases follow dependencies, spend crystals once and apply starter bonuses immediately");
+            CheckLayout(); Capture("unity-prestige-bought.png");
+            Click("Close prestige"); yield return null;
+            demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress))); demo.ShowWorkshop(); Click("Open prestige"); yield return null;
+            Check(demo.Game.Progress.crystals == 1 && demo.Game.Progress.prestigeUpgrades == 25 && !FindButton("Buy prestige 4").interactable && demo.Game.Progress.coins == 1080, "Reload keeps the purchased permanent nodes without replaying their starter gifts");
+            Click("Close prestige"); yield return null;
+            demo.ShowPage(false); CheckLayout(); Capture("unity-prestige-new-mine.png");
+            demo.RestoreForSmoke(new MineProgress { prestigeCount = 3, prestigeUpgrades = 511, totalCrystals = 30, upgradeLevel = 2, workerCount = 1, experience = MineGame.ExperienceForLevel(3), veinOfferLeft = 20 });
+            Click("Activate rich vein"); demo.AdvanceForSmoke(1, true);
+            Check(demo.Game.RichVeinTarget == 20 && demo.Game.Progress.veinBoostLeft == 15 && demo.Game.ManualMultiplier == 4 && demo.Game.ProductionMilli == 2500, "Permanent rich-vein upgrades and production bonus reach the live mining UI");
+            CheckLayout(); Capture("unity-prestige-rich.png");
+            demo.ShowWorkshop(); Click("Open prestige"); yield return null;
+            for (int i = 0; i < 9; i++) Check(!FindButton("Buy prestige " + i).interactable, "Owned permanent node is disabled: " + i);
+            CheckLayout(); Capture("unity-prestige-complete.png");
+            string complete = JsonUtility.ToJson(demo.Game.Progress); Click("Close prestige"); yield return null;
+            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.25f);
+                demo.RestoreForSmoke(ProgressStore.Decode(complete)); demo.ShowWorkshop(); Click("Open prestige"); yield return null;
+                CheckLayout(); Capture("unity-prestige-" + size.x + "x" + size.y + ".png");
+                Click("Close prestige"); yield return null;
+                demo.RestoreForSmoke(new MineProgress { coins = MineGame.CoinLimit, tickets = 1000000, experience = MineGame.ExperienceForLevel(50), stratum = 71 });
+                demo.ShowWorkshop(); Click("Open prestige"); Click("Prepare prestige"); yield return null;
+                CheckLayout(); Capture("unity-prestige-confirm-" + size.x + "x" + size.y + ".png");
+                Click("Cancel prestige"); Click("Close prestige"); yield return null;
+            }
+            Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(new MineProgress { experience = MineGame.ExperienceForLevel(50), workerCount = 1 });
+            demo.Game.RecordSession(1700000000); demo.Game.PrepareOffline(1700000600);
+            demo.ShowWorkshop(); Click("Open prestige"); yield return null;
+            Check(!FindButton("Prepare prestige").interactable && !demo.Game.CanPrestige && demo.Game.Progress.offlineCoins == 600, "Tree requires collecting the offline crate rather than losing it on reset");
+            CheckLayout(); Click("Close prestige"); yield return null;
+            demo.RestoreForSmoke(new MineProgress { experience = MineGame.ExperienceForLevel(50), swapLevel = 1, tickets = 1 }); demo.ShowPage(true);
+            int draw = 0; demo.SpinForSmoke(() => ++draw == 2 ? .99 : 0); yield return WaitForChoice(demo);
+            demo.ShowPrestige();
+            Check(GameObject.Find("Prestige modal") == null && !demo.Game.CanPrestige, "Paid pick choice blocks opening prestige and prevents discarding its ticket");
+            demo.Spin(); yield return FinishRoll(demo);
             demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }
 

@@ -86,8 +86,8 @@ namespace MineLoot
         private void RestorePresentation()
         {
             busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
-            if (modal != null) { Destroy(modal); modal = null; }
-            milestoneBookOpen = offlineWindowOpen = false;
+            if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
+            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false;
             offlineNoticeQueued = game.HasOfflineReward;
             productionTab = false;
             noticeTime = 0; noticeGroup.alpha = 0;
@@ -222,7 +222,26 @@ namespace MineLoot
         {
             if (busy || modal != null || !game.ActivateVein()) return;
             Persist(); Flush(); Refresh(); sounds.Play("crystal");
-            Notice("БОГАТАЯ ЖИЛА · ×3", "Монеты от ручной добычи\n12 секунд на экране шахты");
+            Notice("БОГАТАЯ ЖИЛА · ×" + game.RichVeinMultiplier, "Монеты от ручной добычи\n" + game.RichVeinDuration + " секунд на экране шахты");
+        }
+
+        public void BuyPrestigeUpgrade(int index)
+        {
+            if (busy || !prestigeWindowOpen || !prestigeTree.activeSelf || !game.BuyPrestigeUpgrade(index)) return;
+            Persist(); Flush(); Refresh(); sounds.Play("upgrade");
+            Notice(MineGame.PrestigeUpgradeAt(index).title.ToUpperInvariant(), "Постоянное улучшение сохранено");
+        }
+
+        public void ConfirmPrestige()
+        {
+            if (busy || !prestigeWindowOpen || !prestigeConfirmation.activeSelf) return;
+            int reward = game.PrestigeReward;
+            if (!game.Prestige(() => random.NextDouble())) return;
+            // Save the new run and awarded crystals together, before changing any presentation.
+            Persist(); Flush(); StopAllCoroutines(); holding = false; rockPulse = upgradePulse = 0;
+            if (miningGain != null) { Destroy(miningGain.gameObject); miningGain = null; }
+            RestorePresentation(); ShowWorkshop(); ShowPrestige(); sounds.Play("level");
+            Notice("НОВАЯ ШАХТА", "+" + reward + " кристаллов\nПостоянные бонусы и достижения сохранены");
         }
 
         public void Upgrade()
@@ -686,7 +705,7 @@ namespace MineLoot
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
             powerLabel.text = "+" + game.ManualClickPower + " за удар";
             richVeinButton.gameObject.SetActive(game.VeinOffered);
-            richVeinTimer.text = game.VeinActive ? "×3 · " + (int)Math.Ceiling(game.Progress.veinBoostLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
+            richVeinTimer.text = game.VeinActive ? "×" + game.RichVeinMultiplier + " · " + (int)Math.Ceiling(game.Progress.veinBoostLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
             progressLabel.text = game.Progress.hits + " / " + game.HitsRequired;
             levelLabel.text = "ШАХТЁР · УР. " + game.MinerLevel;
             stageBadge.text = game.LevelGoal == 0 ? "МАКС. УРОВЕНЬ" : game.LevelExperience + "/" + game.LevelGoal + " ОПЫТА";
@@ -705,7 +724,7 @@ namespace MineLoot
             upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0") + " монет";
             upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
             pickTitle.text = PickNames[game.PickTier];
-            pickDetail.text = "+4/удар · урон " + game.MiningDamage;
+            pickDetail.text = "+" + game.ClickUpgradeGain + "/удар · урон " + game.MiningDamage;
             nextUpgrade.text = game.PickTier == 4 ? "Шахта развита · урон " + game.MiningDamage + " · реликвий " + game.Relics : "Далее: " + CampFeatures[game.PickTier + 1] + " · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
             campLabel.text = CampNames[game.PickTier];
             for (int i = 0; i < campSteps.Length; i++) campSteps[i].color = i <= game.PickTier ? Hex("d4ed96") : Hex("455742");
@@ -744,6 +763,8 @@ namespace MineLoot
             milestoneButton.image.color = game.ReadyMilestones > 0 ? Hex("c8d981") : Hex("a8b78e");
             RefreshWorkshop();
             RefreshOfflineWindow();
+            prestigeButton.interactable = !busy; prestigeButton.image.color = game.CanPrestige ? Hex("d4df94") : Hex("bac6a1");
+            RefreshPrestigeWindow();
             if (!busy && RollPhase == "idle")
             {
                 rollGain.text = game.Progress.swapLevel == 0 ? "ОБМЕН В ПРОКАЧКЕ" : "ПЕРЕСТАНОВКА · УР. " + game.Progress.swapLevel;
