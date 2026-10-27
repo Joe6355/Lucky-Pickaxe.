@@ -272,8 +272,15 @@ namespace MineLoot
         private void OnDestroy()
         {
             if(view!=null) view.targetTexture=null;
-            if(Target!=null) { Target.Release(); Destroy(Target); }
-            foreach(var mesh in meshes) Destroy(mesh); foreach(var material in materials.Values) Destroy(material);
+            if(Target!=null)
+            {
+                Target.Release();
+                if(Application.isPlaying) Destroy(Target); else DestroyImmediate(Target);
+            }
+            foreach(var mesh in meshes)
+                if(Application.isPlaying) Destroy(mesh); else DestroyImmediate(mesh);
+            foreach(var material in materials.Values)
+                if(Application.isPlaying) Destroy(material); else DestroyImmediate(material);
         }
     }
 }

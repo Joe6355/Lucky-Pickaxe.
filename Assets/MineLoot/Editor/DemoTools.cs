@@ -7,7 +7,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public static class DemoTools
+public static partial class DemoTools
 {
     private const string ScenePath = "Assets/MineLoot/Scenes/Demo.unity";
 

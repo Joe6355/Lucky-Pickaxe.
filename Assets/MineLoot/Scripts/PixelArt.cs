@@ -212,8 +212,10 @@ namespace MineLoot
         }
         public void Dispose()
         {
-            foreach (var sprite in sprites.Values) Object.Destroy(sprite);
-            foreach (var texture in textures) Object.Destroy(texture);
+            foreach (var sprite in sprites.Values)
+                if (Application.isPlaying) Object.Destroy(sprite); else Object.DestroyImmediate(sprite);
+            foreach (var texture in textures)
+                if (Application.isPlaying) Object.Destroy(texture); else Object.DestroyImmediate(texture);
             sprites.Clear(); textures.Clear();
         }
     }
