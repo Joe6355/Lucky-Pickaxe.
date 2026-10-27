@@ -148,6 +148,8 @@ namespace MineLoot
         public int OfflineHours => 4 + Progress.warehouseLevel * 2;
         public bool HasOfflineReward => Progress.offlineCoins > 0;
         public bool CanClaimOffline => HasOfflineReward && !HasPendingRoll && Progress.coins < CoinLimit;
+        public long DoubledOfflineReward => Progress.offlineCoins * 2;
+        public bool CanDoubleOffline => CanClaimOffline && DoubledOfflineReward <= CoinLimit - Progress.coins;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
         public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
@@ -434,11 +436,11 @@ namespace MineLoot
             return true;
         }
 
-        public bool ClaimOffline()
+        public bool ClaimOffline(bool doubled = false)
         {
-            if (!CanClaimOffline) return false;
-            long credit = Math.Min(CoinLimit - Progress.coins, Progress.offlineCoins);
-            AddCoins(credit); Progress.offlineCoins -= credit;
+            if (doubled ? !CanDoubleOffline : !CanClaimOffline) return false;
+            long credit = doubled ? DoubledOfflineReward : Math.Min(CoinLimit - Progress.coins, Progress.offlineCoins);
+            AddCoins(credit); Progress.offlineCoins = doubled ? 0 : Progress.offlineCoins - credit;
             Progress.totalProduced = Math.Min(CoinLimit, Progress.totalProduced + credit);
             Progress.totalOfflineCoins = Math.Min(CoinLimit, Progress.totalOfflineCoins + credit);
             if (!HasOfflineReward) ClearOfflineReward();

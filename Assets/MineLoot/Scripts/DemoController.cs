@@ -205,11 +205,11 @@ namespace MineLoot
         internal void FocusForSmoke(bool focus) { if (SmokeMode) OnApplicationFocus(focus); }
         internal void SaveSessionForSmoke() { if (SmokeMode) Flush(true); }
 
-        private void PrepareReturn(long utc)
+        private void PrepareReturn(long utc, bool keepOfflineWindow = false)
         {
             game.PrepareOffline(utc); Persist(); Flush(true);
-            if (offlineWindowOpen) CloseModal();
-            offlineNoticeQueued = game.HasOfflineReward; Refresh();
+            if (offlineWindowOpen && !keepOfflineWindow) CloseModal();
+            offlineNoticeQueued = game.HasOfflineReward && !offlineWindowOpen; Refresh();
         }
 
         public void ClaimOfflineReward()

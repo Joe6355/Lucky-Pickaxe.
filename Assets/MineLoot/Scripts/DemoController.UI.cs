@@ -24,8 +24,8 @@ namespace MineLoot
         private Text workshopFootnote, productionRateLabel, productionBreakdown, productionSynergy, productionTotal, richVeinTimer;
         private GameObject productionSummary;
         private bool productionTab;
-        private Button offlineButton, offlineClaimButton;
-        private Text offlineButtonLabel, offlineAmountLabel, offlineStateLabel;
+        private Button offlineButton, offlineClaimButton, offlineVideoButton;
+        private Text offlineButtonLabel, offlineAmountLabel, offlineStateLabel, offlineVideoLabel;
         private bool offlineWindowOpen;
         private Image workshopNavMark;
         private Image experienceFill, oreFill, workshopPick;
@@ -424,7 +424,7 @@ namespace MineLoot
         public void ShowOfflineReward()
         {
             if (applicationPaused || busy || modal != null || game.HasPendingRoll) return;
-            holding = false; offlineNoticeQueued = false; offlineWindowOpen = true;
+            holding = false; offlineNoticeQueued = false; offlineWindowOpen = true; offlineVideoMessage = null;
             modal = MakeRect(shell, "Offline reward modal", 0, 0, 480, 960).gameObject;
             var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
             Card(modal.transform, "Offline reward card", 24, 169, 432, 608, Panel);
@@ -439,10 +439,13 @@ namespace MineLoot
             long capacity = pending ? game.Progress.offlineRewardCapacity : game.OfflineHours * 3600;
             string detail = pending ? "Тебя не было: " + Duration(game.Progress.offlineElapsedSeconds) + "\nУчтено: " + Duration(game.Progress.offlineRewardSeconds) + " из " + capacity / 3600 + " ч. лимита\nДоход: 50% от " + Rate(game.Progress.offlineRewardRateMilli) + " монет/с" : "Офлайн-доход: 50% производства\nВремя накопления: до " + game.OfflineHours + " ч.\n" + (game.ProductionMilli > 0 ? "Производство: " + Rate(game.ProductionMilli) + " монет/с" : "Найми шахтёров в производстве");
             Label(modal.transform, detail, 48, 419, 384, 75, 18, Ink);
-            Label(modal.transform, "Только монеты: без опыта и жетонов.\nНаграда ждёт получения. Пока она\nлежит на складе, новая не копится.", 48, 506, 384, 72, 16, Muted);
-            offlineClaimButton = ButtonAt(modal.transform, "Забрать монеты", 47, 600, 386, 48, ClaimOfflineReward, Hex("d9bd80"), Ink);
+            Label(modal.transform, "Только монеты: без опыта и жетонов.\nОбычная награда — без рекламы.\nНовая копится после получения.", 48, 506, 384, 72, 16, Muted);
+            offlineClaimButton = ButtonAt(modal.transform, "Забрать", 47, 600, 386, 48, ClaimOfflineReward, Hex("d9bd80"), Ink);
             offlineClaimButton.name = "Claim offline reward";
-            ButtonAt(modal.transform, "Позже", 47, 672, 386, 43, CloseModal, Panel, Ink).name = "Close warehouse";
+            offlineVideoButton = ButtonAt(modal.transform, "", 47, 660, 386, 48, ClaimOfflineWithVideo, Hex("b5cb8a"), Ink);
+            offlineVideoButton.name = "Claim offline with video";
+            offlineVideoLabel = offlineVideoButton.GetComponentInChildren<Text>(); offlineVideoLabel.fontSize = 18;
+            ButtonAt(modal.transform, "Позже", 47, 728, 386, 32, CloseModal, Panel, Ink).name = "Close warehouse";
             RefreshOfflineWindow();
         }
 
@@ -450,8 +453,10 @@ namespace MineLoot
         {
             if (!offlineWindowOpen || modal == null) return;
             offlineAmountLabel.text = game.HasOfflineReward ? "+" + game.Progress.offlineCoins.ToString("N0") + " монет" : "Пока пусто";
-            offlineStateLabel.text = game.HasOfflineReward ? game.Progress.coins == MineGame.CoinLimit ? "Кошелёк заполнен\nПотрать монеты и вернись за наградой" : "Готово к получению" : "Оставь рабочим время на добычу";
-            offlineClaimButton.interactable = !busy && game.CanClaimOffline;
+            offlineStateLabel.text = game.HasOfflineReward ? game.Progress.coins == MineGame.CoinLimit ? "Кошелёк заполнен\nПотрать монеты и вернись за наградой" : offlineVideoMessage ?? "Готово к получению" : "Оставь рабочим время на добычу";
+            offlineClaimButton.interactable = !busy && !RewardedVideoPending && game.CanClaimOffline;
+            offlineVideoButton.interactable = !busy && !RewardedVideoPending && rewardedAvailable && game.CanDoubleOffline;
+            offlineVideoLabel.text = "Забрать ×2 за видео\n" + (RewardedVideoPending ? "Открываем видео…" : !game.HasOfflineReward ? "Склад пуст" : !game.CanDoubleOffline ? "Для ×2 освободи кошелёк" : !rewardedAvailable ? "Сейчас недоступно" : "+" + ShortAmount(game.DoubledOfflineReward) + " монет");
         }
 
         private Image Hero(Transform parent, string name, float x, float y, float width, float height)
@@ -577,7 +582,7 @@ namespace MineLoot
 
         private void CloseModal()
         {
-            if (modal == null) return;
+            if (modal == null || RewardedVideoPending) return;
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null; Refresh();
         }
 

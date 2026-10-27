@@ -3,7 +3,7 @@
   let sdk, unity, receiver, options = {}, initialization;
   let gameReady = false, ready = false, local = false, failed = false;
   let sdkPaused = false, hidden = !!root.document.hidden, blurred = false, sentPause;
-  let warnedStorage = false;
+  let warnedStorage = false, rewardRequest, sentRewardedAvailable;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
@@ -12,12 +12,43 @@
     if (unity && receiver) unity.SendMessage(receiver, method, value);
   }
   function notify(force) {
-    const paused = sdkPaused || hidden || blurred || !ready;
+    const paused = isPaused();
     if (unity && receiver && (force || paused !== sentPause)) {
       sentPause = paused;
       send("OnBrowserPause", paused ? "1" : "0");
     }
+    const available = !!(ready && !local && sdk && sdk.adv && typeof sdk.adv.showRewardedVideo === "function");
+    if (unity && receiver && (force || available !== sentRewardedAvailable)) {
+      sentRewardedAvailable = available;
+      send("OnRewardedAvailable", available ? "1" : "0");
+    }
     if (options.onPause) options.onPause(ready && paused);
+  }
+  function isPaused() { return sdkPaused || hidden || blurred || !!rewardRequest || !ready; }
+  function showRewarded(id) {
+    if (isPaused() || local || !unity || !receiver || !sdk || !sdk.adv || typeof sdk.adv.showRewardedVideo !== "function" || typeof id !== "string" || !/^[a-zA-Z0-9-]{1,64}$/.test(id)) return false;
+    const request = { id, paid: false };
+    rewardRequest = request; notify();
+    const finish = result => {
+      if (rewardRequest !== request) return;
+      // Deliver completion while the ad pause still holds Unity input and audio.
+      // The controller saves the result before this pause reason is released.
+      send("OnRewardedVideo", id + ":" + result);
+      rewardRequest = null; notify();
+    };
+    try {
+      sdk.adv.showRewardedVideo({ callbacks: {
+        onOpen() { if (rewardRequest === request) notify(); },
+        onRewarded() {
+          if (rewardRequest !== request || request.paid) return;
+          request.paid = true;
+          send("OnRewardedVideo", id + ":rewarded");
+        },
+        onClose() { finish("closed"); },
+        onError() { finish("error"); }
+      } });
+    } catch (error) { finish("error"); }
+    return true;
   }
   function fail(error) {
     failed = true; ready = false; notify();
@@ -75,6 +106,7 @@
     attachReceiver(name) { receiver = name; notify(true); },
     attachUnity(instance) { unity = instance; notify(true); finishReady(); },
     markReady() { gameReady = true; finishReady(); },
+    showRewarded,
     readProgress(key) {
       try { return root.localStorage.getItem(journalKey(key)); }
       catch (error) { storageWarning(error); return null; }
@@ -84,7 +116,7 @@
       try { root.localStorage.setItem(journalKey(key), json); return true; }
       catch (error) { storageWarning(error); return false; }
     },
-    dispose() { while (removers.length) removers.pop()(); },
-    status() { return { ready, local, sdk: !!sdk, paused: sdkPaused || hidden || blurred || !ready, failed }; }
+    dispose() { rewardRequest = null; while (removers.length) removers.pop()(); },
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest }; }
   };
 })(window);

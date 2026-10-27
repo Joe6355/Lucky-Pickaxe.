@@ -156,6 +156,7 @@ namespace MineLoot
             yield return VerifyWorkshop(demo, stage, shaft);
             yield return VerifyProduction(demo, stage);
             yield return VerifyOffline(demo);
+            yield return VerifyRewardedOffline(demo);
             yield return VerifyPrestige(demo);
             yield return VerifyMilestones(demo);
             // Exercise a later biome and partial block damage in the same built player.
@@ -451,6 +452,75 @@ namespace MineLoot
             Check(demo.Game.Progress.offlineCoins == 257040000, "Maximum offline crate fits the actual reward UI");
             CheckLayout(); Capture("unity-offline-max.png"); Click("Close warehouse"); yield return null;
             demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+        }
+
+        private IEnumerator VerifyRewardedOffline(DemoController demo)
+        {
+            const long epoch = 1700000000;
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            string key = "LuckyPickaxe.Runtime.Rewarded." + Guid.NewGuid().ToString("N");
+            string request = null; int requests = 0;
+            var audio = GetComponent<GameAudio>(); bool muted = audio.Muted;
+            try
+            {
+                demo.RestoreForSmoke(new MineProgress { workerCount = 1 });
+                demo.ConfigureSessionForSmoke(epoch, key); demo.Game.RecordSession(epoch);
+                demo.AdvanceSessionForSmoke(600); demo.ReturnForSmoke(epoch + 600); yield return null;
+                Check(!FindButton("Claim offline with video").interactable && FindButton("Claim offline reward").interactable, "Native demo preserves ordinary claim without inventing a video provider");
+                demo.ConfigureRewardedForSmoke(id => { request = id; requests++; return true; });
+                Check(FindButton("Claim offline with video").interactable, "An available provider enables the explicit doubled claim");
+                CheckLayout(); Capture("unity-offline-video.png");
+                Click("Claim offline with video");
+                Check(demo.RewardedVideoPending && demo.IsPaused && audio.Suspended && !FindButton("Claim offline reward").interactable, "Opening video immediately freezes gameplay, audio and ordinary collection");
+                demo.ClaimOfflineWithVideo(); demo.ClaimOfflineReward(); demo.AdvanceForSmoke(60, false);
+                demo.AdvanceSessionForSmoke(35);
+                Check(requests == 1 && demo.Game.Progress.coins == 80 && demo.Game.Progress.offlineCoins == 600, "Repeated input cannot open another video, earn production or collect while waiting");
+                demo.OnBrowserPause("1"); demo.OnBrowserPause("0");
+                Check(demo.IsPaused, "SDK resume cannot clear the controller's active video pause");
+                demo.OnRewardedVideo("stale:rewarded");
+                Check(demo.Game.Progress.coins == 80, "A callback for another request cannot issue a reward");
+                demo.OnRewardedVideo(request + ":rewarded");
+                var paid = ProgressStore.Load(key);
+                Check(demo.IsPaused && paid.Progress.coins == 1280 && !paid.HasOfflineReward && paid.Progress.totalOfflineCoins == 1200, "onRewarded persists the doubled wallet and consumed crate before the video closes");
+                demo.OnRewardedVideo(request + ":rewarded");
+                Check(demo.Game.Progress.coins == 1280 && demo.Game.Progress.totalOfflineCoins == 1200, "Duplicate reward callbacks cannot credit twice");
+                string firstRequest = request;
+                demo.OnBrowserPause("1"); demo.OnRewardedVideo(request + ":closed");
+                Check(demo.IsPaused && !demo.RewardedVideoPending && audio.Suspended, "Closing a rewarded video leaves independent host pause intact");
+                demo.OnBrowserPause("0"); yield return null;
+                Check(!demo.IsPaused && !demo.Game.HasOfflineReward && demo.Game.Progress.coins == 1280 && GameObject.Find("Offline reward modal") == null && audio.Muted == muted, "Resume presents one paid result and ad time cannot generate another crate");
+                demo.RestoreForSmoke(ProgressStore.Load(key).Progress); yield return null;
+                Check(!demo.Game.HasOfflineReward && !demo.Game.ClaimOffline(true) && demo.Game.Progress.coins == 1280, "Reload immediately after the reward cannot replay its payout");
+
+                demo.AdvanceSessionForSmoke(600); demo.ReturnForSmoke(epoch + 1235); yield return null;
+                long ordinary = demo.Game.Progress.offlineCoins, wallet = demo.Game.Progress.coins;
+                Click("Claim offline with video");
+                demo.OnRewardedVideo(firstRequest + ":rewarded");
+                Check(demo.Game.Progress.coins == wallet && demo.Game.Progress.offlineCoins == ordinary, "Late callbacks from the previous video cannot pay a new crate");
+                demo.OnRewardedVideo(request + ":closed"); yield return null;
+                Check(!demo.IsPaused && demo.Game.Progress.coins == wallet && demo.Game.Progress.offlineCoins == ordinary && FindButton("Claim offline reward").interactable && GameObject.Find("Offline reward modal") != null, "Cancelled video preserves the warehouse and ordinary claim in the same window");
+                CheckLayout(); Capture("unity-offline-video-cancelled.png");
+                Click("Claim offline with video"); demo.OnRewardedVideo(request + ":error"); yield return null;
+                Check(!demo.IsPaused && demo.Game.Progress.offlineCoins == ordinary && demo.Game.Progress.coins == wallet && FindButton("Claim offline reward").interactable, "Video error releases input and keeps all ordinary coins available");
+                CheckLayout(); Capture("unity-offline-video-unavailable.png");
+                demo.ConfigureRewardedForSmoke(id => false); Click("Claim offline with video"); yield return null;
+                Check(!demo.IsPaused && !demo.RewardedVideoPending && demo.Game.Progress.offlineCoins == ordinary, "A rejected platform request cannot leave gameplay stuck or consume the crate");
+                demo.ConfigureRewardedForSmoke(null); Click("Claim offline reward"); yield return null;
+                Check(!demo.Game.HasOfflineReward && demo.Game.Progress.coins == wallet + ordinary && !ProgressStore.Load(key).HasOfflineReward, "After cancellation the ordinary button still saves the exact original payout");
+
+                demo.RestoreForSmoke(new MineProgress { coins = MineGame.CoinLimit - 1199, workerCount = 1 });
+                demo.Game.RecordSession(epoch); demo.ReturnForSmoke(epoch + 600); yield return null;
+                demo.ConfigureRewardedForSmoke(id => true);
+                Check(!FindButton("Claim offline with video").interactable && FindButton("Claim offline reward").interactable, "Insufficient room disables the video offer while retaining ordinary partial claim");
+                CheckLayout(); Capture("unity-offline-video-wallet.png");
+            }
+            finally
+            {
+                if (demo.RewardedVideoPending) demo.OnRewardedVideo(request + ":error");
+                demo.OnBrowserPause("0"); demo.ConfigureRewardedForSmoke(null); demo.ConfigureSessionForSmoke(epoch, null);
+                PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save();
+                demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+            }
         }
 
         private IEnumerator VerifyPrestige(DemoController demo)

@@ -15,11 +15,17 @@ function fixture(settings = {}) {
   const calls = [], data = new Map(), root = emitter();
   const doc = emitter({ hidden: false, createElement: () => ({}) });
   let initCalls = 0, readyCalls = 0, writes = 0;
+  const ads = [];
   const sdkEvents = new Map();
   const sdk = {
     features: { LoadingAPI: { ready() { readyCalls++; calls.push("sdk-ready"); } } },
     on(event, fn) { sdkEvents.set(event, fn); }, off(event) { sdkEvents.delete(event); }
   };
+  if (!settings.noRewarded) sdk.adv = { showRewardedVideo({ callbacks }) {
+    ads.push(callbacks);
+    if (settings.adThrows) throw new Error("Video unavailable");
+    if (settings.adSynchronous) { callbacks.onRewarded(); callbacks.onClose(); }
+  } };
   Object.assign(root, {
     document: doc, location: { hostname: settings.host || "games.example", search: settings.search || "" },
     console: { warn() {}, error() {} },
@@ -34,9 +40,10 @@ function fixture(settings = {}) {
   const context = vm.createContext({ window: root, URLSearchParams, Promise }); vm.runInContext(source, context);
   const api = root.LuckyPickaxe;
   const unity = { SendMessage(receiver, method, value) { calls.push({ receiver, method, value }); if (settings.onMessage) settings.onMessage(method, value, api); } };
-  return { root, doc, api, sdk, calls, data, unity, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; } };
+  return { root, doc, api, sdk, calls, data, unity, ads, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
+function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
 async function start(f) {
   await f.api.init({ onReady() { f.calls.push("ui-ready"); } });
   f.api.attachReceiver("Mine Loot Demo"); f.api.attachUnity(f.unity); f.api.markReady();
@@ -100,6 +107,56 @@ async function run() {
     let rejected = false; try { await f.api.init(); } catch { rejected = true; }
     check(rejected && f.api.status().failed && !f.api.status().ready && f.readyCalls === 0 && lastPause(f) === "1", "Missing or rejected SDK leaves a failed launch paused without a false ready signal");
   }
+
+  f = fixture();
+  check(!f.api.showRewarded("before-ready") && f.ads.length === 0, "Video cannot open before Game Ready");
+  await start(f);
+  check(f.calls.some(value => value.method === "OnRewardedAvailable" && value.value === "1"), "Available SDK video capability reaches Unity");
+  check(!f.api.showRewarded("") && !f.api.showRewarded("invalid:id"), "Empty and malformed video request IDs never reach the SDK");
+  check(f.api.showRewarded("first") && f.ads.length === 1 && f.api.status().rewardedPending && lastPause(f) === "1", "An explicit request opens one video and pauses before onOpen");
+  check(!f.api.showRewarded("second") && f.ads.length === 1, "A concurrent request cannot open another video");
+  f.ads[0].onOpen(); f.emitSDK("game_api_pause"); f.emitSDK("game_api_resume");
+  check(lastPause(f) === "1", "SDK resume cannot release the active video request pause");
+  f.ads[0].onRewarded(); f.ads[0].onRewarded();
+  check(JSON.stringify(videoEvents(f)) === JSON.stringify(["first:rewarded"]) && lastPause(f) === "1", "Only onRewarded grants once and the video remains paused until close");
+  f.ads[0].onClose(); f.ads[0].onError(); f.ads[0].onRewarded();
+  check(JSON.stringify(videoEvents(f)) === JSON.stringify(["first:rewarded", "first:closed"]) && lastPause(f) === "0", "Close finishes once and all late callbacks are ignored");
+  const firstAd = f.ads[0];
+  check(f.api.showRewarded("cancelled"), "A completed request permits a fresh explicit request");
+  firstAd.onRewarded(); firstAd.onClose();
+  check(videoEvents(f).length === 2 && f.api.status().rewardedPending, "Callbacks from a previous request cannot affect the new video");
+  f.ads[1].onClose();
+  check(videoEvents(f).at(-1) === "cancelled:closed" && !videoEvents(f).includes("cancelled:rewarded") && !f.api.status().paused, "Closing an unfinished video sends no reward and releases its pause");
+  f.api.showRewarded("failed"); f.ads[2].onError(); f.ads[2].onClose(); f.ads[2].onRewarded();
+  check(videoEvents(f).at(-1) === "failed:error" && !videoEvents(f).includes("failed:rewarded") && !f.api.status().paused, "SDK failure preserves the unpaid result and late callbacks cannot pay it");
+  f.api.showRewarded("hidden"); f.doc.hidden = true; f.doc.emit("visibilitychange"); f.ads[3].onClose();
+  check(lastPause(f) === "1", "Video completion cannot resume a hidden page");
+  f.doc.hidden = false; f.doc.emit("visibilitychange");
+  check(lastPause(f) === "0", "Visibility return clears the remaining independent pause");
+  f.api.showRewarded("sdk-paused"); f.emitSDK("game_api_pause"); f.ads[4].onClose();
+  check(lastPause(f) === "1", "Closing a video cannot clear an outstanding SDK pause");
+  f.emitSDK("game_api_resume");
+  check(lastPause(f) === "0", "Only the actual SDK resume clears its pause after video close");
+  f.root.emit("blur");
+  check(!f.api.showRewarded("unfocused") && f.ads.length === 5, "A background page cannot start a video");
+  f.root.emit("focus"); f.api.showRewarded("dispose"); const beforeAdDispose = f.calls.length; f.api.dispose();
+  f.ads[5].onOpen(); f.ads[5].onRewarded(); f.ads[5].onClose();
+  check(f.calls.length === beforeAdDispose, "Disposal invalidates active video callbacks");
+
+  f = fixture({ noRewarded: true }); await start(f);
+  check(!f.api.showRewarded("unsupported") && f.calls.some(value => value.method === "OnRewardedAvailable" && value.value === "0") && !f.api.status().paused, "Missing video support is reported without pausing or inventing a reward");
+  f = fixture({ host: "localhost", search: "?local=1" }); await start(f);
+  check(!f.api.showRewarded("local-demo") && !f.api.status().paused, "Local demo mode never simulates a paid platform reward");
+  f = fixture({ adThrows: true }); await start(f);
+  check(f.api.showRewarded("throws") && JSON.stringify(videoEvents(f)) === JSON.stringify(["throws:error"]) && !f.api.status().paused, "Synchronous SDK exceptions complete as an unpaid error without a stuck pause");
+  const callbackStates = [];
+  f = fixture({ adSynchronous: true, onMessage(method, value, api) {
+    if (method !== "OnRewardedVideo") return;
+    callbackStates.push(api.status().paused);
+    if (value.endsWith(":rewarded")) api.writeProgress("MineLoot.Progress.v2", '{"coins":1280,"offlineCoins":0}');
+  } }); await start(f); f.api.showRewarded("instant");
+  check(JSON.stringify(videoEvents(f)) === JSON.stringify(["instant:rewarded", "instant:closed"]) && callbackStates.every(Boolean) && !f.api.status().paused, "Even synchronous SDK callbacks commit before gameplay resumes");
+  check(f.api.readProgress("MineLoot.Progress.v2") === '{"coins":1280,"offlineCoins":0}', "The rewarded wallet and consumed crate can be journaled before close");
 
   fs.mkdirSync(path.join(__dirname, "../Logs"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));

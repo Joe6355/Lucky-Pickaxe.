@@ -40,6 +40,25 @@ async function open(profile) {
   });
   await page.goto(url, { waitUntil: "domcontentloaded" }); await waitReady();
 }
+// This fixture replaces only video callbacks inside this isolated test profile.
+// It never ships in WebGL or represents a real advertising/monetization check.
+function rewardedFixture() {
+  const initialize = window.YaGames.init.bind(window.YaGames);
+  window.YaGames.init = async function (...args) {
+    const sdk = await initialize(...args);
+    const fixture = window.rewardedFixture = { requests: 0, callbacks: null };
+    const adv = new Proxy(sdk.adv || {}, { get(target, property) {
+      if (property === "showRewardedVideo") return ({ callbacks }) => { fixture.requests++; fixture.callbacks = callbacks; callbacks.onOpen(); };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    } });
+    return new Proxy(sdk, { get(target, property) {
+      if (property === "adv") return adv;
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    } });
+  };
+}
 async function run() {
   fs.mkdirSync(logs, { recursive: true }); fs.mkdirSync(path.join(root, "_test-concept"), { recursive: true });
   const profile = fs.mkdtempSync(path.join(root, "_test-concept/web-profile-"));
@@ -92,6 +111,51 @@ async function run() {
   await page.waitForFunction(() => !LuckyPickaxe.status().paused, null, { polling: 100, timeout: 10000 });
   check((await read()).coins === departure.coins, "Browser focus event resumes without silently crediting the offline crate to the wallet");
 
+  await page.route("**/sdk.js", async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: (await response.text()) + "\n(" + rewardedFixture.toString() + ")();\n" });
+  });
+  await seed({ ...fresh, coins: 80, workerCount: 1, guideStep: 5, offlineRateMilli: 2000, offlineCapacitySeconds: 14400, lastSeenUtc: Math.floor(Date.now() / 1000) - 600 });
+  await shot("webgl-rewarded-offer");
+  await tap(240, 684);
+  await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending && window.rewardedFixture?.requests === 1);
+  const beforeVideo = await read();
+  await tap(240, 624); await tap(240, 684);
+  check(JSON.stringify(await read()) === JSON.stringify(beforeVideo) && await page.evaluate(() => rewardedFixture.requests === 1 && LuckyPickaxe.status().paused), "Real video button crosses the WebGL bridge once and blocks ordinary claim and live production");
+  await page.evaluate(() => { rewardedFixture.callbacks.onRewarded(); rewardedFixture.callbacks.onRewarded(); });
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).offlineCoins === 0, key);
+  const videoPaid = await read();
+  check(videoPaid.coins === beforeVideo.coins + 2 * beforeVideo.offlineCoins && videoPaid.totalOfflineCoins === 2 * beforeVideo.offlineCoins, "onRewarded journals exactly twice the crate before close; duplicate callbacks cannot pay again");
+  await page.evaluate(() => rewardedFixture.callbacks.onClose());
+  await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  check((await read()).offlineCoins === 0 && !await page.evaluate(() => LuckyPickaxe.status().rewardedPending), "Video close resumes gameplay without creating another crate from ad time");
+  await page.reload(); await waitReady(); saved = await read();
+  check(saved.totalOfflineCoins === videoPaid.totalOfflineCoins && saved.coins >= videoPaid.coins && saved.offlineCoins < 10, "Reload preserves the paid video result and cannot recreate its original crate");
+
+  await seed({ ...fresh, coins: 80, workerCount: 1, guideStep: 5, offlineRateMilli: 2000, offlineCapacitySeconds: 14400, lastSeenUtc: Math.floor(Date.now() / 1000) - 600 });
+  await tap(240, 684); await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending);
+  const cancelled = await read();
+  await page.evaluate(() => rewardedFixture.callbacks.onClose()); await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  saved = await read();
+  check(saved.offlineCoins === cancelled.offlineCoins && saved.totalOfflineCoins === 0 && saved.coins === cancelled.coins, "Closing a video without onRewarded preserves the ordinary warehouse reward");
+  await shot("webgl-rewarded-cancelled");
+  await tap(240, 684); await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending);
+  const failedVideo = await read();
+  await page.evaluate(() => rewardedFixture.callbacks.onError()); await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  saved = await read();
+  check(saved.offlineCoins === failedVideo.offlineCoins && saved.totalOfflineCoins === 0 && saved.coins === failedVideo.coins, "SDK video error releases the pause and preserves all ordinary coins");
+  await shot("webgl-rewarded-error");
+  await tap(240, 624); saved = await read();
+  check(saved.offlineCoins === 0 && saved.totalOfflineCoins === failedVideo.offlineCoins && saved.coins >= failedVideo.coins + failedVideo.offlineCoins, "Ordinary canvas claim still works after cancellation and video failure");
+
+  await seed({ ...fresh, coins: 80, workerCount: 1, guideStep: 5, offlineRateMilli: 2000, offlineCapacitySeconds: 14400, lastSeenUtc: Math.floor(Date.now() / 1000) - 600 });
+  await tap(240, 684); await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending);
+  await page.evaluate(() => rewardedFixture.callbacks.onRewarded());
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).offlineCoins === 0, key);
+  const beforeCloseReload = await read();
+  await page.reload(); await waitReady(); saved = await read();
+  check(saved.totalOfflineCoins === beforeCloseReload.totalOfflineCoins && saved.coins >= beforeCloseReload.coins && saved.offlineCoins < 10, "Reload between onRewarded and onClose keeps the saved reward exactly once");
+
   await seed({ ...fresh, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300);
   for (let i = 0; i < 6; i++) { await page.touchscreen.tap(175, 341); await page.waitForTimeout(120); }
@@ -102,7 +166,7 @@ async function run() {
   check(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth && document.documentElement.scrollHeight === innerHeight), "Wide browser layout remains inside the viewport without page scrolling");
 
   check(errors.length === 0, "Built game has no unexpected browser or JavaScript errors: " + errors.join("; "));
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, lifecycleEvents: "dispatched blur/focus in headless Edge" }, null, 2));
+  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, lifecycleEvents: "dispatched blur/focus in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
   console.log(`LUCKY_PICKAXE_WEB_BROWSER: PASS (${checks} checks, Edge ${browserVersion})`);
 }
 run().catch(error => {

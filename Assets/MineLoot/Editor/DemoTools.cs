@@ -28,7 +28,7 @@ public static partial class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.16.0";
+        PlayerSettings.bundleVersion = "0.17.0";
         PlayerSettings.defaultScreenWidth = 480; PlayerSettings.defaultScreenHeight = 960;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -154,6 +154,7 @@ public static partial class DemoTools
         VerifyMilestoneRules(Check);
         VerifyProductionRules(Check);
         VerifyOfflineRules(Check);
+        VerifyRewardedOfflineRules(Check);
         VerifyPrestigeRules(Check);
         VerifyGuideRules(Check);
         Directory.CreateDirectory("Logs");
@@ -551,6 +552,50 @@ public static partial class DemoTools
         finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
     }
 
+    private static void VerifyRewardedOfflineRules(Action<bool, string> check)
+    {
+        const long epoch = 1700000000;
+        var game = new MineGame(new MineProgress { workerCount = 1 });
+        game.RecordSession(epoch); game.PrepareOffline(epoch + 600);
+        check(game.CanDoubleOffline && game.DoubledOfflineReward == 1200, "Video offers twice the held offline amount");
+        check(game.ClaimOffline(true) && game.Progress.coins == 1280 && game.Progress.totalOfflineCoins == 1200 && game.Progress.totalProduced == 1200 && !game.HasOfflineReward, "A verified video credits twice the crate and consumes it atomically");
+        check(!game.ClaimOffline(true) && !game.ClaimOffline() && game.Progress.coins == 1280, "A doubled crate cannot pay again through either claim path");
+        check(game.Progress.tickets == 2 && game.Progress.experience == 0 && game.Progress.totalClicks == 0 && game.Progress.offlineRewardRateMilli == 0, "Video awards coins only and clears the consumed crate metadata");
+        game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        check(game.Progress.version == 11 && game.Progress.coins == 1280 && !game.CanDoubleOffline && !game.ClaimOffline(true), "The existing v11 save stores the rewarded wallet without a replayable claim");
+
+        game = new MineGame(new MineProgress { workerCount = 1, tickets = 1, swapLevel = 1 });
+        game.RecordSession(epoch); game.PrepareOffline(epoch + 600); game.BeginRoll(() => 0);
+        string before = JsonUtility.ToJson(game.Progress);
+        check(!game.CanDoubleOffline && !game.ClaimOffline(true) && JsonUtility.ToJson(game.Progress) == before, "Video cannot alter an offline crate during a paid draw");
+        game.ResolveRoll(); game.Progress.coins = MineGame.CoinLimit - 1199;
+        before = JsonUtility.ToJson(game.Progress);
+        check(!game.CanDoubleOffline && !game.ClaimOffline(true) && JsonUtility.ToJson(game.Progress) == before, "Video is refused before credit when its full reward cannot fit");
+        game.Progress.coins--;
+        check(game.CanDoubleOffline && game.ClaimOffline(true) && game.Progress.coins == MineGame.CoinLimit && !game.HasOfflineReward, "The full doubled amount fits exactly at the wallet limit");
+
+        game = new MineGame(new MineProgress { workerCount = 1, coins = MineGame.CoinLimit - 5 });
+        game.RecordSession(epoch); game.PrepareOffline(epoch + 600);
+        check(!game.CanDoubleOffline && game.ClaimOffline() && game.Progress.offlineCoins == 595, "Video does not prevent an ordinary partial claim near the wallet cap");
+        game.Progress.coins -= 1190;
+        check(game.ClaimOffline(true) && game.Progress.coins == MineGame.CoinLimit && game.Progress.totalOfflineCoins == 1195 && !game.HasOfflineReward, "Only the still-unclaimed remainder is doubled after an ordinary partial claim");
+
+        game = new MineGame(new MineProgress { workerCount = 100, drillCount = 50, cartCount = 25, railLevel = 10, forgeLevel = 10, warehouseLevel = 4, prestigeCount = 1, prestigeUpgrades = 3 });
+        game.RecordSession(epoch); game.PrepareOffline(epoch + 86400);
+        check(game.DoubledOfflineReward == 642600000 && game.ClaimOffline(true) && game.Progress.totalOfflineCoins == 642600000, "The maximum prestige offline crate doubles without overflow");
+        string key = "LuckyPickaxe.Rewarded.Tests." + Guid.NewGuid().ToString("N");
+        try
+        {
+            ProgressStore.Save(game, key);
+            var paid = ProgressStore.Load(key);
+            check(paid.Progress.coins == 642600080 && !paid.HasOfflineReward && !paid.ClaimOffline(true), "PlayerPrefs reload keeps the full doubled payout and no reusable video claim");
+            PlayerPrefs.SetString(key, "{\"version\":99}");
+            paid = ProgressStore.Load(key);
+            check(paid.Progress.coins == 642600080 && !paid.HasOfflineReward && !paid.ClaimOffline(), "Backup recovery preserves the already-paid video result");
+        }
+        finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
+    }
+
     private static void VerifyOfflineRules(Action<bool, string> check)
     {
         const long epoch = 1700000000;
@@ -928,7 +973,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.16.0";
+        PlayerSettings.bundleVersion = "0.17.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
@@ -948,7 +993,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("Use Unity 2022.3.47f1 for WebGL.");
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.WebGL, BuildTarget.WebGL)) throw new Exception("Install WebGL Build Support for Unity 2022.3.47f1.");
-        PlayerSettings.bundleVersion = "0.16.0";
+        PlayerSettings.bundleVersion = "0.17.0";
         PlayerSettings.WebGL.template = "PROJECT:LuckyPickaxe";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
