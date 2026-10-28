@@ -40,6 +40,7 @@
     document.getElementById("retry").addEventListener("click", () => location.reload());
     canvas.addEventListener("contextmenu", event => event.preventDefault());
     LuckyPickaxe.init({
+      onLanguage(language) { document.documentElement.lang = language; },
       onReady(local) { loading.hidden = true; document.getElementById("local").hidden = !local; },
       onPause(paused) { document.getElementById("paused").hidden = !paused; },
       onError: showError

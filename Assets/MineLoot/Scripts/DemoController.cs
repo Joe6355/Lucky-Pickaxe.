@@ -619,7 +619,7 @@ namespace MineLoot
                 DrawBoard(); sounds.Play(failed ? "shatter" : chest ? "chest" : "break");
                 rollGain.text = failed ? "КИРКА СЛОМАЛАСЬ!" : earned > 0 ? "+ " + ShortAmount(earned) + " МОНЕТ" : "ПОРОДА ТРЕСКАЕТСЯ";
                 rollStatus.text = failed ? obstacle == BlockKind.Bedrock ? "Бедрок · сундук этого прохода потерян" : "Обсидиан · нужна алмазная кирка" : chest ? "Сундук открыт! Сокровища твои" : "Ещё один удар — ещё глубже";
-                coinLabel.text = Math.Min(MineGame.CoinLimit, walletBefore + earned).ToString("N0");
+                coinLabel.text = Math.Min(MineGame.CoinLimit, walletBefore + earned).ToString("N0", interfaceCulture);
                 phase = 0;
                 while (phase < 1)
                 {
@@ -659,7 +659,7 @@ namespace MineLoot
                 count = Mathf.Min(1, count + PlayDelta / (.32f * speed));
                 float ease = 1 - Mathf.Pow(1 - count, 3);
                 displayedCoins = walletBefore + (long)Math.Round((game.Progress.coins - walletBefore) * ease);
-                coinLabel.text = displayedCoins.ToString("N0");
+                coinLabel.text = displayedCoins.ToString("N0", interfaceCulture);
                 rollGain.text = "+ " + ShortAmount(earned + (long)Math.Round((result.reward - earned) * ease)) + " МОНЕТ";
                 yield return null;
             }
@@ -714,10 +714,10 @@ namespace MineLoot
 
         private void Refresh()
         {
-            coinLabel.text = (displayedCoins >= 0 ? displayedCoins : game.Progress.coins).ToString("N0");
+            coinLabel.text = (displayedCoins >= 0 ? displayedCoins : game.Progress.coins).ToString("N0", interfaceCulture);
             // Long values reduce their font size inside their existing bounds.
             coinLabel.resizeTextForBestFit = true; coinLabel.resizeTextMinSize = 16; coinLabel.resizeTextMaxSize = 28;
-            ticketLabel.text = game.Progress.tickets.ToString("N0");
+            ticketLabel.text = game.Progress.tickets.ToString("N0", interfaceCulture);
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
             powerLabel.text = "+" + game.ManualClickPower + " за удар";
             richVeinButton.gameObject.SetActive(game.VeinOffered);
@@ -737,7 +737,7 @@ namespace MineLoot
                 oreNames[i].text = unlocked ? OreNames[i] : "Ур. " + MineGame.OreUnlockLevel(i);
                 oreNames[i].color = unlocked ? Ink : Hex("e7e8d7");
             }
-            upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0") + " монет";
+            upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0", interfaceCulture) + " монет";
             upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
             pickTitle.text = PickNames[game.PickTier];
             pickDetail.text = "+" + game.ClickUpgradeGain + "/удар · урон " + game.MiningDamage;
@@ -748,7 +748,7 @@ namespace MineLoot
             upgradeHint.text = game.ProductionMilli > 0 ? "+" + Rate(game.ProductionMilli) + " монет/с" : "Реликвий: " + game.Relics;
             upgradeButton.interactable = !busy && game.CanUpgrade;
             forgeButton.interactable = !busy && game.CanForge;
-            forgeLabel.text = game.Progress.forgeLevel == MineGame.MaxForge ? "Максимум" : game.ForgeCost.ToString("N0") + " монет";
+            forgeLabel.text = game.Progress.forgeLevel == MineGame.MaxForge ? "Максимум" : game.ForgeCost.ToString("N0", interfaceCulture) + " монет";
             forgeDetail.text = "Алмаз " + game.DiamondChance + "% · +" + game.PowerBonus;
             contractLabel.text = game.CanClaim ? "Забрать" : "В работе";
             contractDetail.text = ShortAmount(System.Math.Min(game.Progress.totalBlocks, game.ContractTarget)) + "/" + ShortAmount(game.ContractTarget) + " · +" + ShortAmount(game.ContractReward);

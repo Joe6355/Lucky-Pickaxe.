@@ -843,6 +843,21 @@ namespace MineLoot
 
         private IEnumerator VerifyPlatform(DemoController demo)
         {
+            var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+                demo.RestoreForSmoke(new MineProgress { coins = 1234567 });
+                string beforeLanguage = JsonUtility.ToJson(demo.Game.Progress);
+                demo.OnBrowserLanguage("ru");
+                string russianWallet = 1234567L.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
+                bool walletFound = false;
+                foreach (var text in GetComponentsInChildren<Text>(false)) if (text.text == russianWallet) walletFound = true;
+                Check(demo.InterfaceLanguage == "ru" && walletFound, "The selected Russian UI formats the wallet independently of the operating-system culture");
+                demo.OnBrowserLanguage("ru"); demo.OnBrowserLanguage("en");
+                Check(demo.InterfaceLanguage == "ru" && JsonUtility.ToJson(demo.Game.Progress) == beforeLanguage, "Language notifications and unsupported translations cannot mutate or reset progress");
+            }
+            finally { System.Globalization.CultureInfo.CurrentCulture = originalCulture; }
             demo.RestoreForSmoke(new MineProgress { coins = 500, workerCount = 1 });
             var audio = GetComponent<GameAudio>(); bool muted = audio.Muted;
             demo.FocusForSmoke(false);

@@ -283,7 +283,7 @@ namespace MineLoot
         }
 
         private UpgradeKind WorkshopKind(int slot) => (UpgradeKind)(productionTab ? (int)UpgradeKind.Worker + slot : slot);
-        private static string Rate(long milli) => (milli / 1000d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture).Replace('.', ',');
+        private string Rate(long milli) => (milli / 1000d).ToString("0.##", interfaceCulture);
         private void SetWorkshopSection(bool production)
         {
             if (applicationPaused || busy || modal != null) return;
@@ -451,7 +451,7 @@ namespace MineLoot
         private void RefreshOfflineWindow()
         {
             if (!offlineWindowOpen || modal == null) return;
-            offlineAmountLabel.text = game.HasOfflineReward ? "+" + game.Progress.offlineCoins.ToString("N0") + " монет" : "Пока пусто";
+            offlineAmountLabel.text = game.HasOfflineReward ? "+" + game.Progress.offlineCoins.ToString("N0", interfaceCulture) + " монет" : "Пока пусто";
             offlineStateLabel.text = game.HasOfflineReward ? game.Progress.coins == MineGame.CoinLimit ? "Кошелёк заполнен\nПотрать монеты и вернись за наградой" : offlineVideoMessage ?? "Готово к получению" : "Оставь рабочим время на добычу";
             offlineClaimButton.interactable = !busy && !RewardedVideoPending && game.CanClaimOffline;
             offlineVideoButton.interactable = !busy && !RewardedVideoPending && rewardedAvailable && game.CanDoubleOffline;
@@ -614,11 +614,11 @@ namespace MineLoot
         }
 
         private static Color Hex(string hex) { ColorUtility.TryParseHtmlString("#" + hex, out var c); return c; }
-        private static string ShortAmount(long value)
+        private string ShortAmount(long value)
         {
-            if (value >= 1000000) return (value / 1000000d).ToString("0.#") + " млн";
-            if (value >= 10000) return (value / 1000d).ToString("0.#") + " тыс.";
-            return value.ToString("N0");
+            if (value >= 1000000) return (value / 1000000d).ToString("0.#", interfaceCulture) + " млн";
+            if (value >= 10000) return (value / 1000d).ToString("0.#", interfaceCulture) + " тыс.";
+            return value.ToString("N0", interfaceCulture);
         }
         private static RectTransform MakeRect(Transform parent, string name, float x, float y, float width, float height)
         {

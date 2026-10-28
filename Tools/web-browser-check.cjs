@@ -14,7 +14,7 @@ async function waitReady() {
 }
 async function read() { return page.evaluate(key => JSON.parse(localStorage.getItem(key)), key); }
 async function shot(name) { await page.screenshot({ path: path.join(logs, name + ".png") }); }
-async function tap(x, y) { await page.mouse.click(x, y); await page.waitForTimeout(120); }
+async function tap(x, y) { await page.mouse.click(x, y, { delay: 60 }); await page.waitForTimeout(120); }
 async function seed(values) {
   const data = { ...(await read()), ...values };
   // Apply after pagehide has flushed the old live instance, before the new Unity instance loads.
@@ -40,12 +40,13 @@ async function open(profile) {
   });
   await page.goto(url, { waitUntil: "domcontentloaded" }); await waitReady();
 }
-// This fixture replaces only video callbacks inside this isolated test profile.
+// This fixture controls video callbacks and optional SDK language inside this isolated test profile.
 // It never ships in WebGL or represents a real advertising/monetization check.
 function rewardedFixture() {
   const initialize = window.YaGames.init.bind(window.YaGames);
   window.YaGames.init = async function (...args) {
     const sdk = await initialize(...args);
+    const fixtureLanguage = sessionStorage.getItem("test-sdk-language");
     const fixture = window.rewardedFixture = { requests: 0, callbacks: null };
     const adv = new Proxy(sdk.adv || {}, { get(target, property) {
       if (property === "showRewardedVideo") return ({ callbacks }) => { fixture.requests++; fixture.callbacks = callbacks; callbacks.onOpen(); };
@@ -54,6 +55,7 @@ function rewardedFixture() {
     } });
     return new Proxy(sdk, { get(target, property) {
       if (property === "adv") return adv;
+      if (property === "environment" && fixtureLanguage) return { ...target.environment, i18n: { lang: fixtureLanguage } };
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     } });
@@ -67,6 +69,7 @@ async function run() {
   const state = await page.evaluate(() => LuckyPickaxe.status());
   check(state.ready && state.sdk && !state.local && !state.paused, "Built WebGL initializes the official SDK dev environment and unpauses");
   check(consoleLogs.filter(value => value.text.includes("LoadingAPI.ready()")).length === 1, "Game Ready reaches the official dev SDK once");
+  check(state.language === "ru" && state.languageApplied && await page.locator("html").getAttribute("lang") === "ru", "The built Unity language acknowledgement applies Russian before Game Ready");
   const fresh = await read();
   check(fresh.coins === 80 && fresh.tickets === 2 && fresh.guideStep === 0, "Fresh browser session uses the existing starting resources and guide");
   await shot("webgl-start");
@@ -161,7 +164,7 @@ async function run() {
   await shot("webgl-desktop-mine");
   for (let i = 0; i < 6; i++) await tap(375, 380);
   saved = await read();
-  check(saved.totalClicks === 6 && saved.oresMined === 1 && saved.coins === 1060, "Wide canvas mines through the projected ore target");
+  check(saved.totalClicks === 6 && saved.oresMined === 1 && saved.coins === 1060, "Wide canvas mines through the projected ore target: " + JSON.stringify({ clicks: saved.totalClicks, ores: saved.oresMined, coins: saved.coins }));
   await tap(989, 328); saved = await read();
   check(saved.upgradeLevel === 1 && saved.coins === 940, "Existing sidebar upgrade purchases work beside the wide mine");
   await seed({ ...fresh, coins: 1000, experience: 100, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
@@ -180,8 +183,20 @@ async function run() {
   await page.setViewportSize({ width: 960, height: 540 }); await page.waitForTimeout(300); await shot("webgl-landscape");
   check(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth && document.documentElement.scrollHeight === innerHeight), "Wide browser layout remains inside the viewport without page scrolling");
 
+  await seed({ ...fresh, coins: 1234567, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  const beforeLanguage = await read();
+  for (const language of ["en", "kk", "tr"]) {
+    await page.evaluate(value => sessionStorage.setItem("test-sdk-language", value), language);
+    await page.reload(); await waitReady();
+    const languageState = await page.evaluate(() => LuckyPickaxe.status());
+    saved = await read();
+    check(languageState.requestedLanguage === language && languageState.language === "ru" && languageState.languageApplied && saved.coins === beforeLanguage.coins && saved.totalRolls === beforeLanguage.totalRolls && saved.upgradeLevel === beforeLanguage.upgradeLevel,
+      "SDK language " + language + " selects the only declared Russian translation without changing progress");
+  }
+  await shot("webgl-language-fallback");
+
   check(errors.length === 0, "Built game has no unexpected browser or JavaScript errors: " + errors.join("; "));
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, lifecycleEvents: "dispatched blur/focus in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
+  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
   console.log(`LUCKY_PICKAXE_WEB_BROWSER: PASS (${checks} checks, Edge ${browserVersion})`);
 }
 run().catch(error => {

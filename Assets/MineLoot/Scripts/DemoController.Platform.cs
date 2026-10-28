@@ -11,6 +11,8 @@ namespace MineLoot
         private long offlineVideoCredit;
         private System.Func<string, bool> rewardedVideoForSmoke;
         private CanvasGroup platformInput;
+        private System.Globalization.CultureInfo interfaceCulture = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+        public string InterfaceLanguage { get; private set; } = "ru";
         public bool IsPaused => applicationPaused;
         public bool RewardedVideoPending => !string.IsNullOrEmpty(rewardedRequest);
         private float PlayDelta => applicationPaused ? 0 : Time.unscaledDeltaTime;
@@ -30,6 +32,16 @@ namespace MineLoot
             browserPaused = paused == "1"; ApplyPlatformPause();
         }
         public void OnBrowserSave(string unused) => Flush(true);
+
+        public void OnBrowserLanguage(string language)
+        {
+            // The existing UI is the complete Russian translation declared in the draft.
+            if (language != "ru") return;
+            InterfaceLanguage = language;
+            interfaceCulture = System.Globalization.CultureInfo.GetCultureInfo(language + "-RU");
+            Refresh();
+            BrowserPlatform.LanguageReady(language);
+        }
 
         public void OnRewardedAvailable(string available)
         {

@@ -14,10 +14,11 @@ function emitter(target = {}) {
 function fixture(settings = {}) {
   const calls = [], data = new Map(), root = emitter();
   const doc = emitter({ hidden: false, createElement: () => ({}) });
-  let initCalls = 0, readyCalls = 0, writes = 0;
+  let initCalls = 0, readyCalls = 0, writes = 0, languageReads = 0;
   const ads = [];
   const sdkEvents = new Map();
   const sdk = {
+    environment: { i18n: { get lang() { languageReads++; calls.push("sdk-language"); return settings.language === undefined ? "ru" : settings.language; } } },
     features: { LoadingAPI: { ready() { readyCalls++; calls.push("sdk-ready"); } } },
     on(event, fn) { sdkEvents.set(event, fn); }, off(event) { sdkEvents.delete(event); }
   };
@@ -39,8 +40,12 @@ function fixture(settings = {}) {
   if (settings.missingScript) delete root.YaGames;
   const context = vm.createContext({ window: root, URLSearchParams, Promise }); vm.runInContext(source, context);
   const api = root.LuckyPickaxe;
-  const unity = { SendMessage(receiver, method, value) { calls.push({ receiver, method, value }); if (settings.onMessage) settings.onMessage(method, value, api); } };
-  return { root, doc, api, sdk, calls, data, unity, ads, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; } };
+  const unity = { SendMessage(receiver, method, value) {
+    calls.push({ receiver, method, value });
+    if (method === "OnBrowserLanguage" && !settings.manualLanguage) api.confirmLanguage(value);
+    if (settings.onMessage) settings.onMessage(method, value, api);
+  } };
+  return { root, doc, api, sdk, calls, data, unity, ads, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
 function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
@@ -157,6 +162,25 @@ async function run() {
   } }); await start(f); f.api.showRewarded("instant");
   check(JSON.stringify(videoEvents(f)) === JSON.stringify(["instant:rewarded", "instant:closed"]) && callbackStates.every(Boolean) && !f.api.status().paused, "Even synchronous SDK callbacks commit before gameplay resumes");
   check(f.api.readProgress("MineLoot.Progress.v2") === '{"coins":1280,"offlineCoins":0}', "The rewarded wallet and consumed crate can be journaled before close");
+
+  f = fixture({ manualLanguage: true });
+  await f.api.init({ onLanguage(value) { f.calls.push("language-applied:" + value); } });
+  f.api.attachReceiver("Mine Loot Demo"); f.api.attachUnity(f.unity); f.api.markReady();
+  check(f.languageReads === 1 && !f.api.status().ready && lastPause(f) === "1", "SDK language is read at startup and Game Ready waits for Unity to apply it");
+  f.api.confirmLanguage("en");
+  check(f.readyCalls === 0 && !f.api.status().languageApplied, "An unsupported or mismatched language acknowledgement cannot release loading");
+  f.api.confirmLanguage("ru");
+  check(f.readyCalls === 1 && f.api.status().languageApplied && lastPause(f) === "0" && f.calls.indexOf("sdk-language") < f.calls.indexOf("sdk-ready") && f.calls.indexOf("language-applied:ru") < f.calls.indexOf("sdk-ready"), "The selected translation is applied before the only Game Ready and unpause");
+  f.api.confirmLanguage("ru"); f.api.markReady();
+  check(f.readyCalls === 1 && f.calls.filter(value => value.method === "OnBrowserLanguage").length === 1, "Repeated language and readiness callbacks do not reload the UI or repeat Game Ready");
+  for (const [requested, normalized] of [["ru-RU", "ru"], ["en", "en"], ["kk", "kk"], ["tr", "tr"], [" EN_us ", "en"], [null, "ru"], ["<script>", "ru"]]) {
+    f = fixture({ language: requested }); await start(f);
+    check(f.languageReads === 1 && f.api.status().requestedLanguage === normalized && f.api.status().language === "ru" && f.api.status().languageApplied && f.readyCalls === 1, "The single declared Russian translation is selected safely for SDK language " + requested);
+  }
+  f = fixture({ language: "en" }); delete f.sdk.environment; await start(f);
+  check(f.api.status().language === "ru" && f.readyCalls === 1, "Missing optional SDK language data uses the declared Russian translation without blocking startup");
+  f = fixture({ host: "localhost", search: "?local=1" }); await start(f);
+  check(f.languageReads === 0 && f.api.status().language === "ru" && f.api.status().languageApplied, "Native-like local preview applies Russian without claiming to read the SDK");
 
   fs.mkdirSync(path.join(__dirname, "../Logs"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));

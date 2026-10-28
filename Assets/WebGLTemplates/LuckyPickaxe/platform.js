@@ -4,6 +4,7 @@
   let gameReady = false, ready = false, local = false, failed = false;
   let sdkPaused = false, hidden = !!root.document.hidden, blurred = false, sentPause;
   let warnedStorage = false, rewardRequest, sentRewardedAvailable;
+  let requestedLanguage, language, sentLanguage = false, languageApplied = false;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
@@ -12,6 +13,10 @@
     if (unity && receiver) unity.SendMessage(receiver, method, value);
   }
   function notify(force) {
+    if (unity && receiver && language && !sentLanguage) {
+      sentLanguage = true;
+      send("OnBrowserLanguage", language);
+    }
     const paused = isPaused();
     if (unity && receiver && (force || paused !== sentPause)) {
       sentPause = paused;
@@ -56,7 +61,7 @@
     if (options.onError) options.onError(error);
   }
   function finishReady() {
-    if (ready || failed || !gameReady || !unity || (!sdk && !local)) return;
+    if (ready || failed || !gameReady || !unity || !languageApplied || (!sdk && !local)) return;
     ready = true;
     // Remove our loading cover before reporting that the Unity interface is usable.
     if (options.onReady) options.onReady(local);
@@ -68,6 +73,13 @@
     target.addEventListener(event, callback);
     removers.push(() => target.removeEventListener(event, callback));
   }
+  function selectLanguage(value) {
+    requestedLanguage = typeof value === "string" && /^[a-z]{2}(?:[-_][a-z0-9]{2,8})*$/i.test(value.trim())
+      ? value.trim().toLowerCase().split(/[-_]/)[0] : "ru";
+    // The draft currently declares one complete translation: Russian.
+    language = requestedLanguage === "ru" ? requestedLanguage : "ru";
+    notify();
+  }
   function init(settings) {
     if (initialization) return initialization;
     options = settings || {};
@@ -77,7 +89,7 @@
     listen(root, "focus", () => { blurred = false; hidden = !!root.document.hidden; notify(); });
     listen(root, "pagehide", () => { send("OnBrowserSave", ""); hidden = true; notify(); });
     listen(root, "pageshow", () => { hidden = !!root.document.hidden; blurred = false; notify(); });
-    if (local) { initialization = Promise.resolve(); finishReady(); return initialization; }
+    if (local) { initialization = Promise.resolve(); selectLanguage("ru"); finishReady(); return initialization; }
     initialization = new Promise((resolve, reject) => {
       if (root.YaGames) { resolve(); return; }
       const script = root.document.createElement("script");
@@ -92,6 +104,7 @@
       const resume = () => { sdkPaused = false; notify(); };
       sdk.on("game_api_pause", pause); sdk.on("game_api_resume", resume);
       removers.push(() => { sdk.off("game_api_pause", pause); sdk.off("game_api_resume", resume); });
+      selectLanguage(sdk.environment?.i18n?.lang);
       finishReady();
     }).catch(error => { fail(error); throw error; });
     return initialization;
@@ -106,6 +119,12 @@
     attachReceiver(name) { receiver = name; notify(true); },
     attachUnity(instance) { unity = instance; notify(true); finishReady(); },
     markReady() { gameReady = true; finishReady(); },
+    confirmLanguage(value) {
+      if (languageApplied || value !== language || !language) return;
+      languageApplied = true;
+      if (options.onLanguage) options.onLanguage(language);
+      finishReady();
+    },
     showRewarded,
     readProgress(key) {
       try { return root.localStorage.getItem(journalKey(key)); }
@@ -117,6 +136,6 @@
       catch (error) { storageWarning(error); return false; }
     },
     dispose() { rewardRequest = null; while (removers.length) removers.pop()(); },
-    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest }; }
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied }; }
   };
 })(window);

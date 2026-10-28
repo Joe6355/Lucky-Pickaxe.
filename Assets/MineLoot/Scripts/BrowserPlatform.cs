@@ -8,6 +8,7 @@ namespace MineLoot
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")] private static extern void LP_Attach(string receiver);
         [DllImport("__Internal")] private static extern void LP_Ready();
+        [DllImport("__Internal")] private static extern void LP_LanguageReady(string language);
         [DllImport("__Internal")] private static extern int LP_ShowRewarded(string request);
         [DllImport("__Internal")] private static extern string LP_ReadProgress(string key);
         [DllImport("__Internal")] private static extern void LP_WriteProgress(string key, string json);
@@ -22,6 +23,12 @@ namespace MineLoot
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             LP_Ready();
+#endif
+        }
+        public static void LanguageReady(string language)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LP_LanguageReady(language);
 #endif
         }
         public static string ReadProgress(string key)
