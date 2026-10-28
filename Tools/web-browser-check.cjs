@@ -156,6 +156,21 @@ async function run() {
   await page.reload(); await waitReady(); saved = await read();
   check(saved.totalOfflineCoins === beforeCloseReload.totalOfflineCoins && saved.coins >= beforeCloseReload.coins && saved.offlineCoins < 10, "Reload between onRewarded and onClose keeps the saved reward exactly once");
 
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await seed({ ...fresh, coins: 1000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await shot("webgl-desktop-mine");
+  for (let i = 0; i < 6; i++) await tap(375, 380);
+  saved = await read();
+  check(saved.totalClicks === 6 && saved.oresMined === 1 && saved.coins === 1060, "Wide canvas mines through the projected ore target");
+  await tap(989, 328); saved = await read();
+  check(saved.upgradeLevel === 1 && saved.coins === 940, "Existing sidebar upgrade purchases work beside the wide mine");
+  await seed({ ...fresh, coins: 1000, experience: 100, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(1169, 194); await tap(989, 328); saved = await read();
+  check(saved.workerCount === 1 && saved.coins >= 700 && saved.coins <= 704, "Wide production tab hires a worker at the ordinary 300-coin price");
+  await shot("webgl-desktop-production");
+  await page.reload(); await waitReady(); saved = await read();
+  check(saved.workerCount === 1 && saved.coins >= 700, "Wide interface reload preserves the purchased machinery");
+
   await seed({ ...fresh, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300);
   for (let i = 0; i < 6; i++) { await page.touchscreen.tap(175, 341); await page.waitForTimeout(120); }

@@ -122,6 +122,7 @@ namespace MineLoot
             noticeGroup.alpha = 0; noticeGroup.blocksRaycasts = false; noticeGroup.interactable = false;
             noticeTitle = Label(notice.transform, "", 10, 4, 354, 28, 22, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
             noticeDetail = Label(notice.transform, "", 10, 32, 354, 40, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
+            InitializeResponsiveLayout();
             if (FindObjectOfType<EventSystem>() == null)
             {
                 var events = new GameObject("Event System", typeof(EventSystem), typeof(StandaloneInputModule)); events.transform.SetParent(transform, false);
@@ -353,8 +354,7 @@ namespace MineLoot
         {
             if (applicationPaused || busy || modal != null) return;
             holding = false; prestigeWindowOpen = true;
-            modal = MakeRect(shell, "Prestige modal", 0, 0, 480, 960).gameObject;
-            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .92f), 0, 0, 480, 960); dim.raycastTarget = true;
+            modal = CreateModal("Prestige modal");
             Card(modal.transform, "Prestige card", 24, 103, 432, 752, Panel);
             Icon(modal.transform, "crystal", 40, 119, 30, 30);
             Label(modal.transform, "НОВАЯ ШАХТА", 83, 116, 350, 34, 28, Ink, FontStyle.Bold);
@@ -425,8 +425,7 @@ namespace MineLoot
         {
             if (applicationPaused || busy || modal != null || game.HasPendingRoll) return;
             holding = false; offlineNoticeQueued = false; offlineWindowOpen = true; offlineVideoMessage = null;
-            modal = MakeRect(shell, "Offline reward modal", 0, 0, 480, 960).gameObject;
-            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
+            modal = CreateModal("Offline reward modal");
             Card(modal.transform, "Offline reward card", 24, 169, 432, 608, Panel);
             Icon(modal.transform, "warehouse", 46, 188, 48, 48);
             Label(modal.transform, "СКЛАД РУДНИКА", 110, 189, 323, 35, 27, Ink, FontStyle.Bold);
@@ -464,6 +463,7 @@ namespace MineLoot
             var window = Card(parent, name, x, y, width, height, Hex("737c6e"));
             var mask = window.gameObject.AddComponent<Mask>(); mask.showMaskGraphic = false;
             var image = Icon(window.transform, "tex-stone", 0, 0, width, height); image.type = Image.Type.Tiled; image.pixelsPerUnitMultiplier = .4f;
+            Stretch(image.rectTransform);
             image.color = Hex("69736a");
             if (name == "Mine illustration" || name == "Expedition illustration")
             {
@@ -473,6 +473,8 @@ namespace MineLoot
                 if (expedition) shaft = renderer; else stage = renderer;
                 var rect = MakeRect(window.transform, "Live block world", 0, 0, width, height);
                 var display = rect.gameObject.AddComponent<RawImage>(); display.texture = renderer.Target; display.raycastTarget = false;
+                Stretch(rect);
+                if (expedition) shaftDisplay = display; else mineDisplay = display;
             }
             return image;
         }
@@ -481,8 +483,7 @@ namespace MineLoot
         {
             if (applicationPaused || modal != null) return;
             holding = false;
-            modal = MakeRect(shell, "Rules modal", 0, 0, 480, 960).gameObject;
-            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
+            modal = CreateModal("Rules modal");
             Card(modal.transform, "Rules card", 24, 102, 432, 750, Panel);
             Label(modal.transform, "КИРКА + ПОРОДА = ИСХОД", 47, 140, 386, 35, 23, Ink, FontStyle.Bold);
             Label(modal.transform, "Кузница " + game.Progress.forgeLevel + " · бонус силы +" + game.PowerBonus, 48, 183, 380, 22, 16, Muted);
@@ -520,8 +521,7 @@ namespace MineLoot
             }
             milestonePage = Mathf.Max(0, firstReady >= 0 ? firstReady : firstUnclaimed) / 4;
             milestoneBookOpen = true;
-            modal = MakeRect(shell, "Milestones modal", 0, 0, 480, 960).gameObject;
-            var dim = PanelAt(modal.transform, "Modal overlay", new Color(.12f, .15f, .1f, .9f), 0, 0, 480, 960); dim.raycastTarget = true;
+            modal = CreateModal("Milestones modal");
             Card(modal.transform, "Milestones card", 24, 105, 432, 750, Panel);
             Icon(modal.transform, "medal", 43, 123, 30, 30);
             Label(modal.transform, "КНИГА ШАХТЁРА", 83, 121, 350, 34, 27, Ink, FontStyle.Bold);
@@ -583,7 +583,8 @@ namespace MineLoot
         private void CloseModal()
         {
             if (modal == null || RewardedVideoPending) return;
-            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null; Refresh();
+            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
+            dialogShade.SetActive(false); Refresh();
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")

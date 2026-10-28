@@ -87,6 +87,7 @@ namespace MineLoot
         {
             busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
             if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
+            if (dialogShade != null) dialogShade.SetActive(false);
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false;
             offlineNoticeQueued = game.HasOfflineReward;
             productionTab = false;
@@ -119,7 +120,7 @@ namespace MineLoot
             upgradePulse = Mathf.MoveTowards(upgradePulse, 0, dt * 2);
             float strike = rockPulse * rockPulse, follow = Mathf.Sin((1 - rockPulse) * Mathf.PI) * rockPulse;
             clickPick.rectTransform.localEulerAngles = new Vector3(0, 0, -24 + strike * 58 + follow * 30);
-            clickPick.rectTransform.anchoredPosition = pickHome + new Vector2(-16 * strike, -8 * strike);
+            clickPick.rectTransform.anchoredPosition = pickHome + new Vector2(-16 * strike, -8 * strike) * miningVisualScale;
             float celebrate = Mathf.Sin(upgradePulse * Mathf.PI);
             clickPick.rectTransform.localScale = Vector3.one * (1 + celebrate * .15f);
             workshopPick.rectTransform.localScale = Vector3.one * (1 + celebrate * .12f);
@@ -127,14 +128,14 @@ namespace MineLoot
             visualExperience = Mathf.MoveTowards(visualExperience, game.LevelGoal == 0 ? 1 : game.LevelExperience / (float)game.LevelGoal, dt * 2);
             visualTicket = Mathf.MoveTowards(visualTicket, game.Progress.hits / (float)game.HitsRequired, dt * 4);
             oreFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 178 * visualHealth);
-            experienceFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 404 * visualExperience);
-            ticketFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 360 * visualTicket);
+            experienceFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, experienceWidth * visualExperience);
+            ticketFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, ticketWidth * visualTicket);
             if (noticeTime > 0)
             {
                 noticeTime = Mathf.Max(0, noticeTime - dt);
                 float age = 2.7f - noticeTime;
                 noticeGroup.alpha = Mathf.Min(Mathf.Clamp01(age / .12f), Mathf.Clamp01(noticeTime / .25f));
-                noticeRect.anchoredPosition = new Vector2(24, -10 - 10 * (1 - Mathf.SmoothStep(0, 1, age / .2f)));
+                noticeRect.anchoredPosition = noticeHome + Vector2.down * (10 * (1 - Mathf.SmoothStep(0, 1, age / .2f)));
             }
             if (holding && Time.unscaledTime >= nextHold)
             {
@@ -148,7 +149,7 @@ namespace MineLoot
         {
             lastWidth = Screen.width; lastHeight = Screen.height; lastSafe = Screen.safeArea;
             var safe = lastSafe.width > 0 ? lastSafe : new Rect(0, 0, Screen.width, Screen.height);
-            canvas.scaleFactor = Mathf.Max(.1f, Mathf.Min(safe.width / 480f, safe.height / 960f));
+            ApplyResponsiveLayout(safe);
             shell.anchoredPosition = (safe.center - new Vector2(Screen.width * .5f, Screen.height * .5f)) / canvas.scaleFactor;
         }
 
@@ -164,7 +165,8 @@ namespace MineLoot
             if (miningGain == null)
             {
                 gainCoins = hit.coins; gainExperience = hit.experience;
-                StartCoroutine(FloatReward(minePage.transform, 104, 186));
+                Vector3 point = minePage.transform.InverseTransformPoint(rock.position);
+                StartCoroutine(FloatReward(minePage.transform, point.x - 90, -point.y));
             }
             else { gainCoins += hit.coins; gainExperience += hit.experience; }
             if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel);
@@ -330,15 +332,21 @@ namespace MineLoot
         {
             if (applicationPaused || busy || modal != null) return;
             holding = false;
-            roulette = page == 1;
-            minePage.SetActive(page == 0); rollPage.SetActive(roulette); workshopPage.SetActive(page == 2);
-            mineTab.image.color = page == 0 ? Hex("a4c975") : Panel;
+            selectedPage = page; ApplyPageVisibility();
+        }
+
+        private void ApplyPageVisibility()
+        {
+            roulette = selectedPage == 1;
+            bool mining = !roulette && (wideLayout || selectedPage == 0);
+            minePage.SetActive(mining); rollPage.SetActive(roulette); workshopPage.SetActive(wideLayout || selectedPage == 2);
+            mineTab.image.color = mining ? Hex("a4c975") : Panel;
             rollTab.image.color = roulette ? Hex("a4c975") : Panel;
-            workshopTab.image.color = page == 2 ? Hex("a4c975") : Panel;
+            workshopTab.image.color = selectedPage == 2 ? Hex("a4c975") : Panel;
             mineTab.GetComponentInChildren<Text>().color = Ink;
             rollTab.GetComponentInChildren<Text>().color = Ink;
-            mineNavMark.enabled = page == 0; rollNavMark.enabled = roulette; workshopNavMark.enabled = page == 2;
-            stage.gameObject.SetActive(page == 0); shaft.gameObject.SetActive(roulette);
+            mineNavMark.enabled = mining; rollNavMark.enabled = roulette; workshopNavMark.enabled = selectedPage == 2;
+            stage.gameObject.SetActive(mining); shaft.gameObject.SetActive(roulette);
             RefreshGuide();
         }
 
@@ -434,8 +442,8 @@ namespace MineLoot
             rollGain.text = "МЕНЯЕМ КИРКИ МЕСТАМИ";
             rollStatus.text = "Обмен применён · осталось: " + game.SwapsRemaining;
             var start = ReelHome(first); var end = ReelHome(second);
-            picks[first].transform.SetParent(rollPage.transform, false);
-            picks[second].transform.SetParent(rollPage.transform, false);
+            picks[first].transform.SetParent(shaftPresentation, false);
+            picks[second].transform.SetParent(shaftPresentation, false);
             pickBorders[first].enabled = pickBorders[second].enabled = true;
             float t = 0;
             while (t < 1)
@@ -455,12 +463,14 @@ namespace MineLoot
         private static string PowerText(int power) => power + " " + (power == 1 ? "СИЛА" : power < 5 && power > 1 ? "СИЛЫ" : "СИЛ");
         public string RollPhase { get; private set; } = "idle";
         public int SettledReels { get; private set; }
-        private static Vector2 ReelHome(int column) => new Vector2(54 + column * 81, -85);
+        private Vector2 ReelHome(int column) => shaftPresentation.InverseTransformPoint(reelWindows[column].TransformPoint(new Vector3(9, 0)));
 
         private Vector2 BoardPoint(int column, int row)
         {
             Vector2 p = shaft.BlockViewport(column, row);
-            return new Vector2(24 + p.x * 432 - 13, -(70 + (1 - p.y) * ShaftWindowHeight) + 24);
+            var viewport = (RectTransform)rollBackdrop.transform.parent;
+            Vector3 point = shaftPresentation.InverseTransformPoint(viewport.TransformPoint(new Vector3(p.x * viewport.rect.width, -(1 - p.y) * viewport.rect.height)));
+            return new Vector2(point.x - 13, point.y + 24);
         }
 
         private IEnumerator AnimateReels()
@@ -543,7 +553,7 @@ namespace MineLoot
             {
                 reelSymbols[c, 0].enabled = reelSymbols[c, 2].enabled = false;
                 if (result.powers[c] > 0) picks[c].sprite = art.Get("pick" + result.types[c]);
-                picks[c].transform.SetParent(rollPage.transform, false);
+                picks[c].transform.SetParent(shaftPresentation, false);
                 picks[c].rectTransform.anchoredPosition = ReelHome(c);
                 picks[c].rectTransform.localScale = Vector3.one;
             }
@@ -666,7 +676,7 @@ namespace MineLoot
 
         private IEnumerator FlyPickHead(int column, int type, Vector2 origin)
         {
-            var image = Icon(rollPage.transform, "pick-head" + type, origin.x, -origin.y, 48, 48);
+            var image = Icon(shaftPresentation, "pick-head" + type, origin.x, -origin.y, 48, 48);
             float elapsed = 0;
             while (elapsed < .55f)
             {

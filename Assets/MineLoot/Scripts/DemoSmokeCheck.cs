@@ -157,6 +157,8 @@ namespace MineLoot
             yield return VerifyProduction(demo, stage);
             yield return VerifyOffline(demo);
             yield return VerifyRewardedOffline(demo);
+            yield return VerifyResponsiveLayout(demo, stage, shaft);
+            if (Array.IndexOf(args, "-demoStoreCapture") >= 0) yield return RecordDesktopDemo(demo);
             yield return VerifyPrestige(demo);
             yield return VerifyMilestones(demo);
             // Exercise a later biome and partial block damage in the same built player.
@@ -521,6 +523,103 @@ namespace MineLoot
                 PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save();
                 demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
             }
+        }
+
+        private IEnumerator VerifyResponsiveLayout(DemoController demo, VoxelStage stage, VoxelStage shaft)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            var progress = new MineProgress { coins = 100000, experience = MineGame.ExperienceForLevel(50), upgradeLevel = 12, forgeLevel = 4, swapLevel = 1, efficiencyLevel = 2, workerCount = 8, drillCount = 2, cartCount = 2, railLevel = 1, stratum = 4 };
+            Screen.SetResolution(1280, 720, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(progress); demo.ShowPage(false); yield return null;
+            Check(demo.IsWideLayout && stage.gameObject.activeSelf && FindButton("Buy Efficiency") != null, "Desktop mine and existing workshop controls are visible together");
+            Check(stage.Target.width > 864 && stage.Target.filterMode == FilterMode.Point && stage.Target.antiAliasing == 1, "Desktop mine has a larger sharp render texture without smoothing");
+            var ore = FindButton("Mine rock");
+            var pointer = new PointerEventData(EventSystem.current) { position = RectTransformUtility.WorldToScreenPoint(null, ore.GetComponent<RectTransform>().position) };
+            var hits = new List<RaycastResult>(); EventSystem.current.RaycastAll(pointer, hits);
+            Check(hits.Count > 0 && hits[0].gameObject == ore.gameObject, "The enlarged ore receives pointer input at its actual projected location");
+            long wallet = demo.Game.Progress.coins, price = demo.Game.UpgradePrice(UpgradeKind.Efficiency);
+            Click("Buy Efficiency");
+            Check(demo.Game.Progress.efficiencyLevel == 3 && demo.Game.Progress.coins == wallet - price && stage.gameObject.activeSelf, "Desktop sidebar purchases use the same rules while the mine remains visible");
+            yield return new WaitForSecondsRealtime(2.9f);
+            CheckLayout(); Capture("unity-desktop-mine.png");
+            Click("Production section"); yield return null;
+            Check(stage.gameObject.activeSelf && FindButton("Buy Worker") != null, "Production can be inspected beside the mine");
+            CheckLayout(); Capture("unity-desktop-production.png");
+            Click("Open warehouse"); yield return null;
+            pointer.position = RectTransformUtility.WorldToScreenPoint(null, FindButton("Buy Worker").GetComponent<RectTransform>().position);
+            hits.Clear(); EventSystem.current.RaycastAll(pointer, hits);
+            Check(hits.Count > 0 && hits[0].gameObject.name == "Dialog shade", "A centered modal blocks input across the full desktop, including the sidebar");
+            CheckLayout(); Capture("unity-desktop-warehouse.png"); Click("Close warehouse"); yield return null;
+            demo.ShowMilestones(); yield return null;
+            string beforeResize = JsonUtility.ToJson(demo.Game.Progress);
+            foreach (var size in new[] { new Vector2Int(390, 844), new Vector2Int(960, 600), new Vector2Int(1440, 900), new Vector2Int(1920, 1080), new Vector2Int(1280, 720) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.25f);
+                Check(demo.IsWideLayout == (size.x >= 800 && size.x / (float)size.y >= 1.35f), "Responsive layout chooses the expected mode: " + size);
+                CheckLayout();
+                Check(JsonUtility.ToJson(demo.Game.Progress) == beforeResize, "Resizing an open book cannot change saved progress: " + size);
+            }
+            Click("Close milestones"); yield return null;
+            Click("Equipment section"); demo.ShowPage(true); int sample = 0; double[] types = { .99, 0, .6, 0, 0 };
+            demo.SpinForSmoke(() => types[sample++]);
+            string paid = JsonUtility.ToJson(demo.Game.Progress);
+            Screen.SetResolution(390, 844, false); yield return new WaitForSecondsRealtime(.25f);
+            Check(JsonUtility.ToJson(demo.Game.Progress) == paid && demo.Game.HasPendingRoll, "Changing to portrait during a paid roll preserves its picks and spent ticket");
+            Screen.SetResolution(1280, 720, false); yield return new WaitForSecondsRealtime(.3f);
+            yield return WaitForChoice(demo);
+            Check(demo.IsWideLayout && shaft.gameObject.activeSelf && !stage.gameObject.activeSelf, "Desktop roulette uses the same active shaft and stops the mine renderer");
+            CheckLayout(); Capture("unity-desktop-roulette.png");
+            Click("Reel 0"); Click("Reel 1"); yield return WaitForChoice(demo);
+            Check(demo.Game.Progress.pendingSwapCount == 1 && demo.Game.Progress.pendingTypes[1] == 4, "Repositioned desktop reels exchange the existing paid picks");
+            CheckLayout(); Capture("unity-desktop-roulette-choice.png");
+            int rolls = demo.Game.Progress.totalRolls;
+            demo.Spin(); yield return FinishRoll(demo);
+            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.totalRolls == rolls, "The resized paid roll resolves without counting the already-paid draw again");
+            CheckLayout(); Capture("unity-desktop-result.png");
+            foreach (var size in new[] { new Vector2Int(960, 600), new Vector2Int(1440, 900), new Vector2Int(1920, 1080) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.25f);
+                CheckLayout(); Capture("unity-desktop-roulette-" + size.x + "x" + size.y + ".png");
+            }
+            Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+            Check(!demo.IsWideLayout && !stage.gameObject.activeSelf && shaft.Target.width == 432 && shaft.Target.height == 417, "Portrait restores its original layout, camera policy and render size");
+        }
+
+        private IEnumerator RecordDesktopDemo(DemoController demo)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            Screen.SetResolution(1280, 720, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(new MineProgress { coins = 6000, experience = MineGame.ExperienceForLevel(12), upgradeLevel = 5, forgeLevel = 3, swapLevel = 1, efficiencyLevel = 2, pressLevel = 2, workerCount = 4, drillCount = 1, cartCount = 2, railLevel = 2, stratum = 4 });
+            demo.ShowPage(false); demo.UseLiveClockForSmoke(true);
+            yield return new WaitForSecondsRealtime(.5f);
+            string folder = Path.Combine(output, "store-frames"); Directory.CreateDirectory(folder);
+            var times = new System.Text.StringBuilder("frame,seconds\n");
+            double start = Time.realtimeSinceStartupAsDouble, nextMine = 0;
+            bool launched = false, exchanged = false, confirmed = false, production = false;
+            int frame = 0, sample = 0; double[] picks = { .99, 0, .6, .99, .6 };
+            while (Time.realtimeSinceStartupAsDouble - start < 18)
+            {
+                double elapsed = Time.realtimeSinceStartupAsDouble - start;
+                if (elapsed < 4.5 && elapsed >= nextMine) { Click("Mine rock"); nextMine = elapsed + .22; }
+                if (elapsed >= 4.5 && !launched) { demo.ShowPage(true); demo.SpinForSmoke(() => picks[sample++]); launched = true; }
+                if (demo.AwaitingPickChoice && !exchanged) { demo.SelectPick(0); demo.SelectPick(1); exchanged = true; }
+                else if (demo.AwaitingPickChoice && exchanged && !confirmed && elapsed >= 9) { demo.Spin(); confirmed = true; }
+                if (elapsed >= 14 && !demo.IsBusy && !production)
+                {
+                    demo.ShowPage(false); Click("Production section");
+                    if (FindButton("Buy Worker").interactable) Click("Buy Worker");
+                    production = true;
+                }
+                times.Append(frame).Append(',').AppendLine(elapsed.ToString("F6", System.Globalization.CultureInfo.InvariantCulture));
+                Capture(Path.Combine("store-frames", "frame-" + (frame++).ToString("D4") + ".jpg"));
+                yield return new WaitForSecondsRealtime(1f / 30);
+            }
+            File.WriteAllText(Path.Combine(folder, "times.csv"), times.ToString());
+            Check(launched && exchanged && confirmed && production && !demo.Game.HasPendingRoll, "Store video records real mining, exchange, paid result and production actions");
+            demo.UseLiveClockForSmoke(false);
+            Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }
 
         private IEnumerator VerifyPrestige(DemoController demo)
@@ -925,7 +1024,7 @@ namespace MineLoot
             var pixels = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
             pixels.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0); pixels.Apply();
             Check(pixels.GetPixel(Screen.width / 2, Screen.height / 2).grayscale > .03f, "Rendered UI is visible");
-            File.WriteAllBytes(Path.Combine(output, file), pixels.EncodeToPNG());
+            File.WriteAllBytes(Path.Combine(output, file), file.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ? pixels.EncodeToJPG(94) : pixels.EncodeToPNG());
             camera.targetTexture = null; RenderTexture.active = previous;
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             target.Release(); Destroy(target); Destroy(pixels);

@@ -27,12 +27,24 @@ namespace MineLoot
         private int biome = -1;
         public RenderTexture Target { get; private set; }
         public Camera View => view;
+        public Vector3 MiningOrePosition => ore.position;
         public int StaticBatches => terrain.Count;
         public int OreVertices => ore == null ? 0 : ore.GetComponent<MeshFilter>().sharedMesh.vertexCount;
         public bool CrackVisible => crackRenderer != null && crackRenderer.enabled;
         public string DisplayedOre => oreMaterial.mainTexture.name;
         public bool IsReplacing => replacement >= 0;
         public bool IsExpedition { get; private set; }
+
+        public void ResizeViewport(int width, int height)
+        {
+            width = Mathf.Max(1, width); height = Mathf.Max(1, height);
+            if (Target.width == width && Target.height == height) return;
+            var previous = Target;
+            Target = new RenderTexture(width, height, 24) { name = "Block world view", filterMode = FilterMode.Point, antiAliasing = 1 };
+            view.targetTexture = Target; view.aspect = width / (float)height;
+            previous.Release();
+            if (Application.isPlaying) Destroy(previous); else DestroyImmediate(previous);
+        }
 
         public void Initialize(PixelArt art, bool expedition = false)
         {
