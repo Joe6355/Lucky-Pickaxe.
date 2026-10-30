@@ -5,6 +5,7 @@
   let sdkPaused = false, hidden = !!root.document.hidden, blurred = false, sentPause;
   let warnedStorage = false, rewardRequest, sentRewardedAvailable;
   let requestedLanguage, language, sentLanguage = false, languageApplied = false;
+  let disposed = false, engineActive = false, gameplayReported = false, gameplayUnavailable = false;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
@@ -13,6 +14,7 @@
     if (unity && receiver) unity.SendMessage(receiver, method, value);
   }
   function notify(force) {
+    if (disposed) return;
     if (unity && receiver && language && !sentLanguage) {
       sentLanguage = true;
       send("OnBrowserLanguage", language);
@@ -28,8 +30,24 @@
       send("OnRewardedAvailable", available ? "1" : "0");
     }
     if (options.onPause) options.onPause(ready && paused);
+    syncGameplay();
   }
-  function isPaused() { return sdkPaused || hidden || blurred || !!rewardRequest || !ready; }
+  function isPaused() { return disposed || sdkPaused || hidden || blurred || !!rewardRequest || !ready; }
+  function syncGameplay() {
+    if (!sdk || local || gameplayUnavailable) return;
+    const active = engineActive && !isPaused();
+    if (active === gameplayReported) return;
+    try {
+      const gameplay = sdk.features?.GameplayAPI;
+      if (typeof gameplay?.start !== "function" || typeof gameplay?.stop !== "function") return;
+      // Set before calling the SDK so synchronous platform events cannot repeat the same signal.
+      gameplayReported = active;
+      if (active) gameplay.start(); else gameplay.stop();
+    } catch (error) {
+      gameplayReported = false; gameplayUnavailable = true;
+      root.console.warn("Lucky Pickaxe: gameplay reporting unavailable; local pause remains active", error);
+    }
+  }
   function showRewarded(id) {
     if (isPaused() || local || !unity || !receiver || !sdk || !sdk.adv || typeof sdk.adv.showRewardedVideo !== "function" || typeof id !== "string" || !/^[a-zA-Z0-9-]{1,64}$/.test(id)) return false;
     const request = { id, paid: false };
@@ -56,12 +74,13 @@
     return true;
   }
   function fail(error) {
+    if (disposed) return;
     failed = true; ready = false; notify();
     root.console.error("Lucky Pickaxe: browser initialization failed", error);
     if (options.onError) options.onError(error);
   }
   function finishReady() {
-    if (ready || failed || !gameReady || !unity || !languageApplied || (!sdk && !local)) return;
+    if (disposed || ready || failed || !gameReady || !unity || !languageApplied || (!sdk && !local)) return;
     ready = true;
     // Remove our loading cover before reporting that the Unity interface is usable.
     if (options.onReady) options.onReady(local);
@@ -81,13 +100,17 @@
     notify();
   }
   function init(settings) {
+    if (disposed) return initialization || Promise.resolve();
     if (initialization) return initialization;
     options = settings || {};
     local = loopback && new URLSearchParams(root.location.search).get("local") === "1";
     listen(root.document, "visibilitychange", () => { hidden = !!root.document.hidden; notify(); });
     listen(root, "blur", () => { blurred = true; notify(); });
     listen(root, "focus", () => { blurred = false; hidden = !!root.document.hidden; notify(); });
-    listen(root, "pagehide", () => { send("OnBrowserSave", ""); hidden = true; notify(); });
+    listen(root, "pagehide", event => {
+      send("OnBrowserSave", ""); hidden = true; notify();
+      if (event?.persisted === false) dispose();
+    });
     listen(root, "pageshow", () => { hidden = !!root.document.hidden; blurred = false; notify(); });
     if (local) { initialization = Promise.resolve(); selectLanguage("ru"); finishReady(); return initialization; }
     initialization = new Promise((resolve, reject) => {
@@ -96,7 +119,8 @@
       script.src = "/sdk.js"; script.async = true;
       script.onload = resolve; script.onerror = () => reject(new Error("Yandex SDK unavailable"));
       root.document.head.appendChild(script);
-    }).then(() => root.YaGames.init()).then(value => {
+    }).then(() => disposed ? null : root.YaGames.init()).then(value => {
+      if (disposed) return;
       if (!value || !value.features || !value.features.LoadingAPI || typeof value.features.LoadingAPI.ready !== "function" || typeof value.on !== "function")
         throw new Error("Incomplete Yandex SDK");
       sdk = value;
@@ -106,7 +130,7 @@
       removers.push(() => { sdk.off("game_api_pause", pause); sdk.off("game_api_resume", resume); });
       selectLanguage(sdk.environment?.i18n?.lang);
       finishReady();
-    }).catch(error => { fail(error); throw error; });
+    }).catch(error => { if (!disposed) { fail(error); throw error; } });
     return initialization;
   }
   function storageWarning(error) {
@@ -114,17 +138,29 @@
     warnedStorage = true;
     root.console.warn("Lucky Pickaxe: synchronous journal unavailable; PlayerPrefs remains active", error);
   }
+  function dispose() {
+    if (disposed) return;
+    disposed = true; ready = false; engineActive = false;
+    if (sentPause !== true) { sentPause = true; send("OnBrowserPause", "1"); }
+    syncGameplay(); rewardRequest = null;
+    while (removers.length) {
+      try { removers.pop()(); }
+      catch (error) { root.console.warn("Lucky Pickaxe: platform listener cleanup failed", error); }
+    }
+    unity = receiver = null;
+  }
   root.LuckyPickaxe = {
     init,
-    attachReceiver(name) { receiver = name; notify(true); },
-    attachUnity(instance) { unity = instance; notify(true); finishReady(); },
-    markReady() { gameReady = true; finishReady(); },
+    attachReceiver(name) { if (!disposed) { receiver = name; notify(true); } },
+    attachUnity(instance) { if (!disposed) { unity = instance; notify(true); finishReady(); } },
+    markReady() { if (!disposed) { gameReady = true; finishReady(); } },
     confirmLanguage(value) {
-      if (languageApplied || value !== language || !language) return;
+      if (disposed || languageApplied || value !== language || !language) return;
       languageApplied = true;
       if (options.onLanguage) options.onLanguage(language);
       finishReady();
     },
+    setGameplay(active) { if (!disposed) { engineActive = active === true; syncGameplay(); } },
     showRewarded,
     readProgress(key) {
       try { return root.localStorage.getItem(journalKey(key)); }
@@ -135,7 +171,7 @@
       try { root.localStorage.setItem(journalKey(key), json); return true; }
       catch (error) { storageWarning(error); return false; }
     },
-    dispose() { rewardRequest = null; while (removers.length) removers.pop()(); },
-    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied }; }
+    dispose,
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed }; }
   };
 })(window);

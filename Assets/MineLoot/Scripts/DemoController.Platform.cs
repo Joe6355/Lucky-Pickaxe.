@@ -107,7 +107,7 @@ namespace MineLoot
         private void ApplyPlatformPause()
         {
             bool paused = enginePaused || browserPaused || RewardedVideoPending;
-            if (paused == applicationPaused) return;
+            if (paused == applicationPaused) { BrowserPlatform.Gameplay(!paused); return; }
             if (paused) { holding = false; Flush(true); }
             applicationPaused = paused; skipEconomyFrame = true;
             platformInput.interactable = !paused;
@@ -120,6 +120,7 @@ namespace MineLoot
                 if (!SmokeMode || smokeSessionKey != null) PrepareReturn(SessionUtc, afterVideo);
                 if (afterVideo) PresentRewardedResult();
             }
+            BrowserPlatform.Gameplay(!applicationPaused);
         }
     }
 }

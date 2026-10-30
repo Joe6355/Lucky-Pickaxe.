@@ -8,21 +8,26 @@ function emitter(target = {}) {
   const handlers = new Map();
   target.addEventListener = (event, fn) => { if (!handlers.has(event)) handlers.set(event, new Set()); handlers.get(event).add(fn); };
   target.removeEventListener = (event, fn) => handlers.get(event)?.delete(fn);
-  target.emit = event => { for (const fn of handlers.get(event) || []) fn(); };
+  target.emit = (event, detail) => { for (const fn of handlers.get(event) || []) fn(detail); };
   return target;
 }
 function fixture(settings = {}) {
   const calls = [], data = new Map(), root = emitter();
   const doc = emitter({ hidden: false, createElement: () => ({}) });
   let initCalls = 0, readyCalls = 0, writes = 0, languageReads = 0;
-  const ads = [];
+  const ads = [], gameplayCalls = [];
   const sdkEvents = new Map();
   const sdk = {
     environment: { i18n: { get lang() { languageReads++; calls.push("sdk-language"); return settings.language === undefined ? "ru" : settings.language; } } },
     features: { LoadingAPI: { ready() { readyCalls++; calls.push("sdk-ready"); } } },
     on(event, fn) { sdkEvents.set(event, fn); }, off(event) { sdkEvents.delete(event); }
   };
+  if (!settings.noGameplay) sdk.features.GameplayAPI = {
+    start() { gameplayCalls.push("start"); calls.push("gameplay-start"); if (settings.gameplayThrows) throw new Error("Gameplay unavailable"); if (settings.onGameplay) settings.onGameplay("start"); },
+    stop() { gameplayCalls.push("stop"); calls.push("gameplay-stop"); if (settings.gameplayThrows) throw new Error("Gameplay unavailable"); if (settings.onGameplay) settings.onGameplay("stop"); }
+  };
   if (!settings.noRewarded) sdk.adv = { showRewardedVideo({ callbacks }) {
+    calls.push("sdk-video");
     ads.push(callbacks);
     if (settings.adThrows) throw new Error("Video unavailable");
     if (settings.adSynchronous) { callbacks.onRewarded(); callbacks.onClose(); }
@@ -43,9 +48,10 @@ function fixture(settings = {}) {
   const unity = { SendMessage(receiver, method, value) {
     calls.push({ receiver, method, value });
     if (method === "OnBrowserLanguage" && !settings.manualLanguage) api.confirmLanguage(value);
+    if (method === "OnBrowserPause" && !settings.manualGameplay) api.setGameplay(value === "0");
     if (settings.onMessage) settings.onMessage(method, value, api);
   } };
-  return { root, doc, api, sdk, calls, data, unity, ads, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
+  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
 function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
@@ -86,7 +92,7 @@ async function run() {
   f.api.attachReceiver("Mine Loot Demo"); f.api.markReady(); f.api.attachUnity(f.unity);
   check(f.readyCalls === 1 && lastPause(f) === "1", "Pause before Unity attaches is retained through Game Ready");
   f.emitSDK("game_api_resume"); check(lastPause(f) === "0", "Startup platform pause requires its actual resume");
-  const beforeDispose = f.calls.length; f.api.dispose(); f.root.emit("blur"); f.emitSDK("game_api_pause");
+  f.api.dispose(); const beforeDispose = f.calls.length; f.root.emit("blur"); f.emitSDK("game_api_pause");
   check(f.calls.length === beforeDispose, "Bridge disposal removes browser and SDK listeners");
 
   f = fixture(); await start(f);
@@ -181,6 +187,66 @@ async function run() {
   check(f.api.status().language === "ru" && f.readyCalls === 1, "Missing optional SDK language data uses the declared Russian translation without blocking startup");
   f = fixture({ host: "localhost", search: "?local=1" }); await start(f);
   check(f.languageReads === 0 && f.api.status().language === "ru" && f.api.status().languageApplied, "Native-like local preview applies Russian without claiming to read the SDK");
+
+  let resolveDisposedSDK;
+  f = fixture({ sdkPromise: new Promise(resolve => { resolveDisposedSDK = resolve; }) });
+  const abandonedLoad = f.api.init();
+  f.api.attachReceiver("Mine Loot Demo"); f.api.attachUnity(f.unity); f.api.markReady();
+  f.api.dispose(); const beforeAbandonedLoad = f.calls.length;
+  resolveDisposedSDK(f.sdk); await abandonedLoad;
+  check(f.readyCalls === 0 && f.calls.length === beforeAbandonedLoad && !f.api.status().ready, "An SDK resolving after page disposal cannot restart the abandoned game");
+
+  f = fixture({ manualGameplay: true }); await start(f);
+  check(f.gameplayCalls.length === 0 && !f.api.status().engineActive, "Ready alone cannot report active gameplay before Unity acknowledges its actual pause state");
+  f.api.setGameplay(true);
+  check(JSON.stringify(f.gameplayCalls) === '["start"]' && f.calls.indexOf("sdk-ready") < f.calls.indexOf("gameplay-start"), "Gameplay starts only after Game Ready and the Unity activity acknowledgement");
+  f.api.setGameplay(true); f.root.emit("focus");
+  check(f.gameplayCalls.length === 1, "Repeated focus and Unity activity notifications never duplicate the same gameplay start");
+  f.root.emit("blur"); f.doc.hidden = true; f.doc.emit("visibilitychange"); f.root.emit("focus");
+  check(JSON.stringify(f.gameplayCalls) === '["start","stop"]', "Overlapping browser pause reasons stop gameplay once and focus cannot restart a hidden page");
+  f.doc.hidden = false; f.doc.emit("visibilitychange");
+  check(JSON.stringify(f.gameplayCalls) === '["start","stop","start"]', "Clearing the final host pause starts the already active Unity session once");
+  f.api.setGameplay(false); f.emitSDK("game_api_pause"); f.emitSDK("game_api_resume"); f.root.emit("focus");
+  check(f.gameplayCalls.at(-1) === "stop" && f.gameplayCalls.length === 4, "SDK and browser resume cannot report gameplay while Unity remains independently paused");
+  f.api.setGameplay(true);
+  check(f.gameplayCalls.at(-1) === "start" && f.gameplayCalls.length === 5, "Unity's actual resume releases the remaining activity condition");
+  f.api.showRewarded("activity-video");
+  check(f.gameplayCalls.at(-1) === "stop" && f.calls.lastIndexOf("gameplay-stop") < f.calls.lastIndexOf("sdk-video"), "Gameplay is stopped before asking the SDK to open a rewarded video");
+  f.ads[0].onRewarded(); f.emitSDK("game_api_pause"); f.ads[0].onClose();
+  check(f.gameplayCalls.at(-1) === "stop" && f.gameplayCalls.length === 6, "A reward and video close cannot resume gameplay through an outstanding SDK pause");
+  f.emitSDK("game_api_resume");
+  check(f.gameplayCalls.at(-1) === "start" && f.gameplayCalls.length === 7, "The real final resume reports one new gameplay start after video");
+  f.api.dispose(); f.api.dispose(); const callsAfterDisposal = f.calls.length;
+  f.api.setGameplay(true); f.api.attachUnity(f.unity); f.api.attachReceiver("new"); f.api.markReady(); f.api.confirmLanguage("ru");
+  check(f.gameplayCalls.at(-1) === "stop" && f.gameplayCalls.length === 8 && f.calls.length === callsAfterDisposal && !f.api.showRewarded("after-disposal") && f.api.status().disposed, "Disposal stops once and no late Unity or video request can reactivate the completed session");
+
+  for (const settings of [{ noGameplay: true }, { gameplayThrows: true }]) {
+    f = fixture(settings); await start(f); f.root.emit("blur"); f.root.emit("focus");
+    check(f.api.status().ready && !f.api.status().paused && f.readyCalls === 1, "Optional gameplay API absence or failure never disables the existing game and pause controls");
+  }
+  f = fixture(); await start(f);
+  f.root.emit("pagehide", { persisted: true });
+  check(!f.api.status().disposed && f.api.status().paused && f.gameplayCalls.at(-1) === "stop", "Back-forward cache entry saves and stops the session without disposing it");
+  f.root.emit("pageshow");
+  check(f.api.status().ready && !f.api.status().paused && f.gameplayCalls.at(-1) === "start" && f.readyCalls === 1, "Back-forward cache restoration resumes the same session without repeating Game Ready");
+  f.root.emit("pagehide", { persisted: false }); const beforePermanentExit = f.calls.length;
+  f.root.emit("pageshow"); f.emitSDK("game_api_resume"); await f.api.init();
+  check(f.api.status().disposed && !f.api.status().ready && f.calls.length === beforePermanentExit && f.initCalls === 1, "Permanent page departure releases listeners and cannot resurrect the finished session");
+
+  let rejectDisposedSDK;
+  f = fixture({ sdkPromise: new Promise((resolve, reject) => { rejectDisposedSDK = reject; }) });
+  const abandonedFailure = f.api.init(); await Promise.resolve(); await Promise.resolve();
+  f.api.dispose(); rejectDisposedSDK(new Error("Late network failure")); await abandonedFailure;
+  check(!f.api.status().failed && f.api.status().disposed && f.readyCalls === 0, "A rejected SDK request after disposal cannot reopen loading or show a stale error");
+
+  let pauseInsideGameplayStart = true;
+  f = fixture({ onGameplay(phase) {
+    if (phase === "start" && pauseInsideGameplayStart) { pauseInsideGameplayStart = false; f.emitSDK("game_api_pause"); }
+  } });
+  await start(f);
+  check(JSON.stringify(f.gameplayCalls) === '["start","stop"]' && f.api.status().paused && !f.api.status().gameplayReported, "A synchronous SDK pause during GameplayAPI.start produces one stop without recursive start signals");
+  f.emitSDK("game_api_resume");
+  check(JSON.stringify(f.gameplayCalls) === '["start","stop","start"]' && !f.api.status().paused, "Resume after a synchronous SDK event restores one active gameplay phase");
 
   fs.mkdirSync(path.join(__dirname, "../Logs"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));

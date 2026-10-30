@@ -70,6 +70,7 @@ async function run() {
   check(state.ready && state.sdk && !state.local && !state.paused, "Built WebGL initializes the official SDK dev environment and unpauses");
   check(consoleLogs.filter(value => value.text.includes("LoadingAPI.ready()")).length === 1, "Game Ready reaches the official dev SDK once");
   check(state.language === "ru" && state.languageApplied && await page.locator("html").getAttribute("lang") === "ru", "The built Unity language acknowledgement applies Russian before Game Ready");
+  check(state.engineActive && state.gameplayReported, "The built Unity controller reports active gameplay through the official SDK after Game Ready");
   const fresh = await read();
   check(fresh.coins === 80 && fresh.tickets === 2 && fresh.guideStep === 0, "Fresh browser session uses the existing starting resources and guide");
   await shot("webgl-start");
@@ -106,12 +107,14 @@ async function run() {
   // Headless Edge keeps all tabs visible. Deliver the browser lifecycle events explicitly;
   // this verifies the shipped bridge and Unity player, not physical tab switching on a device.
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
-  await page.waitForFunction(() => LuckyPickaxe.status().paused, null, { polling: 100, timeout: 10000 });
+  await page.waitForFunction(() => LuckyPickaxe.status().paused && !LuckyPickaxe.status().engineActive, null, { polling: 100, timeout: 10000 });
+  check(await page.evaluate(() => !LuckyPickaxe.status().gameplayReported), "Gameplay reporting stops together with the actual Unity pause after blur");
   const departure = await read(); await page.waitForTimeout(1200);
   check(JSON.stringify(await read()) === JSON.stringify(departure), "Browser blur event freezes live production and the departure timestamp in the built player");
   await shot("webgl-paused");
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await page.waitForFunction(() => !LuckyPickaxe.status().paused, null, { polling: 100, timeout: 10000 });
+  await page.waitForFunction(() => !LuckyPickaxe.status().paused && LuckyPickaxe.status().engineActive, null, { polling: 100, timeout: 10000 });
+  check(await page.evaluate(() => LuckyPickaxe.status().gameplayReported), "Focus reports a gameplay restart only after Unity actually resumes");
   check((await read()).coins === departure.coins, "Browser focus event resumes without silently crediting the offline crate to the wallet");
 
   await page.route("**/sdk.js", async route => {
@@ -123,6 +126,7 @@ async function run() {
   await tap(240, 684);
   await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending && window.rewardedFixture?.requests === 1);
   const beforeVideo = await read();
+  check(await page.evaluate(() => !LuckyPickaxe.status().engineActive && !LuckyPickaxe.status().gameplayReported), "Opening rewarded video stops both Unity and GameplayAPI before callbacks can award coins");
   await tap(240, 624); await tap(240, 684);
   check(JSON.stringify(await read()) === JSON.stringify(beforeVideo) && await page.evaluate(() => rewardedFixture.requests === 1 && LuckyPickaxe.status().paused), "Real video button crosses the WebGL bridge once and blocks ordinary claim and live production");
   await page.evaluate(() => { rewardedFixture.callbacks.onRewarded(); rewardedFixture.callbacks.onRewarded(); });
@@ -130,7 +134,8 @@ async function run() {
   const videoPaid = await read();
   check(videoPaid.coins === beforeVideo.coins + 2 * beforeVideo.offlineCoins && videoPaid.totalOfflineCoins === 2 * beforeVideo.offlineCoins, "onRewarded journals exactly twice the crate before close; duplicate callbacks cannot pay again");
   await page.evaluate(() => rewardedFixture.callbacks.onClose());
-  await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  await page.waitForFunction(() => !LuckyPickaxe.status().paused && LuckyPickaxe.status().engineActive);
+  check(await page.evaluate(() => LuckyPickaxe.status().gameplayReported), "Closing the rewarded fixture restores GameplayAPI after the controller releases its independent ad pause");
   check((await read()).offlineCoins === 0 && !await page.evaluate(() => LuckyPickaxe.status().rewardedPending), "Video close resumes gameplay without creating another crate from ad time");
   await page.reload(); await waitReady(); saved = await read();
   check(saved.totalOfflineCoins === videoPaid.totalOfflineCoins && saved.coins >= videoPaid.coins && saved.offlineCoins < 10, "Reload preserves the paid video result and cannot recreate its original crate");

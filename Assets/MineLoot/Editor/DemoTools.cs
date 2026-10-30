@@ -28,7 +28,7 @@ public static partial class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.19.0";
+        PlayerSettings.bundleVersion = "0.20.0";
         PlayerSettings.defaultScreenWidth = 1280; PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -973,7 +973,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.19.0";
+        PlayerSettings.bundleVersion = "0.20.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
@@ -993,7 +993,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("Use Unity 2022.3.47f1 for WebGL.");
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.WebGL, BuildTarget.WebGL)) throw new Exception("Install WebGL Build Support for Unity 2022.3.47f1.");
-        PlayerSettings.bundleVersion = "0.19.0";
+        PlayerSettings.bundleVersion = "0.20.0";
         PlayerSettings.WebGL.template = "PROJECT:LuckyPickaxe";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
