@@ -179,6 +179,30 @@ async function run() {
   await page.reload(); await waitReady(); saved = await read();
   check(saved.workerCount === 1 && saved.coins >= 700, "Wide interface reload preserves the purchased machinery");
 
+  await seed({ ...fresh, coins: 10000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(989, 634); await shot("webgl-bulk-preview");
+  await tap(989, 328); saved = await read();
+  check(saved.upgradeLevel === 10 && saved.coins === 5367, "Wide batch button buys ten pickaxe ranks for the summed 4633-coin price");
+  await page.reload(); await waitReady(); saved = await read();
+  check(saved.upgradeLevel === 10 && saved.coins === 5367, "Reload keeps the entire batch transaction in the existing save");
+  await tap(989, 328); saved = await read();
+  check(saved.upgradeLevel === 11 && saved.coins === 5367 - Math.round(120 * 1.28 ** 10), "A fresh launch resets quantity to one and never silently buys another batch");
+
+  await seed({ ...fresh, coins: 10000, experience: 700, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(989, 634); await tap(989, 461); saved = await read();
+  check(saved.swapLevel === 2 && saved.coins === 7000, "Batch exchange purchase stops at the next level gate without charging unavailable ranks");
+
+  await seed({ ...fresh, coins: 1000, experience: 100, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(989, 634); await tap(989, 634); await tap(1169, 194); await tap(989, 328); saved = await read();
+  check(saved.workerCount === 2 && saved.coins >= 346 && saved.coins <= 350, "Maximum amount remains selected across sections and hires exactly two affordable workers");
+  await shot("webgl-bulk-production");
+
+  await page.setViewportSize({ width: 480, height: 960 });
+  await seed({ ...fresh, coins: 274, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(384, 916); await tap(129, 768); await tap(129, 407); saved = await read();
+  check(saved.upgradeLevel === 2 && saved.coins === 0, "Portrait quantity control buys only the two affordable pickaxe ranks through actual canvas input");
+  await shot("webgl-bulk-portrait");
+
   await seed({ ...fresh, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300);
   for (let i = 0; i < 6; i++) { await page.touchscreen.tap(175, 341); await page.waitForTimeout(120); }

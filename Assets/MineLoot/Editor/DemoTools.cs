@@ -28,7 +28,7 @@ public static partial class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.20.0";
+        PlayerSettings.bundleVersion = "0.21.0";
         PlayerSettings.defaultScreenWidth = 1280; PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -151,6 +151,7 @@ public static partial class DemoTools
         VerifyRiskRules(Check);
         VerifyExchangeRules(Check);
         VerifyUpgradeRules(Check);
+        VerifyBulkUpgradeRules(Check);
         VerifyMilestoneRules(Check);
         VerifyProductionRules(Check);
         VerifyOfflineRules(Check);
@@ -353,6 +354,47 @@ public static partial class DemoTools
             check(!restored.HasPendingRoll && restored.ResolveRoll() == null && restored.Progress.coins == coins, "PlayerPrefs persists the final reward once");
         }
         finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
+    }
+
+    private static void VerifyBulkUpgradeRules(Action<bool, string> check)
+    {
+        var game = new MineGame(new MineProgress { coins = 274 });
+        string before = JsonUtility.ToJson(game.Progress);
+        check(game.QuoteUpgrade(UpgradeKind.Pickaxe, 10, out long price) == 2 && price == 274 && JsonUtility.ToJson(game.Progress) == before, "Bulk quote uses the sum of rounded rank prices and never spends coins");
+        check(game.BuyUpgrade(UpgradeKind.Pickaxe, 10) == 2 && game.Progress.upgradeLevel == 2 && game.Progress.coins == 0, "Bulk purchase uses only affordable ranks at the exact wallet boundary");
+        game = new MineGame(new MineProgress { coins = 273 });
+        check(game.QuoteUpgrade(UpgradeKind.Pickaxe, int.MaxValue, out price) == 1 && price == 120 && game.BuyUpgrade(UpgradeKind.Pickaxe, int.MaxValue) == 1 && game.Progress.coins == 153, "One missing coin cannot buy the next rank or overdraw the wallet");
+        before = JsonUtility.ToJson(game.Progress);
+        check(game.QuoteUpgrade(UpgradeKind.Pickaxe, 0, out price) == 0 && price == 0 && game.BuyUpgrade(UpgradeKind.Pickaxe, -1) == 0 && JsonUtility.ToJson(game.Progress) == before, "Nonpositive bulk amounts are no-ops");
+
+        foreach (UpgradeKind kind in Enum.GetValues(typeof(UpgradeKind)))
+        foreach (int level in new[] { 1, 3, 8, 50 })
+        foreach (int requested in new[] { 1, 10, int.MaxValue })
+        {
+            var source = new MineProgress { coins = 1000000, experience = MineGame.ExperienceForLevel(level), workerCount = 1, drillCount = 1, cartCount = 1, hits = 11 };
+            game = new MineGame(source);
+            before = JsonUtility.ToJson(game.Progress);
+            var single = new MineGame(ProgressStore.Decode(before));
+            int expected = 0;
+            while (expected < requested && single.BuyUpgrade(kind)) expected++;
+            long spent = game.Progress.coins - single.Progress.coins;
+            int quoted = game.QuoteUpgrade(kind, requested, out price);
+            check(quoted == expected && price == spent && JsonUtility.ToJson(game.Progress) == before, "Bulk quote matches existing rank gates and prices: " + kind + "/" + level + "/" + requested);
+            check(game.BuyUpgrade(kind, requested) == expected && JsonUtility.ToJson(game.Progress) == JsonUtility.ToJson(single.Progress), "Bulk transaction preserves all single-purchase effects: " + kind + "/" + level + "/" + requested);
+        }
+
+        game = new MineGame(new MineProgress { coins = MineGame.CoinLimit, experience = MineGame.ExperienceForLevel(50), forgeLevel = MineGame.MaxForge - 1 });
+        long lastPrice = game.ForgeCost;
+        check(game.QuoteUpgrade(UpgradeKind.Forge, int.MaxValue, out price) == 1 && price == lastPrice && game.BuyUpgrade(UpgradeKind.Forge, int.MaxValue) == 1 && !game.CanForge, "Maximum bulk amount stops exactly at the upgrade cap");
+        foreach (var kind in new[] { UpgradeKind.Drill, UpgradeKind.Cart, UpgradeKind.Rails, UpgradeKind.Warehouse })
+        {
+            game = new MineGame(new MineProgress { coins = MineGame.CoinLimit, experience = MineGame.ExperienceForLevel(50) });
+            check(game.QuoteUpgrade(kind, 10, out price) == 0 && price == 0 && game.BuyUpgrade(kind, 10) == 0, "Bulk purchase cannot bypass machinery prerequisites: " + kind);
+        }
+        game = new MineGame(new MineProgress { coins = 1000000, experience = MineGame.ExperienceForLevel(50) }); game.BeginRoll(() => 0);
+        before = JsonUtility.ToJson(game.Progress);
+        foreach (UpgradeKind kind in Enum.GetValues(typeof(UpgradeKind)))
+            check(game.QuoteUpgrade(kind, int.MaxValue, out price) == 0 && price == 0 && game.BuyUpgrade(kind, 10) == 0 && JsonUtility.ToJson(game.Progress) == before, "Pending paid draw blocks bulk purchases: " + kind);
     }
 
     private static void VerifyUpgradeRules(Action<bool, string> check)
@@ -973,7 +1015,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.20.0";
+        PlayerSettings.bundleVersion = "0.21.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
@@ -993,7 +1035,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("Use Unity 2022.3.47f1 for WebGL.");
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.WebGL, BuildTarget.WebGL)) throw new Exception("Install WebGL Build Support for Unity 2022.3.47f1.");
-        PlayerSettings.bundleVersion = "0.20.0";
+        PlayerSettings.bundleVersion = "0.21.0";
         PlayerSettings.WebGL.template = "PROJECT:LuckyPickaxe";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;

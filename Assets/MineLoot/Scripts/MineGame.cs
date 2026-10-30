@@ -500,9 +500,11 @@ namespace MineLoot
             }
         }
 
-        public int UpgradeUnlock(UpgradeKind kind)
+        public int UpgradeUnlock(UpgradeKind kind) => UpgradeUnlock(kind, UpgradeLevel(kind));
+
+        private static int UpgradeUnlock(UpgradeKind kind, int level)
         {
-            int rank = Math.Min(UpgradeLevel(kind), UpgradeMax(kind) - 1);
+            int rank = Math.Min(level, UpgradeMax(kind) - 1);
             switch (kind)
             {
                 case UpgradeKind.Swap: return new[] { 3, 8, 15 }[rank];
@@ -518,9 +520,10 @@ namespace MineLoot
             }
         }
 
-        public long UpgradePrice(UpgradeKind kind)
+        public long UpgradePrice(UpgradeKind kind) => UpgradePrice(kind, UpgradeLevel(kind));
+
+        private static long UpgradePrice(UpgradeKind kind, int rank)
         {
-            int rank = UpgradeLevel(kind);
             double start, growth;
             switch (kind)
             {
@@ -543,6 +546,29 @@ namespace MineLoot
         public UpgradeKind? UpgradePrerequisite(UpgradeKind kind) => kind == UpgradeKind.Drill || kind == UpgradeKind.Warehouse ? UpgradeKind.Worker : kind == UpgradeKind.Cart ? UpgradeKind.Drill : kind == UpgradeKind.Rails ? UpgradeKind.Cart : (UpgradeKind?)null;
         public bool HasUpgradePrerequisite(UpgradeKind kind) => !UpgradePrerequisite(kind).HasValue || UpgradeLevel(UpgradePrerequisite(kind).Value) > 0;
         public bool CanBuyUpgrade(UpgradeKind kind) => !HasPendingRoll && HasUpgradePrerequisite(kind) && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
+
+        // Quote without changing the wallet, ticket progress or any upgrade. Each rank keeps its own gate.
+        public int QuoteUpgrade(UpgradeKind kind, int requested, out long price)
+        {
+            price = 0;
+            if (requested <= 0 || HasPendingRoll || !HasUpgradePrerequisite(kind)) return 0;
+            int rank = UpgradeLevel(kind), count = 0, limit = Math.Min(requested, UpgradeMax(kind) - rank), miner = MinerLevel;
+            while (count < limit && miner >= UpgradeUnlock(kind, rank + count))
+            {
+                long next = UpgradePrice(kind, rank + count);
+                if (next > Progress.coins - price) break;
+                price += next; count++;
+            }
+            return count;
+        }
+
+        public int BuyUpgrade(UpgradeKind kind, int requested)
+        {
+            int count = QuoteUpgrade(kind, requested, out _);
+            // Reuse every single-purchase effect, including conversion of earned press progress.
+            for (int i = 0; i < count; i++) BuyUpgrade(kind);
+            return count;
+        }
 
         public bool BuyUpgrade(UpgradeKind kind)
         {

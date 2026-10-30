@@ -155,6 +155,7 @@ namespace MineLoot
             yield return new WaitForSecondsRealtime(.3f);
             yield return VerifyWorkshop(demo, stage, shaft);
             yield return VerifyProduction(demo, stage);
+            yield return VerifyBulkUpgrades(demo);
             yield return VerifyOffline(demo);
             yield return VerifyRewardedOffline(demo);
             yield return VerifyResponsiveLayout(demo, stage, shaft);
@@ -364,6 +365,44 @@ namespace MineLoot
             }
             File.WriteAllText(Path.Combine(output, "production-animation-times.txt"), times.ToString());
             demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
+        }
+
+        private IEnumerator VerifyBulkUpgrades(DemoController demo)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            demo.RestoreForSmoke(new MineProgress { coins = 100000, experience = MineGame.ExperienceForLevel(50) }); demo.ShowWorkshop();
+            Check(FindButton("Purchase amount").GetComponentInChildren<Text>().text == "ПОКУПКА: ×1", "Workshop starts with the single-purchase amount");
+            Click("Purchase amount");
+            int count = demo.Game.QuoteUpgrade(UpgradeKind.Pickaxe, 10, out long price);
+            Check(count == 10 && FindButton("Buy Pickaxe").GetComponentInChildren<Text>().text == "×10 · " + price.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("ru-RU")), "Batch button displays its actual quantity and full summed price");
+            CheckLayout(); Capture("unity-workshop-bulk.png");
+            Click("Buy Pickaxe");
+            Check(demo.Game.Progress.upgradeLevel == 10 && demo.Game.Progress.coins == 100000 - price && demo.Game.PickTier == 2, "Real batch button buys ten ranks and refreshes the equipped pick");
+            Click("Purchase amount");
+            Check(FindButton("Purchase amount").GetComponentInChildren<Text>().text == "ПОКУПКА: МАКС.", "Quantity selector reaches maximum mode");
+            long coins = demo.Game.Progress.coins, singlePrice = demo.Game.UpgradeCost;
+            demo.ShowPage(false); demo.Upgrade();
+            Check(demo.Game.Progress.upgradeLevel == 11 && demo.Game.Progress.coins == coins - singlePrice, "Quick mine upgrade remains one purchase even when workshop maximum is selected");
+            demo.ShowWorkshop(); Click("Production section");
+            count = demo.Game.QuoteUpgrade(UpgradeKind.Worker, int.MaxValue, out price); coins = demo.Game.Progress.coins;
+            Click("Buy Worker");
+            Check(count > 10 && demo.Game.Progress.workerCount == count && demo.Game.Progress.coins == coins - price, "Maximum mode buys exactly the affordable worker group through its real button");
+            Capture("unity-production-bulk.png"); CheckLayout();
+            Click("Purchase amount");
+            Check(FindButton("Purchase amount").GetComponentInChildren<Text>().text == "ПОКУПКА: ×1", "Quantity selection cycles back to one in the production section");
+
+            demo.RestoreForSmoke(new MineProgress { coins = 10000, experience = MineGame.ExperienceForLevel(8) }); demo.ShowWorkshop();
+            Click("Purchase amount"); count = demo.Game.QuoteUpgrade(UpgradeKind.Swap, 10, out price);
+            Check(count == 2 && FindButton("Buy Swap").GetComponentInChildren<Text>().text.StartsWith("×2 · "), "Batch preview stops at the next miner level requirement");
+            Click("Buy Swap");
+            Check(demo.Game.Progress.swapLevel == 2 && demo.Game.Progress.coins == 7000 && !FindButton("Buy Swap").interactable, "Partial batch respects the next exchange gate and charges only two ranks");
+            demo.PauseForSmoke(true); demo.CyclePurchaseAmount(); demo.Purchase(UpgradeKind.Pickaxe);
+            Check(demo.Game.Progress.upgradeLevel == 0 && demo.Game.Progress.coins == 7000 && FindButton("Purchase amount").GetComponentInChildren<Text>().text == "ПОКУПКА: ×10", "Platform pause blocks both quantity changes and bulk spending");
+            demo.PauseForSmoke(false);
+            var restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
+            Check(restored.Progress.swapLevel == 2 && restored.Progress.coins == 7000 && restored.Progress.version == 11, "Batch results round-trip through the existing v11 save");
+            demo.RestoreForSmoke(ProgressStore.Decode(original));
+            yield return null;
         }
 
         private IEnumerator VerifyOffline(DemoController demo)

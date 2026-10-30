@@ -90,7 +90,7 @@ namespace MineLoot
             if (dialogShade != null) dialogShade.SetActive(false);
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false;
             offlineNoticeQueued = game.HasOfflineReward;
-            productionTab = false;
+            productionTab = false; purchaseAmount = 1;
             noticeTime = 0; noticeGroup.alpha = 0;
             mineStatus.text = "Нажимай или удерживай блок";
             Array.Copy(game.Progress.depths, shownDepths, 5);
@@ -289,11 +289,14 @@ namespace MineLoot
 
         public void Purchase(UpgradeKind kind)
         {
-            if (kind == UpgradeKind.Pickaxe) { Upgrade(); return; }
-            if (kind == UpgradeKind.Forge) { Forge(); return; }
-            if (applicationPaused || busy || modal != null || !game.BuyUpgrade(kind)) return;
+            if (purchaseAmount == 1 && kind == UpgradeKind.Pickaxe) { Upgrade(); return; }
+            if (purchaseAmount == 1 && kind == UpgradeKind.Forge) { Forge(); return; }
+            if (applicationPaused || busy || modal != null) return;
+            int count = game.BuyUpgrade(kind, purchaseAmount);
+            if (count == 0) return;
+            if (kind == UpgradeKind.Pickaxe) upgradePulse = 1;
             sounds.Play("upgrade");
-            Notice(UpgradeNames[(int)kind].ToUpperInvariant(), "Уровень " + game.UpgradeLevel(kind) + "\n" + UpgradeEffect(kind, false).Replace("\n", " · "));
+            Notice(UpgradeNames[(int)kind].ToUpperInvariant(), (count > 1 ? "+" + count + " · " : "") + "Уровень " + game.UpgradeLevel(kind) + "\n" + UpgradeEffect(kind, false).Replace("\n", " · "));
             Persist(); Flush(); Refresh();
         }
 

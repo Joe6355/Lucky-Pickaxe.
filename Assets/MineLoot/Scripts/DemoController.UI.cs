@@ -21,6 +21,8 @@ namespace MineLoot
         private readonly Text[] workshopTitles = new Text[6];
         private readonly GameObject[] workshopCards = new GameObject[6];
         private Button equipmentTab, productionTabButton, richVeinButton;
+        private Button purchaseAmountButton;
+        private int purchaseAmount = 1;
         private Text workshopFootnote, productionRateLabel, productionBreakdown, productionSynergy, productionTotal, richVeinTimer;
         private GameObject productionSummary;
         private bool productionTab;
@@ -277,8 +279,10 @@ namespace MineLoot
             productionBreakdown = Label(productionSummary.transform, "", 12, 76, 187, 22, 16, Muted);
             productionSynergy = Label(productionSummary.transform, "", 12, 100, 187, 22, 16, Muted);
             productionTotal = Label(productionSummary.transform, "", 12, 125, 187, 22, 16, Muted);
-            workshopFootnote = Label(page, "", 24, 589, 432, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
-            offlineButton = ButtonAt(page, "", 24, 584, 432, 32, ShowOfflineReward, Hex("b5c48f"), Ink);
+            purchaseAmountButton = ButtonAt(page, "", 24, 584, 211, 32, CyclePurchaseAmount, Hex("b5c48f"), Ink);
+            purchaseAmountButton.name = "Purchase amount"; purchaseAmountButton.GetComponentInChildren<Text>().fontSize = 17;
+            workshopFootnote = Label(page, "", 245, 589, 211, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+            offlineButton = ButtonAt(page, "", 245, 584, 211, 32, ShowOfflineReward, Hex("b5c48f"), Ink);
             offlineButton.name = "Open warehouse"; offlineButtonLabel = offlineButton.GetComponentInChildren<Text>(); offlineButtonLabel.fontSize = 18;
         }
 
@@ -290,13 +294,21 @@ namespace MineLoot
             productionTab = production; RefreshWorkshop(); RefreshGuide();
         }
 
+        public void CyclePurchaseAmount()
+        {
+            if (applicationPaused || busy || modal != null) return;
+            purchaseAmount = purchaseAmount == 1 ? 10 : purchaseAmount == 10 ? int.MaxValue : 1;
+            RefreshWorkshop();
+        }
+
         private string UpgradeEffect(UpgradeKind kind, bool preview)
         {
-            int rank = game.UpgradeLevel(kind), target = Mathf.Min(rank + (preview ? 1 : 0), MineGame.UpgradeMax(kind));
+            int count = preview ? Mathf.Max(1, game.QuoteUpgrade(kind, purchaseAmount, out _)) : 0;
+            int rank = game.UpgradeLevel(kind), target = Mathf.Min(rank + count, MineGame.UpgradeMax(kind));
             string Value(int before, int after) => preview && rank < MineGame.UpgradeMax(kind) ? before + " > " + after : before.ToString();
             switch (kind)
             {
-                case UpgradeKind.Pickaxe: return "Доход: " + Value(game.ClickPower, game.ClickPower + game.ClickUpgradeGain) + "\nУрон: " + Value(game.MiningDamage, 1 + target / 5 + game.Progress.efficiencyLevel);
+                case UpgradeKind.Pickaxe: return "Доход: " + Value(game.ClickPower, game.ClickPower + game.ClickUpgradeGain * (target - rank)) + "\nУрон: " + Value(game.MiningDamage, 1 + target / 5 + game.Progress.efficiencyLevel);
                 case UpgradeKind.Forge: return "Алмаз: " + Value(game.DiamondChance, 10 + target) + "%\nСила: +" + Value(game.PowerBonus, target / 2);
                 case UpgradeKind.Swap: return "Обменов: " + Value(rank, target) + "\nВ рулетке";
                 case UpgradeKind.Efficiency: return "Урон: " + Value(game.MiningDamage, 1 + game.Progress.upgradeLevel / 5 + target) + "\nДобыча руды";
@@ -319,9 +331,11 @@ namespace MineLoot
             productionBreakdown.text = "Буры: +" + game.DrillBonus + "%";
             productionSynergy.text = "Логистика: +" + game.CartBonus + "%";
             productionTotal.text = "Добыто: " + ShortAmount(game.Progress.totalProduced);
-            workshopFootnote.gameObject.SetActive(!productionTab); workshopFootnote.text = "Каждая покупка сохраняется сразу";
+            purchaseAmountButton.interactable = !busy;
+            purchaseAmountButton.GetComponentInChildren<Text>().text = "ПОКУПКА: " + (purchaseAmount == int.MaxValue ? "МАКС." : "×" + purchaseAmount);
+            workshopFootnote.gameObject.SetActive(!productionTab); workshopFootnote.text = "Сохраняется сразу";
             offlineButton.gameObject.SetActive(productionTab); offlineButton.interactable = !busy;
-            offlineButtonLabel.text = game.HasOfflineReward ? "СКЛАД: " + ShortAmount(game.Progress.offlineCoins) + " МОНЕТ" : "СКЛАД · ОФЛАЙН ДО " + game.OfflineHours + " Ч.";
+            offlineButtonLabel.text = game.HasOfflineReward ? "СКЛАД: " + ShortAmount(game.Progress.offlineCoins) : "СКЛАД · ДО " + game.OfflineHours + " Ч.";
             offlineButton.image.color = game.HasOfflineReward ? Hex("d9bd80") : Hex("b5c48f");
             for (int i = 0; i < workshopButtons.Length; i++)
             {
@@ -329,17 +343,19 @@ namespace MineLoot
                 var kind = WorkshopKind(i);
                 workshopTitles[i].text = UpgradeNames[(int)kind]; workshopIcons[i].sprite = art.Get(icons[(int)kind]); workshopButtons[i].name = "Buy " + kind;
                 int rank = game.UpgradeLevel(kind), max = MineGame.UpgradeMax(kind), unlock = game.UpgradeUnlock(kind);
+                int count = game.QuoteUpgrade(kind, purchaseAmount, out long totalPrice);
                 bool capped = rank == max, locked = game.MinerLevel < unlock;
-                workshopLevels[i].text = "Ур. " + rank + " / " + max;
+                workshopLevels[i].text = count > 1 ? "Ур. " + rank + " > " + (rank + count) : "Ур. " + rank + " / " + max;
                 workshopEffects[i].text = UpgradeEffect(kind, true);
                 string prerequisite = game.HasUpgradePrerequisite(kind) ? "" : "Нужен: " + UpgradeNames[(int)game.UpgradePrerequisite(kind).Value];
                 workshopStates[i].text = capped ? "Полностью улучшено" : locked ? "Нужен шахтёр ур. " + unlock : game.HasPendingRoll ? "Заверши бросок" : prerequisite.Length > 0 ? prerequisite : game.CanBuyUpgrade(kind) ? "Можно улучшить" : "Нужно ещё: " + ShortAmount(game.UpgradePrice(kind) - game.Progress.coins);
                 workshopStates[i].color = locked ? Hex("805644") : Muted;
                 workshopProgress[i].rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 187f * rank / max);
-                var button = workshopButtons[i]; button.interactable = !busy && game.CanBuyUpgrade(kind);
+                var button = workshopButtons[i]; button.interactable = !busy && count > 0;
                 button.image.color = button.interactable ? Hex("d9bd80") : Hex("a9ada3");
-                var label = button.GetComponentInChildren<Text>(); label.text = capped ? "Максимум" : ShortAmount(game.UpgradePrice(kind)) + " монет";
-                label.resizeTextForBestFit = true; label.resizeTextMinSize = 16; label.resizeTextMaxSize = 20;
+                var label = button.GetComponentInChildren<Text>();
+                label.text = capped ? "Максимум" : count > 1 ? "×" + count + " · " + totalPrice.ToString("N0", interfaceCulture) : ShortAmount(game.UpgradePrice(kind)) + " монет";
+                label.resizeTextForBestFit = true; label.resizeTextMinSize = 14; label.resizeTextMaxSize = 20;
             }
         }
 

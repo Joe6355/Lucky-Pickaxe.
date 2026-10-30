@@ -150,8 +150,9 @@ namespace MineLoot
                 ButtonFrame(workshopButtons[i], 12, 125, 187, 32);
             }
             Frame(productionSummary.GetComponent<RectTransform>(), 245, 436, 211, 164);
-            Frame(workshopFootnote.rectTransform, 24, 612, 432, 24);
-            ButtonFrame(offlineButton, 24, 612, 432, 30);
+            ButtonFrame(purchaseAmountButton, 24, 612, 211, 30);
+            Frame(workshopFootnote.rectTransform, 245, 612, 211, 24);
+            ButtonFrame(offlineButton, 245, 612, 211, 30);
             Frame(contractCard.GetComponent<RectTransform>(), width - 528, 866 - 798 * side, 480, 960, side);
             Frame(guideCard.GetComponent<RectTransform>(), width - 528 + 24 * side, 866, 432, 83, side);
             noticeHome = new Vector2((width - 374) / 2, -10);
