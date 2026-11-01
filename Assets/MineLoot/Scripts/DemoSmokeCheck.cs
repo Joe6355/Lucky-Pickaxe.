@@ -97,9 +97,29 @@ namespace MineLoot
             // Isolate synthetic pointer events from the desktop cursor while running in a hidden window.
             var inputModule = EventSystem.current.currentInputModule; bool inputEnabled = inputModule.enabled;
             inputModule.enabled = false;
-            float holdStarted = Time.realtimeSinceStartup;
+            pointer.button = PointerEventData.InputButton.Right;
             ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
-            while (demo.Game.Progress.totalClicks - heldStart < 3 && Time.realtimeSinceStartup - holdStarted < 2) yield return null;
+            yield return new WaitForSecondsRealtime(.45f);
+            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
+            Check(demo.Game.Progress.totalClicks == heldStart, "Secondary pointer cannot start mining through the Unity event handler");
+            pointer.button = PointerEventData.InputButton.Middle;
+            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
+            yield return new WaitForSecondsRealtime(.45f);
+            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
+            Check(demo.Game.Progress.totalClicks == heldStart, "Middle pointer cannot start mining through the Unity event handler");
+            pointer.button = PointerEventData.InputButton.Left;
+            float holdStarted = Time.realtimeSinceStartup; bool secondaryReleased = false;
+            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
+            while (demo.Game.Progress.totalClicks - heldStart < 3 && Time.realtimeSinceStartup - holdStarted < 2)
+            {
+                if (!secondaryReleased && demo.Game.Progress.totalClicks > heldStart)
+                {
+                    pointer.button = PointerEventData.InputButton.Right;
+                    ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
+                    pointer.button = PointerEventData.InputButton.Left; secondaryReleased = true;
+                }
+                yield return null;
+            }
             ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
             long beforeRelease = demo.Game.Progress.totalClicks;
             rockButton.onClick.Invoke();
@@ -156,6 +176,7 @@ namespace MineLoot
             yield return VerifyWorkshop(demo, stage, shaft);
             yield return VerifyProduction(demo, stage);
             yield return VerifyBulkUpgrades(demo);
+            yield return VerifyAbandonConfirmation(demo);
             yield return VerifyOffline(demo);
             yield return VerifyRewardedOffline(demo);
             yield return VerifyResponsiveLayout(demo, stage, shaft);
@@ -212,6 +233,8 @@ namespace MineLoot
             Check(demo.Game.Progress.coins == previousCoins && demo.Game.Progress.tickets == 3 && !demo.Game.IsComplete, "Obsidian loses the ticket without money or free progress");
             CheckLayout(); Capture("unity-roulette-loss.png");
             Click("Abandon floor");
+            Check(demo.Game.Progress.tickets == 3 && demo.Game.Progress.coins == previousCoins, "Opening shaft change does not spend the ticket");
+            Click("Confirm abandon");
             Check(demo.Game.Progress.stratum == 1 && demo.Game.Progress.tickets == 2 && shaft.VisibleBlocks == 25 && demo.Game.Progress.coins == previousCoins, "Changing shaft costs a ticket and keeps reward tier unchanged");
             demo.Game.Progress.boardSeed = 1758; demo.Game.Progress.stratum = 1;
             Array.Clear(demo.Game.Progress.damage, 0, 5); Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
@@ -403,6 +426,38 @@ namespace MineLoot
             Check(restored.Progress.swapLevel == 2 && restored.Progress.coins == 7000 && restored.Progress.version == 11, "Batch results round-trip through the existing v11 save");
             demo.RestoreForSmoke(ProgressStore.Decode(original));
             yield return null;
+        }
+
+        private IEnumerator VerifyAbandonConfirmation(DemoController demo)
+        {
+            string original = JsonUtility.ToJson(demo.Game.Progress);
+            var fixture = new MineGame(new MineProgress { coins = 1250, tickets = 3, boardSeed = 1758, depths = new[] { 5, 5, 1, 2, 3 } });
+            for (int row = 1; row < MineGame.Rows; row++)
+                if (fixture.BlockAt(2, row) == BlockKind.Bedrock) { fixture.Progress.depths[2] = row; fixture.Progress.lostColumns[2] = true; break; }
+            foreach (var size in new[] { new Vector2Int(480, 960), new Vector2Int(390, 844), new Vector2Int(960, 540), new Vector2Int(1280, 720) })
+            {
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.2f);
+                demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(fixture.Progress))); demo.ShowPage(true);
+                string before = JsonUtility.ToJson(demo.Game.Progress);
+                Click("Abandon floor");
+                Check(JsonUtility.ToJson(demo.Game.Progress) == before, "Opening shaft confirmation does not change the board or spend resources: " + size);
+                bool summary = false;
+                foreach (var text in GetComponentsInChildren<Text>(false))
+                    if (text.text.Contains("Открыто сундуков: 2/5") && text.text.Contains("Доступно: 2 · потеряно: 1")) summary = true;
+                Check(summary, "Confirmation counts opened, available and lost chests without revealing hidden blocks");
+                CheckLayout(); Capture("unity-abandon-confirm-" + size.x + "x" + size.y + ".png");
+                demo.Spin(); demo.Upgrade(); demo.Purchase(UpgradeKind.Forge);
+                Check(JsonUtility.ToJson(demo.Game.Progress) == before, "Confirmation blocks rolls and workshop purchases behind the modal");
+                Click("Cancel abandon");
+                Check(JsonUtility.ToJson(demo.Game.Progress) == before, "Cancelling the shaft change preserves the complete progress snapshot");
+                Click("Abandon floor"); demo.PauseForSmoke(true);
+                var confirm = FindButton("Confirm abandon"); confirm.onClick.Invoke();
+                Check(demo.Game.Progress.tickets == 3 && demo.Game.Progress.boardSeed == 1758, "Paused confirmation cannot spend a ticket");
+                demo.PauseForSmoke(false); confirm.onClick.Invoke(); confirm.onClick.Invoke();
+                Check(demo.Game.Progress.tickets == 2 && demo.Game.Progress.coins == 1250 && demo.Game.Progress.stratum == 1 && Array.TrueForAll(demo.Game.Progress.depths, depth => depth == 0), "A repeated confirmation spends one ticket, keeps earned coins and resets only the current board");
+            }
+            Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.2f);
+            demo.RestoreForSmoke(ProgressStore.Decode(original));
         }
 
         private IEnumerator VerifyOffline(DemoController demo)

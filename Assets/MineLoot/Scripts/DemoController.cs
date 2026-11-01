@@ -88,7 +88,7 @@ namespace MineLoot
             busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
             if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
             if (dialogShade != null) dialogShade.SetActive(false);
-            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false;
+            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = false;
             offlineNoticeQueued = game.HasOfflineReward;
             productionTab = false; purchaseAmount = 1;
             noticeTime = 0; noticeGroup.alpha = 0;

@@ -14,7 +14,12 @@ async function waitReady() {
 }
 async function read() { return page.evaluate(key => JSON.parse(localStorage.getItem(key)), key); }
 async function shot(name) { await page.screenshot({ path: path.join(logs, name + ".png") }); }
-async function tap(x, y) { await page.mouse.click(x, y, { delay: 60 }); await page.waitForTimeout(120); }
+async function tap(x, y) {
+  await page.mouse.move(x, y); await page.mouse.down();
+  // Keep the press through a Unity update even when software rendering takes longer than 60 ms.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.mouse.up(); await page.waitForTimeout(120);
+}
 async function seed(values) {
   const data = { ...(await read()), ...values };
   // Apply after pagehide has flushed the old live instance, before the new Unity instance loads.
@@ -74,11 +79,16 @@ async function run() {
   const fresh = await read();
   check(fresh.coins === 80 && fresh.tickets === 2 && fresh.guideStep === 0, "Fresh browser session uses the existing starting resources and guide");
   await shot("webgl-start");
+  await page.mouse.move(215, 380); await page.mouse.down({ button: "right" });
+  await page.waitForTimeout(600); await page.mouse.up({ button: "right" });
+  const afterRightHold = await read();
+  check(afterRightHold.totalClicks === fresh.totalClicks && afterRightHold.coins === fresh.coins && afterRightHold.tickets === fresh.tickets,
+    "Holding the secondary mouse button cannot mine ore or earn resources: " + JSON.stringify({ clicks: afterRightHold.totalClicks, coins: afterRightHold.coins }));
   for (let i = 0; i < 12; i++) await tap(215, 380);
   let saved = await read();
   check(saved.totalClicks === 12 && saved.oresMined === 2 && saved.coins === 200 && saved.tickets === 3, "Real canvas clicks mine ore, grant a ticket and synchronously journal the reward");
   await tap(120, 734); saved = await read();
-  check(saved.upgradeLevel === 1 && saved.coins === 80, "Real upgrade button pays the ordinary price in WebGL");
+  check(saved.upgradeLevel === 1 && saved.coins === 80, "Real upgrade button pays the ordinary price in WebGL: " + JSON.stringify({ rank: saved.upgradeLevel, coins: saved.coins, clicks: saved.totalClicks }));
   await page.reload(); await waitReady(); saved = await read();
   check(saved.upgradeLevel === 1 && saved.coins === 80 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
 
@@ -96,6 +106,23 @@ async function run() {
   check(resolved.totalRolls === 1 && !resolved.rollPending, "Real confirm commits one roulette result before its animation");
   await context.close(); await open(profile); saved = await read();
   check(saved.totalRolls === 1 && saved.coins === resolved.coins && JSON.stringify(saved.depths) === JSON.stringify(resolved.depths), "Closing and reopening the browser keeps the resolved reward and depths exactly once");
+
+  await seed({ ...fresh, coins: 1250, tickets: 3, boardSeed: 1758, depths: [5, 1, 2, 0, 3], guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(240, 916); const beforeChange = await read();
+  await tap(266, 780); saved = await read();
+  check(JSON.stringify(saved) === JSON.stringify(beforeChange), "Opening the shaft-change confirmation never spends a ticket or rerolls the board");
+  await shot("webgl-abandon-confirm");
+  await tap(240, 740); saved = await read();
+  check(saved.tickets === 3 && !saved.rollPending && saved.boardSeed === beforeChange.boardSeed, "Confirmation shade blocks the underlying spin button");
+  await tap(240, 596); saved = await read();
+  check(JSON.stringify(saved) === JSON.stringify(beforeChange), "Cancelling a shaft change keeps the entire saved progress unchanged");
+  await tap(266, 780); await page.reload(); await waitReady(); saved = await read();
+  check(saved.tickets === 3 && saved.coins === 1250 && saved.boardSeed === beforeChange.boardSeed && JSON.stringify(saved.depths) === JSON.stringify(beforeChange.depths), "Reloading an unconfirmed change keeps the original paid progress and all tickets");
+  await tap(240, 916); await tap(266, 780); await tap(240, 654); await tap(240, 654); saved = await read();
+  const changedBoard = saved.boardSeed;
+  check(saved.tickets === 2 && saved.coins === 1250 && saved.stratum === beforeChange.stratum && saved.depths.every(depth => depth === 0) && saved.lostColumns.every(lost => !lost), "Confirming twice spends one ticket, keeps earned coins and clears only this board");
+  await page.reload(); await waitReady(); saved = await read();
+  check(saved.tickets === 2 && saved.coins === 1250 && saved.boardSeed === changedBoard && saved.depths.every(depth => depth === 0), "The confirmed shaft change persists without a second charge after reload");
 
   await seed({ ...fresh, coins: 0, workerCount: 1, guideStep: 5, offlineRateMilli: 2000, offlineCapacitySeconds: 14400, lastSeenUtc: Math.floor(Date.now() / 1000) - 600 });
   saved = await read(); const crate = saved.offlineCoins;

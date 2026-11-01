@@ -43,6 +43,7 @@ namespace MineLoot
         private VoxelStage stage, shaft;
         private const float ShaftWindowHeight = 417;
         private Button abandonButton;
+        private bool abandonConfirmationOpen;
         private Image rollRewardIcon;
         private Button milestoneButton, milestonePrevious, milestoneNext;
         private Text milestoneButtonLabel, milestoneSummary, milestonePageLabel;
@@ -242,7 +243,7 @@ namespace MineLoot
             spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 22;
             spinButton.name = "ЗАПУСТИТЬ КИРКИ";
             ButtonAt(page, "Правила", 24, 600, 148, 25, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
-            abandonButton = ButtonAt(page, "Сменить · 1 жетон", 180, 600, 172, 25, AbandonFloor, Panel, Muted);
+            abandonButton = ButtonAt(page, "Сменить · 1 жетон", 180, 600, 172, 25, ShowAbandonConfirmation, Panel, Muted);
             abandonButton.name = "Abandon floor"; abandonButton.GetComponentInChildren<Text>().fontSize = 16;
             ButtonAt(page, "×1", 360, 600, 96, 25, ToggleSpeed, Panel, Muted).name = "Toggle speed";
         }
@@ -596,10 +597,40 @@ namespace MineLoot
             }
         }
 
+        private void ShowAbandonConfirmation()
+        {
+            if (applicationPaused || busy || modal != null || !game.CanAbandon) return;
+            holding = false; abandonConfirmationOpen = true;
+            modal = CreateModal("Abandon confirmation");
+            int opened = 0, lost = 0, cleared = 0;
+            for (int column = 0; column < MineGame.Columns; column++)
+            {
+                if (game.Progress.depths[column] == MineGame.Rows) opened++;
+                if (game.Progress.lostColumns[column]) lost++;
+                cleared += game.Progress.depths[column];
+            }
+            Card(modal.transform, "Abandon card", 24, 220, 432, 480, Panel);
+            Icon(modal.transform, "chest", 46, 242, 48, 48);
+            Label(modal.transform, "СМЕНИТЬ РАСКЛАДКУ?", 110, 241, 323, 35, 25, Ink, FontStyle.Bold);
+            Label(modal.transform, "Пласт " + game.Progress.stratum.ToString("N0", interfaceCulture) + " · новая вылазка", 47, 287, 386, 24, 18, Muted);
+            Card(modal.transform, "Current shaft summary", 47, 321, 386, 94, Hex("d0d9af"));
+            Label(modal.transform, "Открыто сундуков: " + opened + "/5\nДоступно: " + (MineGame.Columns - opened - lost) + " · потеряно: " + lost + "\nПройдено блоков: " + cleared + "/25", 61, 331, 358, 74, 19, Ink);
+            Label(modal.transform, "Оставшиеся сундуки и повреждения\nбудут сброшены. Полученные монеты\nостанутся.", 48, 432, 384, 76, 18, Ink);
+            Label(modal.transform, "Пласт и награды не повысятся.\nНовая раскладка тоже может быть с ловушками.", 48, 516, 384, 42, 16, Muted);
+            ButtonAt(modal.transform, "ПРОДОЛЖИТЬ ЭТУ ВЫЛАЗКУ", 47, 574, 386, 44, CloseModal, Hex("b5cb8a"), Ink).name = "Cancel abandon";
+            ButtonAt(modal.transform, "СМЕНИТЬ · 1 ЖЕТОН", 47, 632, 386, 44, ConfirmAbandon, Hex("d9bd80"), Ink).name = "Confirm abandon";
+        }
+
+        private void ConfirmAbandon()
+        {
+            if (applicationPaused || busy || !abandonConfirmationOpen || modal == null || !game.CanAbandon) return;
+            CloseModal(); AbandonFloor();
+        }
+
         private void CloseModal()
         {
             if (modal == null || RewardedVideoPending) return;
-            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
+            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
             dialogShade.SetActive(false); Refresh();
         }
 
@@ -610,7 +641,9 @@ namespace MineLoot
 
         private static void AddPointer(EventTrigger trigger, EventTriggerType type, UnityEngine.Events.UnityAction action)
         {
-            var entry = new EventTrigger.Entry { eventID = type }; entry.callback.AddListener(_ => action()); trigger.triggers.Add(entry);
+            var entry = new EventTrigger.Entry { eventID = type };
+            entry.callback.AddListener(data => { if (data is PointerEventData pointer && pointer.button == PointerEventData.InputButton.Left) action(); });
+            trigger.triggers.Add(entry);
         }
 
         private IEnumerator FloatReward(Transform parent, float x, float y)
