@@ -8,14 +8,14 @@ namespace MineLoot
 {
     public sealed partial class DemoController : MonoBehaviour
     {
-        private static readonly Color Back = Hex("514a3e"), Panel = Hex("c6cbc0"), Muted = Hex("535d4b"), Ink = Hex("29362c");
-        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд" };
-        private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная" };
-        private static readonly string[] PickSprites = { "pick1", "pick-stone", "pick2", "pick-gold", "pick4" };
-        private static readonly string[] CampNames = { "ЛАГЕРЬ I", "ШТОЛЬНЯ II", "РУДНИК III", "ПРИИСК IV", "АЛМАЗНЫЙ V" };
-        private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари" };
+        private static readonly Color Back = Hex("172631"), Panel = Hex("f0eadc"), Muted = Hex("596975"), Ink = Hex("243541");
+        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд", "Медь", "Лазурит", "Редстоун", "Древние обломки" };
+        private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная", "Незеритовая" };
+        private static readonly string[] PickSprites = { "pick-wood", "pick-stone", "pick2", "pick-gold", "pick4", "pick-netherite" };
+        private static readonly string[] CampNames = { "ПЕРВАЯ ШТОЛЬНЯ", "КАМЕННЫЙ ЗАБОЙ", "ЖЕЛЕЗНЫЙ РУДНИК", "ЗОЛОТОЙ ПРИИСК", "АЛМАЗНАЯ ШАХТА", "ДРЕВНИЕ ГЛУБИНЫ" };
+        private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари", "Незеритовая кирка" };
         private static readonly string[] ForgeFeatures = { "", "Печь и наковальня", "Дымоход и стойка", "Навес мастерской", "Оснащение мастера" };
-        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Острота", "Пресс жетонов", "Сокровища", "Шахтёры", "Буры", "Вагонетки", "Рельсы", "Склад" };
+        private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Эффективность", "Пресс жетонов", "Искатель кладов", "Шахтёры", "Буры", "Вагонетки", "Рельсы", "Склад", "Удача", "Спешка" };
         private readonly PixelArt art = new PixelArt();
         private readonly Image[] picks = new Image[5];
         private readonly Text[] powers = new Text[5];
@@ -52,6 +52,7 @@ namespace MineLoot
         private bool applicationPaused;
         private bool skipEconomyFrame;
         private float nextEconomyRefresh;
+        private float nextRewardsRefresh;
         private bool smokeClockRunning;
         private bool offlineNoticeQueued;
         private long sessionUtc;
@@ -115,6 +116,7 @@ namespace MineLoot
             float dt = PlayDelta;
             if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !busy && modal == null && Application.isFocused);
             skipEconomyFrame = false;
+            if (selectedPage == 3 && Time.unscaledTime >= nextRewardsRefresh) { nextRewardsRefresh = Time.unscaledTime + .5f; RefreshRewards(); }
             if (offlineNoticeQueued && !busy && modal == null && !game.HasPendingRoll) ShowOfflineReward();
             rockPulse = Mathf.MoveTowards(rockPulse, 0, dt * 4.5f);
             upgradePulse = Mathf.MoveTowards(upgradePulse, 0, dt * 2);
@@ -139,7 +141,7 @@ namespace MineLoot
             }
             if (holding && Time.unscaledTime >= nextHold)
             {
-                holdRepeated = true; nextHold = Time.unscaledTime + .16f; Mine();
+                holdRepeated = true; nextHold = Time.unscaledTime + game.SwingSeconds; Mine();
             }
             if (dirty && Time.unscaledTime >= nextSave) Flush();
             AnimateGuide();
@@ -158,10 +160,10 @@ namespace MineLoot
             if (applicationPaused || busy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
             lastMineTime = Time.unscaledTime;
             game.Mine(); var hit = game.LastHit; rockPulse = 1;
-            mineStatus.text = hit.broken ? OreNames[hit.ore] + " добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
+            mineStatus.text = hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
             if (hit.tickets > 0) mineStatus.text += " · +" + hit.tickets + " жетон";
             stage.Hit(hit.broken);
-            sounds.Play(hit.levels > 0 ? "level" : hit.broken ? "break" : hit.ore >= 3 ? "crystal" : hit.ore > 0 ? "metal" : "hit");
+            sounds.Play(hit.levels > 0 ? "level" : hit.broken ? "stone-break" : "stone-hit");
             if (miningGain == null)
             {
                 gainCoins = hit.coins; gainExperience = hit.experience;
@@ -172,7 +174,10 @@ namespace MineLoot
             if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel);
             else if (hit.veinFound) Notice("БОГАТАЯ ЖИЛА", "Нажми золотую кнопку рядом с рудой\nВременное усиление ручной добычи");
             if (game.Progress.hits == 0) visualTicket = 0;
-            Persist(); if (hit.broken || hit.levels > 0) Flush(); Refresh();
+            Persist();
+            // The WebGL journal is synchronous even between the less frequent PlayerPrefs flushes.
+            if (!SmokeMode) BrowserPlatform.WriteProgress(ProgressStore.Key, JsonUtility.ToJson(game.Progress));
+            if (hit.broken || hit.levels > 0) Flush(); Refresh();
         }
 
         private void TickEconomy(double seconds, bool miningActive, bool forceRefresh = false)
@@ -329,26 +334,30 @@ namespace MineLoot
             SelectPage(showRoulette ? 1 : 0);
         }
 
-        public void ShowWorkshop() => SelectPage(2);
+        public void ShowWorkshop() { productionTab = false; SelectPage(2); }
+        public void ShowRewards() => SelectPage(3);
+        private void ShowTeam() { productionTab = true; SelectPage(2); RefreshWorkshop(); }
 
         private void SelectPage(int page)
         {
             if (applicationPaused || busy || modal != null) return;
             holding = false;
-            selectedPage = page; ApplyPageVisibility();
+            selectedPage = page; ApplyPageVisibility(); Refresh();
         }
 
         private void ApplyPageVisibility()
         {
             roulette = selectedPage == 1;
-            bool mining = !roulette && (wideLayout || selectedPage == 0);
-            minePage.SetActive(mining); rollPage.SetActive(roulette); workshopPage.SetActive(wideLayout || selectedPage == 2);
+            bool mining = selectedPage == 0;
+            minePage.SetActive(mining); rollPage.SetActive(roulette); workshopPage.SetActive(selectedPage == 2); rewardsPage.SetActive(selectedPage == 3);
             mineTab.image.color = mining ? Hex("a4c975") : Panel;
             rollTab.image.color = roulette ? Hex("a4c975") : Panel;
             workshopTab.image.color = selectedPage == 2 ? Hex("a4c975") : Panel;
+            rewardsTab.image.color = selectedPage == 3 ? Hex("a4c975") : Panel;
             mineTab.GetComponentInChildren<Text>().color = Ink;
             rollTab.GetComponentInChildren<Text>().color = Ink;
             mineNavMark.enabled = mining; rollNavMark.enabled = roulette; workshopNavMark.enabled = selectedPage == 2;
+            rewardsNavMark.enabled = selectedPage == 3;
             stage.gameObject.SetActive(mining); shaft.gameObject.SetActive(roulette);
             RefreshGuide();
         }
@@ -732,19 +741,19 @@ namespace MineLoot
             if (previousOre != game.Progress.oreKind || game.LastHit.broken) { previousOre = game.Progress.oreKind; visualHealth = 1; }
             veinLabel.text = OreNames[game.Progress.oreKind] + " · " + (game.OreHealth - game.Progress.oreDamage) + "/" + game.OreHealth;
             oreFill.color = game.Progress.oreKind >= 3 ? Hex("80e3bb") : Hex("e1ce82");
-            for (int i = 0; i < 5; i++)
+            for (int slot = 0; slot < MineGame.OreCount; slot++)
             {
-                bool unlocked = i < game.UnlockedOres;
-                oreIcons[i].color = unlocked ? Color.white : new Color(.35f, .4f, .38f, .7f);
-                oreSlots[i].color = i == game.Progress.oreKind ? Hex("c9dd9c") : unlocked ? Panel : Hex("858e83");
-                oreNames[i].text = unlocked ? OreNames[i] : "Ур. " + MineGame.OreUnlockLevel(i);
-                oreNames[i].color = unlocked ? Ink : Hex("e7e8d7");
+                int i = MineGame.OreAtDisplayIndex(slot); bool unlocked = game.IsOreUnlocked(i);
+                oreIcons[slot].color = unlocked ? Color.white : new Color(.4f, .46f, .5f, .65f);
+                oreSlots[slot].color = i == game.Progress.oreKind ? Hex("bce0ca") : unlocked ? Panel : Hex("c2ccce");
+                oreNames[slot].text = unlocked ? (wideLayout ? i == 8 ? "Обломки" : OreNames[i] : "✓") : (wideLayout ? "Ур. " : "") + MineGame.OreUnlockLevel(i);
+                oreNames[slot].color = unlocked ? Ink : Muted;
             }
             upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0", interfaceCulture) + " монет";
             upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
             pickTitle.text = PickNames[game.PickTier];
-            pickDetail.text = "+" + game.ClickUpgradeGain + "/удар · урон " + game.MiningDamage;
-            nextUpgrade.text = game.PickTier == 4 ? "Шахта развита · урон " + game.MiningDamage + " · реликвий " + game.Relics : "Далее: " + CampFeatures[game.PickTier + 1] + " · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
+            pickDetail.text = "Ранг " + game.Progress.upgradeLevel + " · урон " + game.MiningDamage;
+            nextUpgrade.text = game.PickTier == 5 ? "Незерит · продолжай усиливать кирку и чары" : "Далее: " + PickNames[game.PickTier + 1] + " · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
             campLabel.text = CampNames[game.PickTier];
             for (int i = 0; i < campSteps.Length; i++) campSteps[i].color = i <= game.PickTier ? Hex("d4ed96") : Hex("455742");
             forgeTitle.text = "Кузница " + game.Progress.forgeLevel;
@@ -776,11 +785,12 @@ namespace MineLoot
                 pickBorders[c].enabled = AwaitingPickChoice && selectedPick == c;
                 if (AwaitingPickChoice) picks[c].rectTransform.localScale = Vector3.one * (selectedPick == c ? 1.1f : 1);
             }
-            mineTab.interactable = rollTab.interactable = workshopTab.interactable = !busy;
+            mineTab.interactable = rollTab.interactable = workshopTab.interactable = rewardsTab.interactable = !busy;
             milestoneButton.interactable = !busy;
             milestoneButtonLabel.text = game.ReadyMilestones > 0 ? "ЦЕЛИ " + game.ReadyMilestones : "ЦЕЛИ";
             milestoneButton.image.color = game.ReadyMilestones > 0 ? Hex("c8d981") : Hex("a8b78e");
             RefreshWorkshop();
+            RefreshRewards(); RefreshEquipmentAside();
             RefreshOfflineWindow();
             prestigeButton.interactable = !busy; prestigeButton.image.color = game.CanPrestige ? Hex("d4df94") : Hex("bac6a1");
             RefreshPrestigeWindow();

@@ -23,6 +23,22 @@ namespace MineLoot
             Create("reel-stop", 175, .075f, false); Create("rare", 880, .19f, true);
             Create("chest", 330, .18f, true);
             Create("shatter", 65, .16f, false);
+            CreateImpact("stone-hit", .11f, 170, 47);
+            CreateImpact("stone-break", .32f, 84, 6355);
+        }
+        private void CreateImpact(string name, float duration, float frequency, int seed)
+        {
+            const int rate = 22050;
+            var rng = new System.Random(seed); var data = new float[Mathf.CeilToInt(duration * rate)];
+            float low = 0;
+            for (int i = 0; i < data.Length; i++)
+            {
+                float t = i / (float)rate, p = t / duration, noise = (float)rng.NextDouble() * 2 - 1;
+                low = Mathf.Lerp(low, noise, .18f);
+                float body = Mathf.Sin(t * frequency * 2 * Mathf.PI * (1 - p * .3f));
+                data[i] = (low * .7f + body * .3f) * Mathf.Exp(-p * 7) * Mathf.Min(1, t * 1800);
+            }
+            var clip = AudioClip.Create(name, data.Length, 1, rate, false); clip.SetData(data, 0); clips.Add(name, clip);
         }
         public void Toggle()
         {

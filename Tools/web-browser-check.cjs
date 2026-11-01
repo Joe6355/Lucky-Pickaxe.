@@ -86,14 +86,14 @@ async function run() {
     "Holding the secondary mouse button cannot mine ore or earn resources: " + JSON.stringify({ clicks: afterRightHold.totalClicks, coins: afterRightHold.coins }));
   for (let i = 0; i < 12; i++) await tap(215, 380);
   let saved = await read();
-  check(saved.totalClicks === 12 && saved.oresMined === 2 && saved.coins === 200 && saved.tickets === 3, "Real canvas clicks mine ore, grant a ticket and synchronously journal the reward");
+  check(saved.totalClicks === 12 && saved.oresMined === 0 && saved.oreDamage === 12 && saved.coins === 176 && saved.tickets === 3, "Real canvas clicks mine ore, grant a ticket and synchronously journal the reward");
   await tap(120, 734); saved = await read();
-  check(saved.upgradeLevel === 1 && saved.coins === 80, "Real upgrade button pays the ordinary price in WebGL: " + JSON.stringify({ rank: saved.upgradeLevel, coins: saved.coins, clicks: saved.totalClicks }));
+  check(saved.upgradeLevel === 1 && saved.coins === 56, "Real upgrade button pays the ordinary price in WebGL: " + JSON.stringify({ rank: saved.upgradeLevel, coins: saved.coins, clicks: saved.totalClicks }));
   await page.reload(); await waitReady(); saved = await read();
-  check(saved.upgradeLevel === 1 && saved.coins === 80 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
+  check(saved.upgradeLevel === 1 && saved.coins === 56 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
 
   await seed({ ...fresh, coins: 600, experience: 100, swapLevel: 1, tickets: 1, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(240, 916); await tap(240, 740);
+  await tap(292, 916); await tap(240, 740);
   await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).rollPending, key);
   const paid = await read();
   check(paid.tickets === 0 && paid.pendingSwapLimit === 1, "Beginning a real draw saves its picks, purchased exchange allowance and spent last ticket");
@@ -108,7 +108,7 @@ async function run() {
   check(saved.totalRolls === 1 && saved.coins === resolved.coins && JSON.stringify(saved.depths) === JSON.stringify(resolved.depths), "Closing and reopening the browser keeps the resolved reward and depths exactly once");
 
   await seed({ ...fresh, coins: 1250, tickets: 3, boardSeed: 1758, depths: [5, 1, 2, 0, 3], guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(240, 916); const beforeChange = await read();
+  await tap(292, 916); const beforeChange = await read();
   await tap(266, 780); saved = await read();
   check(JSON.stringify(saved) === JSON.stringify(beforeChange), "Opening the shaft-change confirmation never spends a ticket or rerolls the board");
   await shot("webgl-abandon-confirm");
@@ -118,7 +118,7 @@ async function run() {
   check(JSON.stringify(saved) === JSON.stringify(beforeChange), "Cancelling a shaft change keeps the entire saved progress unchanged");
   await tap(266, 780); await page.reload(); await waitReady(); saved = await read();
   check(saved.tickets === 3 && saved.coins === 1250 && saved.boardSeed === beforeChange.boardSeed && JSON.stringify(saved.depths) === JSON.stringify(beforeChange.depths), "Reloading an unconfirmed change keeps the original paid progress and all tickets");
-  await tap(240, 916); await tap(266, 780); await tap(240, 654); await tap(240, 654); saved = await read();
+  await tap(292, 916); await tap(266, 780); await tap(240, 654); await tap(240, 654); saved = await read();
   const changedBoard = saved.boardSeed;
   check(saved.tickets === 2 && saved.coins === 1250 && saved.stratum === beforeChange.stratum && saved.depths.every(depth => depth === 0) && saved.lostColumns.every(lost => !lost), "Confirming twice spends one ticket, keeps earned coins and clears only this board");
   await page.reload(); await waitReady(); saved = await read();
@@ -191,53 +191,66 @@ async function run() {
   await page.reload(); await waitReady(); saved = await read();
   check(saved.totalOfflineCoins === beforeCloseReload.totalOfflineCoins && saved.coins >= beforeCloseReload.coins && saved.offlineCoins < 10, "Reload between onRewarded and onClose keeps the saved reward exactly once");
 
+  await seed({ ...fresh, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(397, 916); await shot("webgl-rewards"); await tap(240, 422);
+  await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending && window.rewardedFixture?.requests === 1);
+  const ticketsBefore = await read();
+  check(await page.evaluate(() => LuckyPickaxe.status().paused && !LuckyPickaxe.status().gameplayReported), "The visible ticket-video action pauses gameplay through the existing SDK bridge");
+  await page.evaluate(() => { rewardedFixture.callbacks.onRewarded(); rewardedFixture.callbacks.onRewarded(); });
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).videoTicketClaims === 1, key);
+  saved = await read();
+  check(saved.tickets === ticketsBefore.tickets + 3 && saved.coins === ticketsBefore.coins && saved.videoTicketClaims === 1, "Ticket video journals three tickets exactly once even with duplicate onRewarded");
+  await page.evaluate(() => rewardedFixture.callbacks.onClose()); await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  await page.reload(); await waitReady(); saved = await read();
+  check(saved.tickets === 5 && saved.videoTicketClaims === 1 && saved.videoTicketsReadyUtc > Math.floor(Date.now() / 1000), "Reload retains the ticket gift and its cooldown");
+  await tap(397, 916); await tap(240, 422);
+  check(!await page.evaluate(() => LuckyPickaxe.status().rewardedPending), "The visible cooldown prevents opening another ticket video");
+  await seed({ ...fresh, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(397, 916); await tap(240, 422); await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending);
+  await page.evaluate(() => rewardedFixture.callbacks.onClose()); await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  check((await read()).tickets === 2 && (await read()).videoTicketClaims === 0, "Closing ticket video without onRewarded gives no gift");
+  await tap(240, 422); await page.waitForFunction(() => LuckyPickaxe.status().rewardedPending);
+  await page.evaluate(() => rewardedFixture.callbacks.onError()); await page.waitForFunction(() => !LuckyPickaxe.status().paused);
+  check((await read()).tickets === 2 && (await read()).videoTicketClaims === 0, "Ticket-video SDK error releases input without paying or consuming the cooldown");
+
   await page.setViewportSize({ width: 1280, height: 720 });
   await seed({ ...fresh, coins: 1000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await shot("webgl-desktop-mine");
   for (let i = 0; i < 6; i++) await tap(375, 380);
   saved = await read();
-  check(saved.totalClicks === 6 && saved.oresMined === 1 && saved.coins === 1060, "Wide canvas mines through the projected ore target: " + JSON.stringify({ clicks: saved.totalClicks, ores: saved.oresMined, coins: saved.coins }));
-  await tap(989, 328); saved = await read();
-  check(saved.upgradeLevel === 1 && saved.coins === 940, "Existing sidebar upgrade purchases work beside the wide mine");
+  check(saved.totalClicks === 6 && saved.oresMined === 0 && saved.coins === 1048, "Wide canvas mines through the projected ore target: " + JSON.stringify({ clicks: saved.totalClicks, ores: saved.oresMined, coins: saved.coins }));
+  await tap(981, 490); saved = await read();
+  check(saved.upgradeLevel === 1 && saved.coins === 928, "The focused mining sidebar upgrades its equipped pickaxe");
   await seed({ ...fresh, coins: 1000, experience: 100, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(1169, 194); await tap(989, 328); saved = await read();
-  check(saved.workerCount === 1 && saved.coins >= 700 && saved.coins <= 704, "Wide production tab hires a worker at the ordinary 300-coin price");
+  await tap(1064, 585); await tap(348, 381); saved = await read();
+  check(saved.workerCount === 1 && saved.coins >= 700 && saved.coins <= 704, "Direct team action opens production and hires a worker for the ordinary price");
   await shot("webgl-desktop-production");
   await page.reload(); await waitReady(); saved = await read();
-  check(saved.workerCount === 1 && saved.coins >= 700, "Wide interface reload preserves the purchased machinery");
+  check(saved.workerCount === 1 && saved.coins >= 700, "Reload preserves machinery bought through the dedicated production page");
 
-  await seed({ ...fresh, coins: 10000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(989, 634); await shot("webgl-bulk-preview");
-  await tap(989, 328); saved = await read();
-  check(saved.upgradeLevel === 10 && saved.coins === 5367, "Wide batch button buys ten pickaxe ranks for the summed 4633-coin price");
-  await page.reload(); await waitReady(); saved = await read();
-  check(saved.upgradeLevel === 10 && saved.coins === 5367, "Reload keeps the entire batch transaction in the existing save");
-  await tap(989, 328); saved = await read();
-  check(saved.upgradeLevel === 11 && saved.coins === 5367 - Math.round(120 * 1.28 ** 10), "A fresh launch resets quantity to one and never silently buys another batch");
-
+  await seed({ ...fresh, coins: 10000, experience: 25480, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(480, 92); await tap(640, 381); await tap(932, 381); saved = await read();
+  check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Direct enchantments tab buys real Fortune and Haste ranks with their displayed prices");
+  await shot("webgl-enchantments"); await page.reload(); await waitReady(); saved = await read();
+  check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Reload retains both new enchantments");
   await seed({ ...fresh, coins: 10000, experience: 700, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(989, 634); await tap(989, 461); saved = await read();
-  check(saved.swapLevel === 2 && saved.coins === 7000, "Batch exchange purchase stops at the next level gate without charging unavailable ranks");
-
+  await tap(480, 92); await tap(320, 632); await tap(640, 572); saved = await read();
+  check(saved.swapLevel === 2 && saved.coins === 7000, "Batch exchange purchase stops at its next miner-level gate");
   await seed({ ...fresh, coins: 1000, experience: 100, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(989, 634); await tap(989, 634); await tap(1169, 194); await tap(989, 328); saved = await read();
-  check(saved.workerCount === 2 && saved.coins >= 346 && saved.coins <= 350, "Maximum amount remains selected across sections and hires exactly two affordable workers");
-  await shot("webgl-bulk-production");
-
+  await tap(480, 92); await tap(320, 632); await tap(320, 632); await tap(859, 197); await tap(348, 381); saved = await read();
+  check(saved.workerCount === 2 && saved.coins >= 346 && saved.coins <= 350, "Maximum purchase remains selected across sections and hires exactly two affordable workers");
   await page.setViewportSize({ width: 480, height: 960 });
-  await seed({ ...fresh, coins: 274, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(384, 916); await tap(129, 768); await tap(129, 407); saved = await read();
-  check(saved.upgradeLevel === 2 && saved.coins === 0, "Portrait quantity control buys only the two affordable pickaxe ranks through actual canvas input");
-  await shot("webgl-bulk-portrait");
-
-  await seed({ ...fresh, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300);
+  await seed({ ...fresh, coins: 264, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(120, 734); await tap(120, 734); saved = await read();
+  check(saved.upgradeLevel === 2 && saved.coins === 0, "Two ordinary tool purchases reach stone at the exact wallet boundary");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seed({ ...fresh, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   for (let i = 0; i < 6; i++) { await page.touchscreen.tap(175, 341); await page.waitForTimeout(120); }
   saved = await read();
-  check(saved.totalClicks === 6 && saved.oresMined === 1 && saved.coins === 140, "Touch input mines the first block in a 390 by 844 viewport");
+  check(saved.totalClicks === 6 && saved.oresMined === 0 && saved.oreDamage === 6 && saved.coins === 128, "Touch input damages durable ore in a 390 by 844 viewport");
   await shot("webgl-mobile");
   await page.setViewportSize({ width: 960, height: 540 }); await page.waitForTimeout(300); await shot("webgl-landscape");
-  check(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth && document.documentElement.scrollHeight === innerHeight), "Wide browser layout remains inside the viewport without page scrolling");
+  check(await page.evaluate(() => document.documentElement.scrollWidth === innerWidth && document.documentElement.scrollHeight === innerHeight), "Wide browser layout stays inside the viewport without scrolling");
 
   await seed({ ...fresh, coins: 1234567, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   const beforeLanguage = await read();

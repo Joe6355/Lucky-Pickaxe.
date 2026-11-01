@@ -37,7 +37,7 @@ namespace MineLoot
         private void RefreshGuide()
         {
             if (guideCard == null) return;
-            contractCard.SetActive(!game.GuideActive || busy);
+            contractCard.SetActive(true);
             if (!game.GuideActive) { guideCard.SetActive(false); guideFrame.gameObject.SetActive(false); return; }
             int step = game.Progress.guideStep;
             guideFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 268f * step / MineGame.GuideStepCount);
@@ -113,7 +113,7 @@ namespace MineLoot
         private void AnimateGuide()
         {
             if (guideCard == null) return;
-            bool visible = game.GuideActive && !busy && modal == null;
+            bool visible = game.GuideActive && selectedPage == 0 && !busy && modal == null;
             guideCard.SetActive(visible);
             bool focus = visible && guideTarget != null && guideTarget.gameObject.activeInHierarchy;
             guideFrame.gameObject.SetActive(focus);

@@ -16,6 +16,8 @@ namespace MineLoot
             bool tile = name.StartsWith("tile-") || name.StartsWith("tex-");
             bool ui = name.StartsWith("ui-");
             string kind = tile ? name.Substring(name.IndexOf('-') + 1) : name;
+            bool mining = kind.StartsWith("mine-");
+            if (mining) kind = kind.Substring(5);
             int size = tile ? 16 : ui ? 12 : 32;
             var t = new Texture2D(size, size, TextureFormat.RGBA32, false) { name = name, filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
             t.SetPixels(new Color[size * size]);
@@ -41,18 +43,25 @@ namespace MineLoot
                     foreach (int x in new[] { 1, 9 }) foreach (int y in new[] { 1, 9 })
                     { R(x, y, 2, 2, "#362b21"); R(x, y, 1, 1, "#e4c788"); }
                 }
+                else
+                {
+                    R(0, 0, 12, 12, "#8faaa7"); R(1, 1, 10, 10, "#ffffff");
+                    R(1, 1, 10, 1, "#ffffff"); R(1, 10, 10, 1, "#dce5df");
+                }
             }
             else if (tile)
             {
                 string body = kind == "brick" ? "#9d7664" : kind == "roof" ? "#915747" : kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
                 ColorUtility.TryParseHtmlString(body, out var baseColor);
+                if (mining)
+                    ColorUtility.TryParseHtmlString(kind == "floor" ? "#465760" : kind == "wall" ? "#374a55" : kind == "timber" ? "#936742" : kind == "steel" ? "#69838b" : kind == "skin" ? "#e6b590" : kind == "cloth" ? "#418c91" : kind == "lamp" ? "#ffe2a0" : kind == "ancient" ? "#75616a" : "#7d8b95", out baseColor);
                 int seed = 313; foreach (char letter in kind) seed = unchecked(seed * 31 + letter);
                 var rng = new System.Random(seed);
                 var shades = new float[8, 8];
-                for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) shades[x, y] = .86f + (float)rng.NextDouble() * .25f;
+                for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) shades[x, y] = (mining ? .94f : .86f) + (float)rng.NextDouble() * (mining ? .10f : .25f);
                 for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++)
                 {
-                    float shade = shades[x / 2, y / 2] + (float)rng.NextDouble() * .04f;
+                    float shade = shades[x / 2, y / 2] + (float)rng.NextDouble() * (mining ? .012f : .04f);
                     if (kind == "wood" || kind == "beam") shade = .75f + (x % 4) * .1f + (float)rng.NextDouble() * .12f;
                     if (kind == "planks" && y % 4 == 0) shade = .64f;
                     Color c = baseColor * shade; c.a = 1; t.SetPixel(x, y, c);
@@ -74,18 +83,28 @@ namespace MineLoot
                     R(0, 0, 16, 16, "#bd4e27"); R(2, 6, 12, 10, "#ef8c30");
                     R(3, 3, 3, 10, "#ef8c30"); R(10, 1, 3, 13, "#ef8c30"); R(5, 9, 6, 7, "#ffdf78");
                 }
-                if (kind == "coal" || kind == "iron" || kind == "gold" || kind == "diamond" || kind == "emerald" || kind == "ember")
+                if (kind == "coal" || kind == "iron" || kind == "gold" || kind == "diamond" || kind == "emerald" || kind == "ember" || kind == "copper" || kind == "lapis" || kind == "redstone" || kind == "ancient")
                 {
                     string ore = kind == "coal" ? "#313944" : kind == "iron" ? "#dbb69a" : kind == "gold" ? "#f4d25b" : kind == "emerald" ? "#55d67b" : kind == "ember" ? "#f19a58" : "#5be1db";
                     string dark = kind == "coal" ? "#22272f" : kind == "diamond" ? "#298e98" : kind == "gold" ? "#b28c32" : kind == "emerald" ? "#27824e" : "#79695c";
                     string shine = kind == "coal" ? "#505964" : kind == "iron" ? "#f1d1b7" : kind == "gold" ? "#fff0a6" : kind == "emerald" ? "#a4f7ae" : "#c1fff0";
+                    if (kind == "copper") { ore = "#e29458"; dark = "#805940"; shine = "#ffcc91"; }
+                    if (kind == "lapis") { ore = "#467cdf"; dark = "#284382"; shine = "#9bc1ff"; }
+                    if (kind == "redstone") { ore = "#df5258"; dark = "#863b51"; shine = "#ffaca0"; }
+                    if (kind == "ancient") { ore = "#ac7a69"; dark = "#533f4a"; shine = "#e7bda0"; }
                     for (int i = 0; i < 5; i++)
                     {
-                        int x = 1 + (i * 7 + kind.Length) % 11, y = 1 + i * 3 % 12;
+                        int x = mining ? new[] { 2, 10, 5, 1, 10 }[i] : 1 + (i * 7 + kind.Length) % 11, y = mining ? new[] { 2, 3, 7, 11, 12 }[i] : 1 + i * 3 % 12;
                         R(x, y, 4, 3, dark); R(x, y, 3, 2, ore);
                         if (kind == "emerald") R(x + 1, y - 1, 2, 4, ore);
                         R(x, y, 2, 1, shine);
                     }
+                }
+                if (mining)
+                {
+                    bool masonry = kind == "floor" || kind == "wall";
+                    R(0, 0, 16, 1, masonry ? "#526771" : "#a5b3bb"); R(0, 1, 1, 15, masonry ? "#526771" : "#93a5af");
+                    R(0, 15, 16, 1, "#344853"); R(15, 1, 1, 15, "#344853");
                 }
                 if (kind == "stone" || kind == "slate")
                     foreach (var a in new[] { new Vector2Int(2, 5), new Vector2Int(9, 10), new Vector2Int(4, 14) }) R(a.x, a.y, 4, 1, "#777e83");
@@ -157,12 +176,28 @@ namespace MineLoot
                 for (int k = 11; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
                 R(12, 15, 3, 3, "#e4b66f"); R(15, 17, 2, 2, "#e4b66f");
             }
+            else if (name == "enchant-fortune" || name == "enchant-haste")
+            {
+                R(5, 5, 22, 23, "#4d426c"); R(7, 3, 18, 23, "#997fc2");
+                R(10, 5, 13, 19, "#d3bce9"); R(7, 26, 20, 2, "#f0dcc1");
+                if (name == "enchant-fortune") { R(14, 8, 6, 12, "#4aa98a"); R(11, 11, 12, 6, "#4aa98a"); R(15, 9, 3, 6, "#d2ffe4"); }
+                else { R(16, 7, 5, 7, "#b77932"); R(13, 13, 7, 5, "#b77932"); R(12, 17, 4, 6, "#b77932"); }
+            }
             else if (name.StartsWith("pick"))
             {
                 string metal = name.EndsWith("4") ? "#53e7dc" : name == "pick-gold" ? "#f4cd57" : name.EndsWith("2") ? "#e1e5e8" : name == "pick-stone" ? "#a2abb2" : "#bf985b";
                 if (!name.StartsWith("pick-head")) for (int k = 0; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
                 R(4, 2, 18, 5, "#263c40"); R(10, 6, 17, 5, "#263c40"); R(22, 10, 7, 9, "#263c40"); R(26, 17, 4, 5, "#263c40");
                 R(4, 2, 16, 3, metal); R(10, 5, 15, 4, metal); R(22, 9, 5, 7, metal); R(26, 16, 2, 5, metal); R(7, 2, 12, 1, "#edfff5");
+                if (name == "pick-wood" || name == "pick-netherite")
+                {
+                    bool wood = name == "pick-wood";
+                    R(3, 2, 18, 5, wood ? "#493020" : "#282533"); R(10, 6, 17, 5, wood ? "#493020" : "#282533");
+                    R(22, 10, 7, 9, wood ? "#493020" : "#282533"); R(26, 17, 4, 5, wood ? "#493020" : "#282533");
+                    R(4, 2, 16, 3, wood ? "#a87942" : "#766a85"); R(10, 5, 15, 4, wood ? "#a87942" : "#766a85");
+                    R(22, 9, 5, 7, wood ? "#a87942" : "#766a85"); R(26, 16, 2, 5, wood ? "#a87942" : "#766a85");
+                    R(5, 2, 13, 1, wood ? "#d7ac6e" : "#b5a5c4"); R(12, 6, 8, 1, wood ? "#714c2c" : "#504454");
+                }
             }
             else if (name == "chest" || name == "chest-open")
             {
@@ -185,7 +220,7 @@ namespace MineLoot
             }
             else if (name.StartsWith("crack"))
             {
-                int depth = name == "crack1" ? 1 : name == "crack3" ? 3 : 2;
+                int.TryParse(name.Substring(5), out int depth); depth = Mathf.Clamp(depth, 1, 6);
                 for (int i = 0; i < 7 + depth * 6; i++)
                 {
                     R(13 + i % 4, 3 + i, 2, 2, "#222c32e0");
@@ -201,6 +236,12 @@ namespace MineLoot
                     float alpha = distance < .35f ? .2f : distance < .65f ? .1f : distance < .95f ? .045f : 0;
                     t.SetPixel(x, y, new Color(1, .65f, .22f, alpha));
                 }
+            }
+            else if (name == "dust")
+            {
+                // A stepped, soft-edged cloud, matching the block world's square silhouettes.
+                R(5, 10, 22, 12, "#d6d0cbb0"); R(10, 6, 12, 22, "#d6d0cb80");
+                R(8, 9, 16, 15, "#e8e0d6c0"); R(11, 12, 10, 9, "#f0e7d9e0");
             }
             else if (name == "shadow")
             {

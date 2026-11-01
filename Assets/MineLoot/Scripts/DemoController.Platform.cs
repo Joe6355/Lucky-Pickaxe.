@@ -9,6 +9,7 @@ namespace MineLoot
         private bool rewardedAvailable, rewardedReturnPending, offlineVideoPaid;
         private string rewardedRequest, offlineVideoMessage;
         private long offlineVideoCredit;
+        private bool ticketVideo;
         private System.Func<string, bool> rewardedVideoForSmoke;
         private CanvasGroup platformInput;
         private System.Globalization.CultureInfo interfaceCulture = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
@@ -45,15 +46,28 @@ namespace MineLoot
 
         public void OnRewardedAvailable(string available)
         {
-            rewardedAvailable = available == "1"; RefreshOfflineWindow();
+            rewardedAvailable = available == "1"; RefreshOfflineWindow(); RefreshRewards();
         }
 
         public void ClaimOfflineWithVideo()
         {
             if (applicationPaused || busy || !offlineWindowOpen || !rewardedAvailable || !game.CanDoubleOffline || RewardedVideoPending) return;
+            ticketVideo = false;
+            RequestRewardedVideo();
+        }
+
+        public void ClaimTicketsWithVideo()
+        {
+            if (applicationPaused || busy || modal != null || !rewardedAvailable || !game.CanClaimVideoTickets(SessionUtc) || RewardedVideoPending) return;
+            ticketVideo = true;
+            RequestRewardedVideo();
+        }
+
+        private void RequestRewardedVideo()
+        {
             offlineVideoMessage = null; offlineVideoPaid = false; offlineVideoCredit = 0;
             rewardedRequest = System.Guid.NewGuid().ToString("N"); rewardedReturnPending = true;
-            RefreshOfflineWindow(); ApplyPlatformPause();
+            RefreshOfflineWindow(); RefreshRewards(); ApplyPlatformPause();
             string request = rewardedRequest;
             bool accepted = SmokeMode && rewardedVideoForSmoke != null ? rewardedVideoForSmoke(request) : BrowserPlatform.ShowRewarded(request);
             if (!accepted && rewardedRequest == request) FinishRewardedVideo("unavailable");
@@ -70,8 +84,8 @@ namespace MineLoot
             {
                 if (offlineVideoPaid) return;
                 long before = game.Progress.coins;
-                if (!game.ClaimOffline(true)) return;
-                offlineVideoPaid = true; offlineVideoCredit = game.Progress.coins - before;
+                if (ticketVideo ? !game.ClaimVideoTickets(SessionUtc) : !game.ClaimOffline(true)) return;
+                offlineVideoPaid = true; offlineVideoCredit = ticketVideo ? MineGame.VideoTickets : game.Progress.coins - before;
                 game.RecordSession(SessionUtc); Persist(); Flush(true); Refresh();
             }
             else if (outcome == "closed" || outcome == "error") FinishRewardedVideo(outcome);
@@ -90,12 +104,13 @@ namespace MineLoot
             if (offlineVideoPaid)
             {
                 if (offlineWindowOpen) CloseModal();
-                sounds.Play("reward"); Notice("СКЛАД · НАГРАДА ×2", "+" + ShortAmount(offlineVideoCredit) + " монет за просмотр видео");
+                sounds.Play("reward"); Notice(ticketVideo ? "+3 ЖЕТОНА" : "СКЛАД · НАГРАДА ×2", ticketVideo ? "Подарок за просмотр видео" : "+" + ShortAmount(offlineVideoCredit) + " монет за просмотр видео");
                 offlineNoticeQueued = game.HasOfflineReward;
                 offlineVideoMessage = null;
             }
-            else RefreshOfflineWindow();
+            else { RefreshOfflineWindow(); if (ticketVideo) Notice("ВИДЕО НЕ ЗАСЧИТАНО", "Награда выдаётся за полный просмотр. Попробуй позже."); }
             offlineVideoPaid = false; offlineVideoCredit = 0;
+            RefreshRewards();
         }
 
         internal void ConfigureRewardedForSmoke(System.Func<string, bool> show)

@@ -52,6 +52,16 @@ namespace MineLoot
             foreach (float x in new[] { -.49f, .49f }) Block(new Vector3(x, .67f, 0), new Vector3(.14f, .5f, 1.3f), "planks", batch: batch);
             foreach (float z in new[] { -.59f, .59f }) Block(new Vector3(0, .67f, z), new Vector3(.92f, .5f, .14f), "planks", batch: batch);
             Block(new Vector3(0, .35f, 0), new Vector3(.82f, .14f, 1.15f), "metal-dark", batch: batch);
+            foreach (float y in new[] { .47f, .93f })
+            {
+                foreach (float x in new[] { -.52f, .52f }) Block(new Vector3(x, y, 0), new Vector3(.08f, .08f, 1.4f), "mine-steel", batch: batch);
+                foreach (float z in new[] { -.65f, .65f }) Block(new Vector3(0, y, z), new Vector3(1.1f, .08f, .08f), "mine-steel", batch: batch);
+            }
+            foreach (float x in new[] { -.53f, .53f }) foreach (float z in new[] { -.5f, .5f })
+            {
+                Block(new Vector3(x, .7f, z), new Vector3(.065f, .5f, .1f), "mine-steel", batch: batch);
+                Block(new Vector3(x * 1.05f, .8f, z), Vector3.one * .07f, "metal-gold", batch: batch);
+            }
             cart = mineStructures[0] = DevelopmentGroup("Working ore cart", batch, new Vector3(2, 0, 1.5f));
             foreach (var renderer in cart.GetComponentsInChildren<MeshRenderer>(true)) if (renderer.sharedMaterial == GetMaterial("planks")) cartBody = renderer;
             var load = new Geometry();
@@ -63,10 +73,9 @@ namespace MineLoot
             for (int i = 0; i < cartWheels.Length; i++)
             {
                 var wheel = new Geometry();
-                AddCube(wheel, Vector3.zero, new Vector3(.16f, .4f, .24f), 1);
-                AddCube(wheel, Vector3.zero, new Vector3(.16f, .24f, .4f), 1);
+                AddWheel(wheel, .24f, .16f);
                 AddCube(wheel, new Vector3(i % 2 == 0 ? -.095f : .095f, 0, 0), Vector3.one * .13f, 1);
-                cartWheels[i] = MakeMesh("Cart wheel " + i, wheel, GetMaterial("black")).transform;
+                cartWheels[i] = MakeMesh("Cart wheel " + i, wheel, GetMaterial("mine-steel")).transform;
                 cartWheels[i].SetParent(cart, false);
                 cartWheels[i].localPosition = new Vector3(i % 2 == 0 ? -.56f : .56f, .28f, i < 2 ? -.4f : .4f);
             }
@@ -159,22 +168,43 @@ namespace MineLoot
 
         private void BuildProduction()
         {
-            Vector3[] positions = { new Vector3(-2.45f, 0, -1.4f), new Vector3(.6f, 0, 2), new Vector3(2.8f, 0, 1.5f) };
+            Vector3[] positions = { new Vector3(-2.5f, 0, -1.7f), new Vector3(-1.8f, 0, 2.4f), new Vector3(3.8f, 0, .2f) };
             for (int i = 0; i < workers.Length; i++)
             {
                 var batch = new Dictionary<string, Geometry>();
-                foreach (float x in new[] { -.14f, .14f }) Block(new Vector3(x, .26f, 0), new Vector3(.2f, .52f, .25f), "metal-dark", batch: batch);
-                Block(new Vector3(0, .78f, 0), new Vector3(.55f, .57f, .3f), "water", batch: batch);
-                Block(new Vector3(0, 1.23f, 0), new Vector3(.43f, .4f, .4f), "sand", batch: batch);
-                Block(new Vector3(0, 1.47f, -.02f), new Vector3(.56f, .16f, .5f), "metal-gold", batch: batch);
-                Block(new Vector3(0, 1.43f, -.29f), new Vector3(.16f, .13f, .07f), "diamond", batch: batch);
-                foreach (float x in new[] { -.1f, .1f }) Block(new Vector3(x, 1.25f, -.205f), Vector3.one * .06f, "black", batch: batch);
+                foreach (float x in new[] { -.145f, .145f })
+                {
+                    Block(new Vector3(x, .12f, -.07f), new Vector3(.23f, .24f, .4f), "black", batch: batch);
+                    Block(new Vector3(x, .43f, 0), new Vector3(.21f, .45f, .25f), "mine-steel", batch: batch);
+                }
+                Block(new Vector3(0, .81f, 0), new Vector3(.58f, .54f, .34f), "mine-cloth", batch: batch);
+                Block(new Vector3(0, .6f, -.02f), new Vector3(.6f, .09f, .38f), "mine-timber", batch: batch);
+                Block(new Vector3(0, .6f, -.22f), new Vector3(.13f, .11f, .05f), "metal-gold", batch: batch);
+                foreach (float x in new[] { -.19f, .19f }) Block(new Vector3(x, .86f, -.18f), new Vector3(.065f, .38f, .035f), "mine-steel", batch: batch);
+                Block(new Vector3(-.37f, .82f, 0), new Vector3(.19f, .37f, .27f), "mine-cloth", batch: batch);
+                Block(new Vector3(-.37f, .6f, -.01f), new Vector3(.18f, .16f, .24f), "mine-skin", batch: batch);
+                Block(new Vector3(0, 1.22f, -.02f), new Vector3(.45f, .42f, .41f), "mine-skin", batch: batch);
+                Block(new Vector3(0, 1.1f, -.24f), new Vector3(.3f, .11f, .05f), "mine-timber", batch: batch);
+                Block(new Vector3(0, 1.21f, -.26f), new Vector3(.09f, .09f, .06f), "mine-skin", batch: batch);
+                foreach (float x in new[] { -.11f, .11f })
+                {
+                    Block(new Vector3(x, 1.28f, -.232f), new Vector3(.095f, .065f, .025f), "black", batch: batch);
+                    Block(new Vector3(x - .018f, 1.29f, -.25f), Vector3.one * .025f, "mine-lamp", batch: batch);
+                }
+                Block(new Vector3(0, 1.43f, -.02f), new Vector3(.52f, .14f, .49f), "metal-gold", batch: batch);
+                Block(new Vector3(0, 1.51f, -.01f), new Vector3(.4f, .12f, .38f), "metal-gold", batch: batch);
+                Block(new Vector3(0, 1.41f, -.06f), new Vector3(.56f, .045f, .52f), "mine-timber", batch: batch);
+                Block(new Vector3(0, 1.44f, -.305f), new Vector3(.2f, .19f, .09f), "mine-steel", batch: batch);
+                Block(new Vector3(0, 1.44f, -.36f), new Vector3(.12f, .12f, .03f), "mine-lamp", batch: batch);
                 workers[i] = DevelopmentGroup("Working miner " + i, batch, positions[i]);
                 batch = new Dictionary<string, Geometry>();
-                Block(new Vector3(0, -.12f, 0), new Vector3(.1f, .5f, .1f), "wood", batch: batch);
-                Block(new Vector3(0, .13f, 0), new Vector3(.5f, .1f, .13f), "iron", batch: batch);
+                Block(new Vector3(0, -.12f, 0), new Vector3(.2f, .3f, .25f), "mine-cloth", batch: batch);
+                Block(new Vector3(0, -.33f, -.05f), new Vector3(.19f, .18f, .23f), "mine-skin", batch: batch);
+                Block(new Vector3(0, -.34f, -.16f), new Vector3(.075f, .58f, .08f), "mine-timber", batch: batch);
+                Block(new Vector3(0, -.03f, -.16f), new Vector3(.62f, .1f, .15f), "mine-steel", batch: batch);
+                Block(new Vector3(-.26f, -.09f, -.16f), new Vector3(.1f, .18f, .15f), "mine-steel", batch: batch);
                 workerTools[i] = DevelopmentGroup("Miner tool " + i, batch, Vector3.zero);
-                workerTools[i].SetParent(workers[i], false); workerTools[i].localPosition = new Vector3(.34f, 1, -.2f); workerTools[i].gameObject.SetActive(true);
+                workerTools[i].SetParent(workers[i], false); workerTools[i].localPosition = new Vector3(.37f, 1, -.02f); workerTools[i].gameObject.SetActive(true);
             }
             var rig = new Dictionary<string, Geometry>();
             Block(new Vector3(0, .16f, 0), new Vector3(1.1f, .32f, .8f), "metal-dark", batch: rig);
@@ -205,7 +235,7 @@ namespace MineLoot
         public void SetDevelopment(int pickTier, int forgeLevel, bool animate = true)
         {
             if (IsExpedition) return;
-            pickTier = Mathf.Clamp(pickTier, 0, 4); forgeLevel = Mathf.Clamp(forgeLevel, 0, 10);
+            pickTier = Mathf.Clamp(pickTier, 0, 5); forgeLevel = Mathf.Clamp(forgeLevel, 0, 10);
             int forgeStage = 0; foreach (int level in ForgeMilestones) if (forgeLevel >= level) forgeStage++;
             if (DevelopmentTier == pickTier && ForgeStage == forgeStage && animate) return;
             bool first = DevelopmentTier < 0 || !animate;
@@ -222,8 +252,30 @@ namespace MineLoot
             }
             DevelopmentTier = pickTier; ForgeStage = forgeStage;
             cartBody.sharedMaterial = GetMaterial(pickTier >= 2 ? "metal-dark" : "planks");
-            cartCargo.sharedMaterial = GetMaterial(pickTier >= 4 ? "diamond" : pickTier == 3 ? "gold" : pickTier == 2 ? "iron" : "coal");
+            cartCargo.sharedMaterial = GetMaterial(pickTier == 5 ? "mine-ancient" : pickTier >= 4 ? "diamond" : pickTier == 3 ? "gold" : pickTier == 2 ? "iron" : "coal");
             foreach (var puff in forgeSmoke) puff.gameObject.SetActive(forgeStage >= 2);
+        }
+
+        private static void AddWheel(Geometry g, float radius, float width)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * Mathf.PI / 4, b = (i + 1) * Mathf.PI / 4;
+                var p = new Vector3(0, Mathf.Cos(a) * radius, Mathf.Sin(a) * radius);
+                var q = new Vector3(0, Mathf.Cos(b) * radius, Mathf.Sin(b) * radius);
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    int n = g.vertices.Count; Vector3 x = Vector3.right * (side * width / 2);
+                    g.vertices.AddRange(new[] { x, x + p, x + q });
+                    g.normals.AddRange(new[] { Vector3.right * side, Vector3.right * side, Vector3.right * side });
+                    g.uv.AddRange(new[] { Vector2.one * .5f, new Vector2(.5f + p.y, .5f + p.z), new Vector2(.5f + q.y, .5f + q.z) });
+                    g.indices.AddRange(side > 0 ? new[] { n, n + 1, n + 2 } : new[] { n, n + 2, n + 1 });
+                }
+                int v = g.vertices.Count; Vector3 offset = Vector3.right * width / 2;
+                g.vertices.AddRange(new[] { p - offset, q - offset, q + offset, p + offset });
+                for (int k = 0; k < 4; k++) { g.normals.Add((p + q).normalized); g.uv.Add(new Vector2(k % 2, k / 2)); }
+                g.indices.AddRange(new[] { v, v + 2, v + 1, v, v + 3, v + 2 });
+            }
         }
 
         private static float BuildScale(float t)

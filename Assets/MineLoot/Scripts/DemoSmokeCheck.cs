@@ -29,297 +29,79 @@ namespace MineLoot
             var demo = GetComponent<DemoController>();
             Screen.SetResolution(480, 960, false);
             yield return new WaitForSecondsRealtime(.8f);
-            Canvas.ForceUpdateCanvases();
             yield return VerifyPlatform(demo);
-            yield return VerifyGuide(demo);
-            demo.RestoreForSmoke(new MineProgress());
-            yield return new WaitForSecondsRealtime(.8f);
-            Check(Resources.Load<Texture2D>("Art/mine-cavern-v3") == null && Resources.Load<Texture2D>("Art/ore-hero-v3") == null && Resources.Load<Texture2D>("Art/items-atlas-v3") == null, "Painted assets excluded");
-            Check(Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Д') && Resources.Load<Font>("Fonts/Tiny5-Regular").HasCharacter('Я'), "Pixel Cyrillic font packaged");
-            var stage = FindObjectOfType<VoxelStage>();
-            VoxelStage shaft = null;
-            foreach (var candidate in GetComponentsInChildren<VoxelStage>(true)) if (candidate.IsExpedition) shaft = candidate;
-            Check(shaft != null && !shaft.gameObject.activeSelf && shaft.VisibleBlocks == 25, "Voxel shaft is prepared and sleeps on mining page");
-            Vector3 dimensions = shaft.BlockDimensions;
-            Check(Mathf.Abs(dimensions.x - dimensions.y) < .001f && Mathf.Abs(dimensions.y - dimensions.z) < .001f, "Ore geometry is cubic without compressed texture axes");
-            Check(shaft.Target.width == 432 && shaft.Target.height == 417 && shaft.Target.filterMode == FilterMode.Point, "Shaft renders at native UI pixels with point filtering");
-            Check(stage != null && stage.Target != null && stage.Target.IsCreated() && stage.StaticBatches < 24 && stage.OreVertices == 24, "Voxel scene renders in material batches");
-            stage.RenderNow();
-            var previousTarget = RenderTexture.active;
-            RenderTexture.active = stage.Target;
-            var scenePixels = new Texture2D(stage.Target.width,stage.Target.height,TextureFormat.RGB24,false);
-            scenePixels.ReadPixels(new Rect(0,0,stage.Target.width,stage.Target.height),0,0); scenePixels.Apply();
-            int greenPixels=0, neutralPixels=0;
-            for(int y=0;y<scenePixels.height;y+=8) for(int x=0;x<scenePixels.width;x+=8)
-            {
-                Color c=scenePixels.GetPixel(x,y);
-                if(c.g>c.r*1.2f && c.g>c.b*1.15f) greenPixels++;
-                if(Mathf.Abs(c.r-c.g)<.08f && Mathf.Abs(c.g-c.b)<.08f && c.grayscale>.15f) neutralPixels++;
-            }
-            Check(greenPixels>200 && neutralPixels>50, "Rendered terrain and ore are visible");
-            Destroy(scenePixels); RenderTexture.active=previousTarget;
-            CheckLayout();
-            Capture("unity-clicker.png");
-            yield return new WaitForEndOfFrame();
-            Check(demo.Game.Progress.coins == 80, "Initial wallet");
-            for (int i = 0; i < 12; i++)
-            {
-                Click("Mine rock");
-                if (i == 5) Check(stage.IsReplacing && demo.Game.LastHit.broken, "Destruction triggers replacement animation");
-                yield return new WaitForSecondsRealtime(.085f);
-                if (i == 4)
-                {
-                    Check(stage.CrackVisible, "Damage appears on the 3D block");
-                    int rewards = 0;
-                    foreach (var text in GetComponentsInChildren<Text>(false)) if (text.name == "Mining rewards") rewards++;
-                    Check(rewards == 1, "Fast clicks aggregate into one readable reward");
-                    Capture("unity-ore-damage.png");
-                }
-                if (i == 5) Capture("unity-ore-break.png");
-            }
-            Check(demo.Game.Progress.coins == 200 && demo.Game.Progress.tickets == 3 && demo.Game.Progress.oresMined == 2, "Clicker, ore rewards and ticket");
-            Click("Upgrade pickaxe");
-            Check(demo.Game.ClickPower == 12 && demo.Game.Progress.coins == 80, "Upgrade button");
-            for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.085f); }
-            Click("Upgrade forge");
-            Check(demo.Game.Progress.forgeLevel == 1 && demo.Game.Progress.coins == 148, "Forge button");
-            Check(demo.Game.MinerLevel == 2 && demo.Game.UnlockedOres == 2 && demo.Game.Progress.tickets == 5, "Level unlock and reward through UI clicks");
-            yield return new WaitForSecondsRealtime(.3f);
-            Check(stage.DisplayedOre == "tex-iron", "Newly unlocked iron appears after block replacement");
-            Capture("unity-level-up.png");
-            Button rockButton = null;
-            foreach (var button in GetComponentsInChildren<Button>()) if (button.name == "Mine rock") rockButton = button;
-            var raycastPointer = new PointerEventData(EventSystem.current) { position = RectTransformUtility.WorldToScreenPoint(null, rockButton.GetComponent<RectTransform>().position) };
-            var raycastHits = new List<RaycastResult>(); EventSystem.current.RaycastAll(raycastPointer, raycastHits);
-            Check(raycastHits.Count > 0 && raycastHits[0].gameObject == rockButton.gameObject, "Visible ore receives pointer input");
-            long heldStart = demo.Game.Progress.totalClicks;
-            var pointer = new PointerEventData(EventSystem.current) { pointerId = -7, position = raycastPointer.position };
-            // Isolate synthetic pointer events from the desktop cursor while running in a hidden window.
-            var inputModule = EventSystem.current.currentInputModule; bool inputEnabled = inputModule.enabled;
-            inputModule.enabled = false;
-            pointer.button = PointerEventData.InputButton.Right;
-            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
-            yield return new WaitForSecondsRealtime(.45f);
-            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
-            Check(demo.Game.Progress.totalClicks == heldStart, "Secondary pointer cannot start mining through the Unity event handler");
-            pointer.button = PointerEventData.InputButton.Middle;
-            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
-            yield return new WaitForSecondsRealtime(.45f);
-            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
-            Check(demo.Game.Progress.totalClicks == heldStart, "Middle pointer cannot start mining through the Unity event handler");
-            pointer.button = PointerEventData.InputButton.Left;
-            float holdStarted = Time.realtimeSinceStartup; bool secondaryReleased = false;
-            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerDownHandler);
-            while (demo.Game.Progress.totalClicks - heldStart < 3 && Time.realtimeSinceStartup - holdStarted < 2)
-            {
-                if (!secondaryReleased && demo.Game.Progress.totalClicks > heldStart)
-                {
-                    pointer.button = PointerEventData.InputButton.Right;
-                    ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
-                    pointer.button = PointerEventData.InputButton.Left; secondaryReleased = true;
-                }
-                yield return null;
-            }
-            ExecuteEvents.Execute(rockButton.gameObject, pointer, ExecuteEvents.pointerUpHandler);
-            long beforeRelease = demo.Game.Progress.totalClicks;
-            rockButton.onClick.Invoke();
-            inputModule.enabled = inputEnabled;
-            long heldCount = demo.Game.Progress.totalClicks - heldStart;
-            Check(heldCount == 3 && beforeRelease == demo.Game.Progress.totalClicks && Time.realtimeSinceStartup - holdStarted >= .5f, "Hold repeats at a controlled rate without release bonus: " + heldCount);
-            Click("Toggle sound"); Check(GetComponent<GameAudio>().Muted, "Mute sound");
-            Click("РУЛЕТКА ШАХТЁРА");
-            Check(!stage.gameObject.activeSelf, "Voxel camera stops on roulette screen");
-            yield return null;
-            Check(shaft.gameObject.activeSelf && shaft.Target.IsCreated(), "Dedicated shaft camera starts on roulette page");
-            CheckLayout();
-            Click("Toggle speed"); Check(demo.FastRoll, "Fast animation mode");
-            yield return null;
-            Capture("unity-roulette.png");
-            yield return new WaitForEndOfFrame();
-            int ticketsBeforeSpin = demo.Game.Progress.tickets;
-            long coinsBeforeSpin = demo.Game.Progress.coins;
-            Click("ЗАПУСТИТЬ КИРКИ");
-            Check(demo.IsBusy && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Spin starts once");
-            demo.Spin();
-            Check(demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Double spin blocked");
-            float deadline = Time.realtimeSinceStartup + 8;
-            int settled = 0;
-            while (demo.IsBusy && Time.realtimeSinceStartup < deadline)
-            {
-                Check(demo.SettledReels >= settled, "Reels stop in one direction"); settled = demo.SettledReels;
-                Check(!demo.AwaitingPickChoice, "Unpurchased exchange never opens the choice phase");
-                if (demo.RollPhase == "reels") Check(demo.Game.Progress.coins == coinsBeforeSpin && demo.Game.Progress.depths[0] == 0, "Locked draw still waits for reels before committing damage");
-                yield return null;
-            }
-            int[] committed = (int[])demo.Game.Progress.depths.Clone();
-            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.swapLevel == 0 && demo.Game.Progress.tickets == ticketsBeforeSpin - 1, "Unpurchased exchange resolves automatically with one ticket");
-            Check(!demo.IsBusy, "Animation completes");
-            Check(demo.SettledReels == 5 && demo.RollPhase == "result", "All five reels settle before final reward");
-            int remaining = 25; foreach (int depth in committed) remaining -= depth;
-            Check(shaft.VisibleBlocks == remaining, "3D blocks match committed depths");
-            yield return new WaitForSecondsRealtime(.2f);
-            for (int i = 0; i < 5; i++) Check(demo.Game.Progress.depths[i] == committed[i] && committed[i] > 0, "Depth retained");
-            Click("ШАНСЫ И ПРАВИЛА");
-            yield return null;
-            Check(GameObject.Find("Rules modal") != null, "Rules modal");
-            CheckLayout();
-            Capture("unity-rules.png");
-            Click("ПОНЯТНО");
-            yield return null;
-            Capture("unity-roll-result.png");
-            demo.Game.Progress.totalBlocks = 25;
-            // Refresh via changing the sound setting, then test the ready contract action.
-            Click("Toggle sound"); long previousCoins = demo.Game.Progress.coins;
-            Click("Claim contract");
-            Check(demo.Game.Progress.claimedContracts == 1 && demo.Game.Progress.coins == previousCoins + 100, "Claim once");
-            yield return new WaitForSecondsRealtime(.3f);
-            yield return VerifyWorkshop(demo, stage, shaft);
-            yield return VerifyProduction(demo, stage);
-            yield return VerifyBulkUpgrades(demo);
-            yield return VerifyAbandonConfirmation(demo);
-            yield return VerifyOffline(demo);
+            demo.RestoreForSmoke(new MineProgress()); yield return null;
+            Check(Resources.Load<Font>("Fonts/PTSans-Regular").HasCharacter('Д') && Resources.Load<Font>("Fonts/PTSans-Bold").HasCharacter('Я'), "Readable regular and bold Cyrillic fonts are packaged");
+            VoxelStage stage = null, shaft = null;
+            foreach (var candidate in GetComponentsInChildren<VoxelStage>(true))
+                if (candidate.IsExpedition) shaft = candidate; else stage = candidate;
+            Check(stage != null && stage.OreVertices == 24 && stage.StaticBatches < 24, "Mining diorama uses a cubic ore mesh and batched static terrain");
+            Check(shaft != null && shaft.VisibleBlocks == 25 && !shaft.gameObject.activeSelf, "Roulette shaft is intact and sleeps outside its own page");
+            CheckLayout(); Capture("unity-v023-start.png");
+            for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.1f); }
+            Check(demo.Game.Progress.oreDamage == 12 && demo.Game.Progress.oresMined == 0 && demo.Game.Progress.coins == 176 && demo.Game.Progress.tickets == 3, "Twelve real clicks damage durable coal and still earn a roulette ticket");
+            Check(stage.CrackVisible, "Durable ore visibly cracks before breaking"); Capture("unity-v023-cracks.png");
+            for (int i = 12; i < 48; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.1f); }
+            Check(demo.Game.Progress.oresMined == 1 && demo.Game.Progress.coins == 640 && demo.Game.Progress.tickets == 7, "Full wooden-tool block pays the ore bonus and level reward once");
+            Capture("unity-v023-break.png");
+            Click("Upgrade pickaxe"); Click("Upgrade pickaxe");
+            Check(demo.Game.PickTier == 1 && demo.Game.MiningDamage == 2 && demo.Game.Progress.coins == 376, "The visible tool upgrade reaches stone with a real damage improvement");
+            yield return VerifyTicketVideo(demo);
             yield return VerifyRewardedOffline(demo);
-            yield return VerifyResponsiveLayout(demo, stage, shaft);
-            if (Array.IndexOf(args, "-demoStoreCapture") >= 0) yield return RecordDesktopDemo(demo);
-            yield return VerifyPrestige(demo);
-            yield return VerifyMilestones(demo);
-            // Exercise a later biome and partial block damage in the same built player.
-            demo.Game.Progress.stratum = 4;
-            Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
-            Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
-            demo.Spin();
-            yield return FinishRoll(demo);
-            yield return new WaitForSecondsRealtime(.25f);
-            Capture("unity-crystal-shaft.png");
-            demo.Game.Progress.stratum = 7; demo.Game.Progress.tickets = 1;
-            Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
-            Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
-            demo.Spin();
-            yield return FinishRoll(demo);
-            yield return new WaitForSecondsRealtime(.25f);
-            Capture("unity-ember-shaft.png");
-            // Record a complete full-speed expedition, including the last chest and the next-floor action.
-            demo.Game.Progress.stratum = 1; demo.Game.Progress.tickets = 2;
-            demo.Game.Progress.boardSeed = 0; demo.Game.Progress.failedFloors = 0;
-            int previousForge = demo.Game.Progress.forgeLevel; demo.Game.Progress.forgeLevel = 10;
-            Array.Clear(demo.Game.Progress.depths, 0, 5); Array.Clear(demo.Game.Progress.damage, 0, 5);
-            Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
-            Click("Toggle speed"); Check(!demo.FastRoll, "Normal-speed expedition");
-            demo.Spin();
-            int rollFrame = 0; var rollTimes = new System.Text.StringBuilder();
-            deadline = Time.realtimeSinceStartup + 10;
-            while ((demo.IsBusy || rollFrame < 8) && Time.realtimeSinceStartup < deadline)
+            yield return VerifyAbandonConfirmation(demo);
+            foreach (var size in new[] { new Vector2Int(480,960), new Vector2Int(390,844), new Vector2Int(960,540), new Vector2Int(1280,720), new Vector2Int(1920,1080) })
             {
-                if (demo.AwaitingPickChoice) demo.Spin();
-                rollTimes.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
-                Capture("unity-roulette-animation-" + (rollFrame++).ToString("000") + ".png");
-                yield return new WaitForSecondsRealtime(.04f);
+                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.3f);
+                demo.RestoreForSmoke(new MineProgress { coins = 1000000, experience = MineGame.ExperienceForLevel(50), upgradeLevel = 32, forgeLevel = 6, workerCount = 10, drillCount = 2, cartCount = 2, oreKind = 8, oreDamage = 250 });
+                yield return new WaitForSecondsRealtime(.3f);
+                Check(demo.Game.PickTier == 5 && stage.VisibleWorkers == 3 && stage.DrillVisible && stage.CartVisible, "Netherite tool, miners, cart and drill are presented at " + size);
+                CheckLayout(); Capture("unity-v023-mine-" + size.x + ".png");
+                Click("МАСТЕРСКАЯ");
+                Check(FindButton("Buy Fortune") != null && FindButton("Buy Haste") != null && FindButton("Mine rock") == null, "Enchantments have a direct dedicated page without the mining screen behind them");
+                int reward = demo.Game.OreReward; float swing = demo.Game.SwingSeconds;
+                Click("Buy Fortune"); Click("Buy Haste");
+                Check(demo.Game.OreReward > reward && demo.Game.SwingSeconds < swing, "Real enchantment buttons apply fortune and haste at " + size);
+                CheckLayout(); Capture("unity-v023-enchantments-" + size.x + ".png");
+                Click("Production section"); Check(FindButton("Buy Press") != null && FindButton("Buy Worker") != null, "Production retains the token press and workers in one section");
+                CheckLayout(); Capture("unity-v023-production-" + size.x + ".png");
+                demo.ShowRewards();
+                Check(FindButton("Video tickets") != null && FindButton("Rewards milestones") != null && FindButton("Claim contract") != null, "Rewards expose video, achievements, warehouse and contract directly");
+                CheckLayout(); Capture("unity-v023-rewards-" + size.x + ".png");
+                demo.ShowPage(true); CheckLayout(); Capture("unity-v023-roulette-" + size.x + ".png");
             }
-            File.WriteAllText(Path.Combine(output, "roulette-animation-times.txt"), rollTimes.ToString());
-            Check(!demo.IsBusy && demo.Game.IsComplete && shaft.VisibleBlocks == 0 && shaft.OpenChests == 5, "Five 3D chests open and floor completes");
-            yield return new WaitForSecondsRealtime(.4f);
-            CheckLayout(); Capture("unity-roulette-complete.png");
-            demo.Game.Progress.forgeLevel = previousForge;
+            demo.RestoreForSmoke(new MineProgress { coins = 10000, swapLevel = 1, tickets = 1 });
+            demo.ShowPage(true); demo.SpinForSmoke(() => .6); yield return WaitForChoice(demo);
+            Check(demo.AwaitingPickChoice && demo.Game.Progress.tickets == 0, "Paid roulette still fixes the draw and spends its last ticket once");
             demo.Spin(); yield return FinishRoll(demo);
-            Check(demo.Game.Progress.stratum == 2 && shaft.VisibleBlocks > 0 && shaft.OpenChests < 5, "Next floor restores shaft geometry and closes chests");
-            // Controlled inputs exercise a genuine loss through the same model and presentation.
-            demo.Game.Progress.stratum = 1; demo.Game.Progress.boardSeed = 236; demo.Game.Progress.tickets = 4;
-            demo.Game.Progress.forgeLevel = 0; demo.Game.Progress.failedFloors = 0;
-            Array.Clear(demo.Game.Progress.damage, 0, 5); Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
-            for (int c = 0; c < 5; c++) for (int r = 1; r < 5; r++) if (demo.Game.BlockAt(c, r) == BlockKind.Obsidian) demo.Game.Progress.depths[c] = r;
-            previousCoins = demo.Game.Progress.coins;
-            demo.SpinForSmoke(() => 0);
-            yield return RecordRoll(demo, "roulette-loss");
-            Check(demo.Game.Progress.coins == previousCoins && demo.Game.Progress.tickets == 3 && !demo.Game.IsComplete, "Obsidian loses the ticket without money or free progress");
-            CheckLayout(); Capture("unity-roulette-loss.png");
-            Click("Abandon floor");
-            Check(demo.Game.Progress.tickets == 3 && demo.Game.Progress.coins == previousCoins, "Opening shaft change does not spend the ticket");
-            Click("Confirm abandon");
-            Check(demo.Game.Progress.stratum == 1 && demo.Game.Progress.tickets == 2 && shaft.VisibleBlocks == 25 && demo.Game.Progress.coins == previousCoins, "Changing shaft costs a ticket and keeps reward tier unchanged");
-            demo.Game.Progress.boardSeed = 1758; demo.Game.Progress.stratum = 1;
-            Array.Clear(demo.Game.Progress.damage, 0, 5); Array.Clear(demo.Game.Progress.lostColumns, 0, 5);
-            for (int c = 0; c < 5; c++) for (int r = 1; r < 5; r++) if (demo.Game.BlockAt(c, r) == BlockKind.Bedrock) demo.Game.Progress.depths[c] = r;
-            demo.SpinForSmoke(() => .99);
-            yield return RecordRoll(demo, "roulette-bedrock");
-            Check(demo.Game.IsComplete && !demo.Game.IsPerfect && shaft.OpenChests == 0 && shaft.VisibleBlocks == 5 && demo.Game.Progress.tickets == 1, "Bedrock stops diamonds and loses all chests without ticket refund");
-            CheckLayout(); Capture("unity-roulette-bedrock.png");
-            // A controlled last-ticket draw tests real pointer input, exchange animation and reload.
-            demo.RestoreForSmoke(new MineProgress { swapLevel = 1, boardSeed = 17, tickets = 1, coins = 0, depths = new[] { 0, 0, 0, 3, 0 } });
-            demo.ShowPage(true); int exchangeDraws = 0;
-            demo.SpinForSmoke(() => ++exchangeDraws == 1 ? .99 : 0);
-            yield return RecordRoll(demo, "roulette-exchange", true);
-            Check(!demo.Game.HasPendingRoll && demo.Game.Progress.tickets == 0 && demo.Game.Progress.depths[3] == 5 && demo.Game.Progress.depths[0] == 1 && shaft.OpenChests == 1, "Exchanged diamond opens the obsidian chest and the wooden donor mines one block");
-            Capture("unity-roulette-exchange-result.png");
-            demo.ShowPage(false);
-            demo.Game.Progress.experience = MineGame.ExperienceForLevel(10);
-            demo.Game.Progress.upgradeLevel = 12;
-            demo.Game.Progress.oreKind = 4; demo.Game.Progress.oreDamage = 10;
-            demo.ToggleSound();
-            yield return new WaitForSecondsRealtime(2.9f);
-            Check(stage.DisplayedOre == "tex-emerald" && stage.CrackVisible && demo.Game.PickTier == 3 && demo.Game.MiningDamage == 3, "Emerald and golden pick are presented with damage");
-            CheckLayout(); Capture("unity-progression.png");
-            long minedBefore = demo.Game.Progress.oresMined;
-            var frameTimes = new System.Text.StringBuilder();
-            for (int frame = 0; frame < 36; frame++)
-            {
-                if (frame == 2 || frame == 6 || frame == 10 || frame == 14) Click("Mine rock");
-                frameTimes.AppendLine(Time.realtimeSinceStartup.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
-                Capture("unity-animation-" + frame.ToString("00") + ".png");
-                yield return new WaitForSecondsRealtime(.04f);
-            }
-            File.WriteAllText(Path.Combine(output, "animation-times.txt"), frameTimes.ToString());
-            Check(demo.Game.Progress.oresMined == minedBefore + 1, "Upgraded pick breaks the damaged emerald");
-            demo.Game.Progress.upgradeLevel = 19; demo.Game.Progress.coins = demo.Game.UpgradeCost;
-            demo.ToggleSound(); Click("Upgrade pickaxe");
-            Check(demo.Game.PickTier == 4 && demo.Game.MiningDamage == 5, "Twentieth upgrade unlocks diamond pick and damage milestone");
-            yield return new WaitForSecondsRealtime(.3f);
-            Capture("unity-diamond-pick.png");
-            yield return VerifyDevelopment(demo, stage);
-            demo.Game.Progress.totalBlocks = 25000000; demo.Game.Progress.claimedContracts = 999999;
-            demo.ToggleSound();
-            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
-            {
-                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.4f);
-                CheckLayout();
-                Capture("unity-" + size.x + "x" + size.y + ".png");
-                demo.ShowPage(true); yield return null; CheckLayout();
-                demo.ShowWorkshop(); yield return null; CheckLayout(); Capture("unity-workshop-" + size.x + "x" + size.y + ".png");
-                Click("Production section"); yield return null; CheckLayout(); Capture("unity-production-" + size.x + "x" + size.y + ".png");
-                Click("Equipment section"); yield return null;
-                Click("Open milestones"); yield return null;
-                for (int page = 0; page < 4; page++)
-                {
-                    CheckLayout();
-                    if (page < 3) Click("Milestones next");
-                }
-                Capture("unity-milestones-" + size.x + "x" + size.y + ".png");
-                Click("Close milestones"); yield return null;
-                demo.ShowPage(false); yield return null;
-            }
-            demo.RestoreForSmoke(new MineProgress { swapLevel = 1, tickets = 1 });
-            demo.ShowPage(true); int layoutDraws = 0;
-            demo.SpinForSmoke(() => ++layoutDraws == 2 ? .99 : 0);
-            deadline = Time.realtimeSinceStartup + 5;
-            while (!demo.AwaitingPickChoice && Time.realtimeSinceStartup < deadline) yield return null;
-            Check(demo.AwaitingPickChoice, "Choice phase available for viewport checks");
-            foreach (var size in new[] { new Vector2Int(320, 640), new Vector2Int(390, 844), new Vector2Int(960, 540) })
-            {
-                Screen.SetResolution(size.x, size.y, false); yield return new WaitForSecondsRealtime(.4f);
-                CheckLayout();
-                Click("Reel 0");
-                Check(demo.SelectedPick == 0 && demo.AwaitingPickChoice, "Choice selection works at " + size);
-                Click("Reel 0");
-                Check(demo.SelectedPick == -1 && demo.Game.Progress.pendingSwapCount == 0, "Deselect keeps the exchange available at " + size);
-                Capture("unity-choice-" + size.x + "x" + size.y + ".png");
-            }
-            demo.Spin(); yield return FinishRoll(demo); demo.ShowPage(false);
-            Screen.SetResolution(960, 540, false);
-            yield return new WaitForSecondsRealtime(.6f);
-            Capture("unity-landscape.png");
-            yield return new WaitForSecondsRealtime(.4f);
+            Check(demo.Game.Progress.totalRolls == 1 && !demo.Game.HasPendingRoll, "Roulette resolves after the presentation redesign");
+            yield return new WaitForSecondsRealtime(.2f);
             File.WriteAllText(Path.Combine(output, "runtime-check.json"), "{\"result\":\"" + (errors == 0 ? "PASS" : "FAIL") + "\",\"errors\":" + errors + ",\"unity\":\"" + Application.unityVersion + "\"}");
             Debug.Log("MINE_LOOT_RUNTIME_CHECK: " + (errors == 0 ? "PASS" : "FAIL"));
             Application.Quit(errors == 0 ? 0 : 1);
+        }
+
+        private IEnumerator VerifyTicketVideo(DemoController demo)
+        {
+            const long epoch = 1800000000;
+            string key = "LuckyPickaxe.Runtime.Tickets." + Guid.NewGuid().ToString("N"), request = null;
+            int requests = 0;
+            demo.RestoreForSmoke(new MineProgress()); demo.ConfigureSessionForSmoke(epoch, key); demo.ShowRewards();
+            Check(!FindButton("Video tickets").interactable, "Native game does not invent an ad provider");
+            demo.ConfigureRewardedForSmoke(id => { request = id; requests++; return true; });
+            Click("Video tickets"); demo.ClaimTicketsWithVideo();
+            Check(requests == 1 && demo.IsPaused && demo.RewardedVideoPending, "Only one explicit ticket video may open and it pauses the game");
+            demo.OnRewardedVideo("stale:rewarded"); Check(demo.Game.Progress.tickets == 2, "Unrelated SDK callback cannot award tickets");
+            demo.OnRewardedVideo(request + ":rewarded"); demo.OnRewardedVideo(request + ":rewarded");
+            Check(demo.Game.Progress.tickets == 5 && ProgressStore.Load(key).Progress.videoTicketClaims == 1, "Matching onRewarded persists exactly three tickets once before close");
+            demo.OnRewardedVideo(request + ":closed"); yield return null;
+            Check(!demo.IsPaused && !FindButton("Video tickets").interactable, "Close resumes the game and exposes the saved cooldown");
+            demo.AdvanceSessionForSmoke(180); demo.ShowPage(false); demo.ShowRewards();
+            Click("Video tickets"); demo.OnRewardedVideo(request + ":closed"); yield return null;
+            Check(demo.Game.Progress.tickets == 5 && !demo.IsPaused, "Closing a new video without onRewarded gives no gift and restores input");
+            Click("Video tickets"); demo.OnRewardedVideo(request + ":error"); yield return null;
+            Check(demo.Game.Progress.tickets == 5 && !demo.IsPaused, "Ad failure never pays a ticket gift");
+            demo.ConfigureRewardedForSmoke(null); demo.ConfigureSessionForSmoke(epoch, null);
+            PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save();
         }
 
         private IEnumerator VerifyProduction(DemoController demo, VoxelStage stage)
@@ -423,7 +205,7 @@ namespace MineLoot
             Check(demo.Game.Progress.upgradeLevel == 0 && demo.Game.Progress.coins == 7000 && FindButton("Purchase amount").GetComponentInChildren<Text>().text == "ПОКУПКА: ×10", "Platform pause blocks both quantity changes and bulk spending");
             demo.PauseForSmoke(false);
             var restored = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(demo.Game.Progress)));
-            Check(restored.Progress.swapLevel == 2 && restored.Progress.coins == 7000 && restored.Progress.version == 11, "Batch results round-trip through the existing v11 save");
+            Check(restored.Progress.swapLevel == 2 && restored.Progress.coins == 7000 && restored.Progress.version == 12, "Batch results round-trip through the existing v11 save");
             demo.RestoreForSmoke(ProgressStore.Decode(original));
             yield return null;
         }

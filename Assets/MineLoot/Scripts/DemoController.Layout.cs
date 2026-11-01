@@ -107,8 +107,10 @@ namespace MineLoot
             float width = wideLayout ? safe.width / canvas.scaleFactor : 480;
             shell.sizeDelta = new Vector2(width, 960);
             experienceWidth = 404; ticketWidth = 360; miningVisualScale = 1; noticeHome = new Vector2(24, -10);
-            quickUpgradesLayout.gameObject.SetActive(!wideLayout);
-            workshopTab.gameObject.SetActive(!wideLayout); workshopNavMark.gameObject.SetActive(!wideLayout);
+            quickUpgradesLayout.gameObject.SetActive(true);
+            equipmentAside.SetActive(wideLayout);
+            minePage.transform.Find("Open team").gameObject.SetActive(!wideLayout);
+            workshopTab.gameObject.SetActive(true); workshopNavMark.gameObject.SetActive(true);
             desktopRollHints.SetActive(false);
             if (wideLayout) ReflowDesktop(width);
             pickHome = clickPick.rectTransform.anchoredPosition;
@@ -121,7 +123,6 @@ namespace MineLoot
 
         private void ReflowDesktop(float width)
         {
-            const float side = 1.08f;
             float left = width - 576;
             Frame(shell, "Surface", 0, 0, width, 960);
             Frame(shell, "Inventory base", 12, 164, width - 24, 786);
@@ -130,35 +131,49 @@ namespace MineLoot
             Frame(coinLayout, width - 525, 29, 270, 62);
             Frame(ticketWalletLayout, width - 243, 29, 150, 62);
             ButtonFrame(soundLabel.GetComponentInParent<Button>(), width - 70, 37, 45, 45);
-            float navWidth = Mathf.Min(600, left);
+            float navWidth = width - 48;
             Frame(navigationLayout, 24, 96, navWidth, 58);
             Frame(navigationLayout, "Navigation", 0, 0, navWidth, 58);
-            float navButton = (navWidth - 18) / 2;
-            ButtonFrame(mineTab, 9, 5, navButton, 45); ButtonFrame(rollTab, navButton + 12, 5, navButton, 45);
-            Frame(mineNavMark.rectTransform, 9 + (navButton - 66) / 2, 52, 66, 3);
-            Frame(rollNavMark.rectTransform, 12 + navButton + (navButton - 66) / 2, 52, 66, 3);
-            Frame(minePage.GetComponent<RectTransform>(), 0, 168, width - 528, 782);
-            Frame(rollPage.GetComponent<RectTransform>(), 0, 168, width - 528, 710);
-            Frame(workshopPage.GetComponent<RectTransform>(), width - 528, 168, 480, 650, side);
+            float navButton = (navWidth - 33) / 4;
+            var tabs = new[] { mineTab, workshopTab, rollTab, rewardsTab };
+            var marks = new[] { mineNavMark, workshopNavMark, rollNavMark, rewardsNavMark };
+            for (int i = 0; i < tabs.Length; i++)
+            {
+                ButtonFrame(tabs[i], 9 + i * (navButton + 5), 5, navButton, 45);
+                FontSize(tabs[i].GetComponentInChildren<Text>(), 22);
+                Frame(marks[i].rectTransform, 9 + i * (navButton + 5) + (navButton - 66) / 2, 52, 66, 3);
+            }
+            Frame(minePage.GetComponent<RectTransform>(), 0, 168, width, 782);
+            Frame(rollPage.GetComponent<RectTransform>(), 0, 168, width, 710);
+            float workshopWidth = Mathf.Min(1200, width - 48), cardWidth = (workshopWidth - 80) / 3;
+            Frame(workshopPage.GetComponent<RectTransform>(), (width - workshopWidth) / 2, 168, workshopWidth, 740);
+            Frame(workshopPage.transform, "Workshop header", 24, 0, workshopWidth - 48, 60);
+            ButtonFrame(prestigeButton, workshopWidth - 180, 14, 132, 32);
+            ButtonFrame(equipmentTab, 24, 76, (workshopWidth - 64) / 2, 38);
+            ButtonFrame(productionTabButton, workshopWidth / 2 + 8, 76, (workshopWidth - 64) / 2, 38);
             for (int i = 0; i < workshopCards.Length; i++)
             {
-                Frame(workshopCards[i].GetComponent<RectTransform>(), 24 + i % 2 * 221, 108 + i / 2 * 164, 211, 164);
-                Frame(workshopEffects[i].rectTransform, 12, 54, 187, 42);
-                Frame(workshopStates[i].rectTransform, 12, 98, 187, 20);
-                Frame(workshopCards[i].transform, "Upgrade progress track " + i, 12, 118, 187, 3);
-                Frame(workshopProgress[i].rectTransform, 12, 118, 187, 3);
-                ButtonFrame(workshopButtons[i], 12, 125, 187, 32);
+                Frame(workshopCards[i].GetComponent<RectTransform>(), 24 + i % 3 * (cardWidth + 16), 130 + i / 3 * 254, cardWidth, 238);
+                Frame(workshopIcons[i].rectTransform, 18, 20, 48, 48);
+                Frame(workshopTitles[i].rectTransform, 82, 18, cardWidth - 100, 32); FontSize(workshopTitles[i], 24);
+                Frame(workshopLevels[i].rectTransform, 82, 50, cardWidth - 100, 24); FontSize(workshopLevels[i], 19);
+                Frame(workshopEffects[i].rectTransform, 16, 88, cardWidth - 32, 55); FontSize(workshopEffects[i], 21);
+                Frame(workshopStates[i].rectTransform, 16, 151, cardWidth - 32, 26); FontSize(workshopStates[i], 18);
+                Frame(workshopCards[i].transform, "Upgrade progress track " + i, 16, 183, cardWidth - 32, 4);
+                Frame(workshopProgress[i].rectTransform, 16, 183, cardWidth - 32, 4);
+                ButtonFrame(workshopButtons[i], 16, 194, cardWidth - 32, 32);
             }
-            Frame(productionSummary.GetComponent<RectTransform>(), 245, 436, 211, 164);
-            ButtonFrame(purchaseAmountButton, 24, 612, 211, 30);
-            Frame(workshopFootnote.rectTransform, 245, 612, 211, 24);
-            ButtonFrame(offlineButton, 245, 612, 211, 30);
-            Frame(contractCard.GetComponent<RectTransform>(), width - 528, 866 - 798 * side, 480, 960, side);
-            Frame(guideCard.GetComponent<RectTransform>(), width - 528 + 24 * side, 866, 432, 83, side);
+            ButtonFrame(purchaseAmountButton, 24, 654, 300, 42);
+            Frame(workshopFootnote.rectTransform, 344, 660, 300, 30);
+            ButtonFrame(offlineButton, workshopWidth - 348, 654, 324, 42);
+            Frame(equipmentAside.GetComponent<RectTransform>(), width - 528, 58, 480, 612);
+            Frame(quickUpgradesLayout, width - 504, 414, 432, 94);
+            Frame(guideCard.GetComponent<RectTransform>(), width - 504, 866, 432, 83);
+            Frame(rewardsPage.GetComponent<RectTransform>(), (width - 480) / 2, 168, 480, 700, 1.04f);
             noticeHome = new Vector2((width - 374) / 2, -10);
             Frame(noticeRect, noticeHome.x, 10, 374, 76);
             ReflowMine(left);
-            ReflowExpedition(left);
+            ReflowExpedition(width - 48);
         }
 
         private void ReflowMine(float width)
@@ -176,13 +191,13 @@ namespace MineLoot
             Frame(hero, "Tap hint", 12, 480, width - 24, 29);
             Frame(mineStatus.rectTransform, 12, 480, width - 24, 29); FontSize(mineStatus, 20);
             Frame(oresLayout, 24, 586, width, 54);
-            float slot = (width - 40) / 5;
-            for (int i = 0; i < 5; i++)
+            float slot = (width - 32) / MineGame.OreCount;
+            for (int i = 0; i < MineGame.OreCount; i++)
             {
-                float x = i * (slot + 10);
+                float x = i * (slot + 4);
                 Frame(oreSlots[i].rectTransform, x, 0, slot, 54);
                 Frame(oreIcons[i].rectTransform, x + (slot - 28) / 2, 2, 28, 28);
-                Frame(oreNames[i].rectTransform, x + 2, 31, slot - 4, 22); FontSize(oreNames[i], 18);
+                Frame(oreNames[i].rectTransform, x + 2, 31, slot - 4, 22); FontSize(oreNames[i], 16);
             }
             Frame(ticketLayout, 24, 648, width, 48);
             Frame(ticketLayout, "Next ticket", 0, 0, width, 48);

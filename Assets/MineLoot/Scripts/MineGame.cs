@@ -3,12 +3,12 @@ using System;
 namespace MineLoot
 {
     public enum BlockKind { Ore, Obsidian, Bedrock }
-    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure, Worker, Drill, Cart, Rails, Warehouse }
+    public enum UpgradeKind { Pickaxe, Forge, Swap, Efficiency, Press, Treasure, Worker, Drill, Cart, Rails, Warehouse, Fortune, Haste }
 
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 11;
+        public int version = 12;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -48,6 +48,10 @@ namespace MineLoot
         public int experienceCarry;
         public long[] milestoneBest = new long[16];
         public int guideStep;
+        public int fortuneLevel, hasteLevel;
+        public long videoTicketsReadyUtc;
+        public int videoTicketClaims;
+        public int oreUnlocks;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -64,6 +68,7 @@ namespace MineLoot
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
         public const int PrestigeUpgradeCount = 9, MaxPrestiges = 1000000, MaxCrystals = 10000000;
         public const int GuideStepCount = 5;
+        public const int OreCount = 9, VideoTickets = 3, VideoCooldownSeconds = 180;
         private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 14875000;
         private static readonly PrestigeUpgrade[] PrestigeUpgrades = {
             new PrestigeUpgrade("Верный удар", "+25% монет\nза удар и руду", "pick4", 2),
@@ -77,11 +82,15 @@ namespace MineLoot
             new PrestigeUpgrade("Сила жилы", "Жила даёт\n×4 монеты", "tile-diamond", 5)
         };
         public static PrestigeUpgrade PrestigeUpgradeAt(int index) => PrestigeUpgrades[index];
-        private static readonly int[] OreLevels = { 1, 2, 4, 7, 10 };
-        private static readonly int[] OreHealths = { 6, 9, 12, 16, 20 };
-        private static readonly int[] OreRewards = { 12, 28, 55, 95, 150 };
-        private static readonly string[] OreKeys = { "coal", "iron", "gold", "diamond", "emerald" };
-        private static readonly int[] OreCycle = { 0, 1, 0, 2, 1, 0, 3, 1, 2, 0, 4, 2 };
+        // IDs 0..4 belong to existing saves. Display/unlock order is independent of the ID.
+        private static readonly int[] OreLevels = { 1, 3, 7, 14, 20, 2, 5, 10, 30 };
+        private static readonly int[] OreHealths = { 48, 96, 160, 240, 320, 64, 128, 192, 640 };
+        private static readonly int[] OreRewards = { 96, 224, 440, 760, 1200, 144, 320, 560, 2400 };
+        private static readonly string[] OreKeys = { "coal", "iron", "gold", "diamond", "emerald", "copper", "lapis", "redstone", "ancient" };
+        private static readonly int[] OreOrder = { 0, 5, 1, 6, 2, 7, 3, 4, 8 };
+        private static readonly int[] OreCycle = { 0, 1, 0, 2, 3, 1, 4, 2, 5, 3, 6, 4, 7, 5, 8 };
+        private static readonly int[] PickRanks = { 0, 2, 5, 12, 20, 32 };
+        private static readonly int[] PickDamage = { 1, 2, 4, 6, 9, 15 };
         // Stable order: each index is a saved claim bit. Append new goals instead of reordering.
         private static readonly Milestone[] Milestones = {
             new Milestone("Первые искры", "Нанеси 30 ударов по руде", "pick1", 30, 120, 1),
@@ -108,14 +117,20 @@ namespace MineLoot
         public int MinerLevel => LevelForExperience(Progress.experience);
         public long LevelExperience => Progress.experience - ExperienceForLevel(MinerLevel);
         public long LevelGoal => MinerLevel == MaxMinerLevel ? 0 : ExperienceForLevel(MinerLevel + 1) - ExperienceForLevel(MinerLevel);
-        public int UnlockedOres { get { int count = 1; while (count < OreLevels.Length && MinerLevel >= OreLevels[count]) count++; return count; } }
+        public int UnlockedOres { get { int count = 0; for (int i = 0; i < OreCount; i++) if (IsOreUnlocked(i)) count++; return count; } }
+        public bool IsOreUnlocked(int kind) => kind >= 0 && kind < OreCount && (MinerLevel >= OreLevels[kind] || (Progress.oreUnlocks & (1 << kind)) != 0);
+        private int UnlockedOreAt(int index) { foreach (int kind in OreOrder) if (IsOreUnlocked(kind) && index-- == 0) return kind; return 0; }
+        public static int OreAtDisplayIndex(int index) => OreOrder[index];
         public string OreKey => OreKeys[Progress.oreKind];
         public int OreHealth => OreHealths[Progress.oreKind];
-        public int OreReward => OreRewards[Progress.oreKind] * (HasPrestigeUpgrade(0) ? 125 : 100) / 100;
-        public int MiningDamage => 1 + Progress.upgradeLevel / 5 + Progress.efficiencyLevel;
+        public int OreReward => OreRewards[Progress.oreKind] * (100 + Progress.fortuneLevel * 25) / 100 * (HasPrestigeUpgrade(0) ? 125 : 100) / 100;
+        public static int PickTierForRank(int rank) { int tier = 0; while (tier + 1 < PickRanks.Length && rank >= PickRanks[tier + 1]) tier++; return tier; }
+        public static int ToolDamage(int rank) => PickDamage[PickTierForRank(rank)] + rank / 8;
+        public int MiningDamage => ToolDamage(Progress.upgradeLevel) + Progress.efficiencyLevel;
+        public float SwingSeconds => .22f / (1 + Progress.hasteLevel * .08f);
         public int HitsRequired => HitsPerTicket - Progress.pressLevel;
-        public int PickTier => Progress.upgradeLevel >= 20 ? 4 : Progress.upgradeLevel >= 12 ? 3 : Progress.upgradeLevel >= 5 ? 2 : Progress.upgradeLevel >= 2 ? 1 : 0;
-        public int NextPickUpgrade => PickTier == 4 ? MaxUpgrade : new[] { 2, 5, 12, 20 }[PickTier];
+        public int PickTier => PickTierForRank(Progress.upgradeLevel);
+        public int NextPickUpgrade => PickTier == 5 ? MaxUpgrade : PickRanks[PickTier + 1];
         public static string OreKeyAt(int kind) => OreKeys[kind];
         public static int OreUnlockLevel(int kind) => OreLevels[kind];
         public static long ExperienceForLevel(int level) { long l = Math.Max(1, Math.Min(MaxMinerLevel, level)); return (l - 1) * (l + 2) * 10; }
@@ -195,7 +210,12 @@ namespace MineLoot
             bool legacyRoll = Progress.version < 5;
             bool legacyUpgrades = Progress.version < 6;
             bool legacyGuide = Progress.version < 11;
-            Progress.version = 11;
+            bool legacyMining = Progress.version < 12;
+            Progress.version = 12;
+            Progress.fortuneLevel = Math.Max(0, Math.Min(10, Progress.fortuneLevel));
+            Progress.hasteLevel = Math.Max(0, Math.Min(10, Progress.hasteLevel));
+            Progress.videoTicketsReadyUtc = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.videoTicketsReadyUtc));
+            Progress.videoTicketClaims = Math.Max(0, Math.Min(1000000, Progress.videoTicketClaims));
             // Existing players opt in through Rules; an update never covers their contract card.
             Progress.guideStep = legacyGuide ? GuideStepCount : Math.Max(0, Math.Min(GuideStepCount, Progress.guideStep));
             Progress.prestigeCount = Math.Max(0, Math.Min(MaxPrestiges, Progress.prestigeCount));
@@ -269,7 +289,17 @@ namespace MineLoot
             // Old clicks count toward the new level; migration never pays historical level rewards.
             Progress.experience = Math.Max(0, Math.Min(ExperienceForLevel(MaxMinerLevel), legacy ? Progress.totalClicks : Progress.experience));
             Progress.oresMined = Math.Max(0, Math.Min(CoinLimit, Progress.oresMined));
-            Progress.oreKind = Math.Max(0, Math.Min(UnlockedOres - 1, Progress.oreKind));
+            Progress.oreUnlocks = Math.Max(0, Progress.oreUnlocks) & ((1 << OreCount) - 1);
+            int[] oldLevels = { 1, 2, 4, 7, 10 };
+            for (int i = 0; i < OreCount; i++)
+                if (MinerLevel >= OreLevels[i] || (legacyMining && i < 5 && MinerLevel >= oldLevels[i])) Progress.oreUnlocks |= 1 << i;
+            // Preserve the damaged fraction of an old block, using integer arithmetic.
+            if (legacyMining && Progress.oreKind >= 0 && Progress.oreKind < 5 && Progress.oreDamage > 0)
+            {
+                int[] oldHealth = { 6, 9, 12, 16, 20 };
+                Progress.oreDamage = (int)Math.Min(OreHealths[Progress.oreKind] - 1L, (long)Progress.oreDamage * OreHealths[Progress.oreKind] / oldHealth[Progress.oreKind]);
+            }
+            if (!IsOreUnlocked(Progress.oreKind)) { Progress.oreKind = UnlockedOreAt(UnlockedOres - 1); Progress.oreDamage = 0; }
             Progress.oreDamage = Math.Max(0, Math.Min(OreHealth - 1, Progress.oreDamage));
             if (legacyRoll || !Progress.rollPending) ClearPendingRoll();
             else
@@ -342,7 +372,7 @@ namespace MineLoot
             {
                 hit.broken = true;
                 hit.coins += OreReward * ManualMultiplier;
-                hit.experience += 6 + Progress.oreKind * 4;
+                hit.experience += 12 + OreLevels[Progress.oreKind] * 2;
                 Progress.oresMined = Math.Min(CoinLimit, Progress.oresMined + 1);
                 Progress.oreDamage = 0;
                 if (!VeinOffered && !VeinActive && ++Progress.veinCharge >= RichVeinTarget)
@@ -353,7 +383,7 @@ namespace MineLoot
             hit.coins += GainExperience(hit.experience, out hit.tickets, out hit.experience);
             hit.levels = MinerLevel - previousLevel;
             if (hit.broken)
-                Progress.oreKind = UnlockedOres > previousUnlocks ? UnlockedOres - 1 : Math.Min(UnlockedOres - 1, OreCycle[Progress.oresMined % OreCycle.Length]);
+                Progress.oreKind = UnlockedOreAt(UnlockedOres > previousUnlocks ? UnlockedOres - 1 : OreCycle[Progress.oresMined % OreCycle.Length] % UnlockedOres);
             AddCoins(hit.coins);
             Progress.totalClicks = Math.Min(CoinLimit, Progress.totalClicks + 1);
             Progress.hits++;
@@ -361,6 +391,17 @@ namespace MineLoot
             if (ticket) { Progress.hits = 0; hit.tickets++; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
             LastHit = hit;
             return ticket;
+        }
+
+        public long VideoWaitSeconds(long utc) => Math.Max(0, Progress.videoTicketsReadyUtc - Math.Max(0, Math.Min(MaxUtcSeconds, utc)));
+        public bool CanClaimVideoTickets(long utc) => utc > 0 && utc <= MaxUtcSeconds && VideoWaitSeconds(utc) == 0 && !HasPendingRoll && Progress.tickets <= 1000000 - VideoTickets && Progress.videoTicketClaims < 1000000;
+        // The controller calls this only after the matching SDK onRewarded callback.
+        public bool ClaimVideoTickets(long utc)
+        {
+            if (!CanClaimVideoTickets(utc)) return false;
+            Progress.tickets += VideoTickets; Progress.videoTicketClaims++;
+            Progress.videoTicketsReadyUtc = Math.Min(MaxUtcSeconds, utc + VideoCooldownSeconds);
+            return true;
         }
 
         private int GainExperience(int amount, out int tickets, out int awarded)
@@ -478,6 +519,8 @@ namespace MineLoot
                 case UpgradeKind.Cart: return Progress.cartCount;
                 case UpgradeKind.Rails: return Progress.railLevel;
                 case UpgradeKind.Warehouse: return Progress.warehouseLevel;
+                case UpgradeKind.Fortune: return Progress.fortuneLevel;
+                case UpgradeKind.Haste: return Progress.hasteLevel;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
         }
@@ -489,7 +532,7 @@ namespace MineLoot
                 case UpgradeKind.Pickaxe: return MaxUpgrade;
                 case UpgradeKind.Forge: return MaxForge;
                 case UpgradeKind.Swap: return 3;
-                case UpgradeKind.Efficiency: case UpgradeKind.Treasure: return 10;
+                case UpgradeKind.Efficiency: case UpgradeKind.Treasure: case UpgradeKind.Fortune: case UpgradeKind.Haste: return 10;
                 case UpgradeKind.Press: return 6;
                 case UpgradeKind.Worker: return 100;
                 case UpgradeKind.Drill: return 50;
@@ -516,6 +559,8 @@ namespace MineLoot
                 case UpgradeKind.Cart: return 8;
                 case UpgradeKind.Rails: return 8 + rank * 2;
                 case UpgradeKind.Warehouse: return 6 + rank * 4;
+                case UpgradeKind.Fortune: return 3 + rank * 3;
+                case UpgradeKind.Haste: return 2 + rank * 3;
                 default: return 1;
             }
         }
@@ -527,7 +572,7 @@ namespace MineLoot
             double start, growth;
             switch (kind)
             {
-                case UpgradeKind.Pickaxe: start = 120; growth = 1.28; break;
+                case UpgradeKind.Pickaxe: start = 120; growth = 1.20; break;
                 case UpgradeKind.Forge: start = 180; growth = 1.42; break;
                 case UpgradeKind.Swap: start = 600; growth = 4; break;
                 case UpgradeKind.Efficiency: start = 300; growth = 1.58; break;
@@ -538,6 +583,8 @@ namespace MineLoot
                 case UpgradeKind.Cart: start = 1400; growth = 1.30; break;
                 case UpgradeKind.Rails: start = 900; growth = 1.65; break;
                 case UpgradeKind.Warehouse: start = 1500; growth = 2.2; break;
+                case UpgradeKind.Fortune: start = 450; growth = 1.70; break;
+                case UpgradeKind.Haste: start = 350; growth = 1.65; break;
                 default: throw new ArgumentOutOfRangeException(nameof(kind));
             }
             return (long)Math.Min(CoinLimit, Math.Round(start * Math.Pow(growth, rank)));
@@ -590,6 +637,8 @@ namespace MineLoot
                 case UpgradeKind.Cart: Progress.cartCount++; break;
                 case UpgradeKind.Rails: Progress.railLevel++; break;
                 case UpgradeKind.Warehouse: Progress.warehouseLevel++; break;
+                case UpgradeKind.Fortune: Progress.fortuneLevel++; break;
+                case UpgradeKind.Haste: Progress.hasteLevel++; break;
             }
             return true;
         }
@@ -694,7 +743,7 @@ namespace MineLoot
                 totalClicks = previous.totalClicks, oresMined = previous.oresMined, totalRolls = previous.totalRolls,
                 totalBlocks = previous.totalBlocks, claimedContracts = previous.claimedContracts,
                 totalProduced = previous.totalProduced, totalOfflineCoins = previous.totalOfflineCoins,
-                lastSeenUtc = previous.lastSeenUtc
+                lastSeenUtc = previous.lastSeenUtc, videoTicketsReadyUtc = previous.videoTicketsReadyUtc, videoTicketClaims = previous.videoTicketClaims
             };
             Sanitize();
             if (previous.lastSeenUtc > 0) RecordSession(previous.lastSeenUtc);

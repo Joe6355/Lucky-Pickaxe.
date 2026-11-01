@@ -18,13 +18,17 @@ namespace MineLoot
         private Material oreMaterial;
         private MeshRenderer crackRenderer;
         private Material crackMaterial;
-        private readonly float[] particleAge = new float[48], particleLife = new float[48];
-        private readonly Vector3[] particleOrigin = new Vector3[48], particleVelocity = new Vector3[48];
+        private readonly float[] particleAge = new float[96], particleLife = new float[96];
+        private readonly Vector3[] particleOrigin = new Vector3[96], particleVelocity = new Vector3[96];
         private MaterialPropertyBlock particleProperties;
         private float hit, flash, clock, replacement = -1, damageFraction;
         private int particleCursor;
         private string desiredOre = "coal";
         private int biome = -1;
+        private readonly Transform[] dust = new Transform[12];
+        private readonly float[] dustTime = new float[12];
+        private readonly Vector3[] dustOrigin = new Vector3[12];
+        private int dustCursor;
         public RenderTexture Target { get; private set; }
         public Camera View => view;
         public Vector3 MiningOrePosition => ore.position;
@@ -73,7 +77,7 @@ namespace MineLoot
             var shadow = new Geometry(); AddFace(shadow, new Vector3(-.4f,.015f,-.8f), new Vector3(3.3f,0,3.3f), 4, 1);
             MakeMesh("Contact shadow", shadow, shadowMaterial);
             var mainOre = new Geometry(); AddCube(mainOre, Vector3.zero, Vector3.one * 1.85f, 1);
-            oreMaterial = new Material(GetMaterial("coal")); materials.Add("Mining ore", oreMaterial);
+            oreMaterial = new Material(GetMaterial("mine-coal")); materials.Add("Mining ore", oreMaterial);
             ore = MakeMesh("Clickable ore block", mainOre, oreMaterial).transform;
             ore.localPosition = new Vector3(-.4f, .95f, -.8f); ore.localEulerAngles = new Vector3(0, -8, 0);
             var crackGeometry = new Geometry(); AddCube(crackGeometry, Vector3.zero, Vector3.one * 1.864f, 1);
@@ -82,7 +86,32 @@ namespace MineLoot
             var crack = MakeMesh("Progressive cracks", crackGeometry, crackMaterial); crack.transform.SetParent(ore, false);
             crackRenderer = crack.GetComponent<MeshRenderer>(); crackRenderer.enabled = false;
             InitializeChips();
+            InitializeDust();
             SetBiome(0);
+        }
+
+        private void InitializeDust()
+        {
+            var material = new Material(Resources.Load<Shader>("VoxelShadow")) { mainTexture = art.Texture("dust") };
+            materials.Add("Mining dust", material);
+            for (int i = 0; i < dust.Length; i++)
+            {
+                var shape = new Geometry(); AddFace(shape, Vector3.zero, Vector3.one, 0, 1);
+                dust[i] = MakeMesh("Mining dust " + i, shape, material).transform;
+                dust[i].gameObject.SetActive(false);
+            }
+        }
+
+        private void EmitDust(bool broken)
+        {
+            for (int i = 0; i < (broken ? 10 : 2); i++)
+            {
+                int p = dustCursor++ % dust.Length; float angle = dustCursor * 2.4f;
+                dustTime[p] = 0;
+                dustOrigin[p] = ore.localPosition + new Vector3(Mathf.Cos(angle) * .65f, i % 3 * .2f - .3f, -.9f + Mathf.Sin(angle) * .3f);
+                dust[p].rotation = view.transform.rotation;
+                dust[p].gameObject.SetActive(true);
+            }
         }
 
         private void InitializeChips()
@@ -96,47 +125,49 @@ namespace MineLoot
 
         private void BuildTerrain()
         {
-            // A stepped grassy clearing, with the visible dirt/stone cutaway at the front.
+            // A compact underground quarry: calm stone, structural timber and warm lanterns.
+            // The centre stays open so the active ore and its fragments have a clear silhouette.
             for (int x = -6; x <= 6; x++) for (int z = -4; z <= 5; z++)
             {
-                if (x * x / 40f + z * z / 28f > 1.5f) continue;
-                float y = z >= 3 ? .15f + (x > 1 ? .5f : 0) : -.5f;
-                if (x < -3 && z < 0) y -= .5f;
-                Block(new Vector3(x, y - 1, z), Vector3.one, "dirt");
-                Block(new Vector3(x, y, z), Vector3.one, "grass", "grass-top");
+                Block(new Vector3(x, -.32f, z), new Vector3(.98f, .6f, .98f), "mine-floor");
+                if (z == -4) Block(new Vector3(x, -.72f, z), new Vector3(.98f, .22f, 1), "mine-wall");
             }
-            // Bright stepped cliff and the dark mouth of a timber mine.
-            for (int x = 0; x <= 5; x++) for (int y = 1; y <= 3; y++)
+            for (int x = -6; x <= 6; x++) for (int y = 0; y < 5; y++)
             {
-                if (x >= 1 && x <= 3 && y <= 2) continue;
-                Block(new Vector3(x, y, 3.8f), Vector3.one, y == 3 ? "grass" : "stone", y == 3 ? "grass-top" : null);
+                if (x >= 1 && x <= 3 && y < 3) continue;
+                float inset = (x + y * 3) % 4 == 0 ? .18f : 0;
+                Block(new Vector3(x, .5f + y, 4.8f + inset), new Vector3(.98f, .98f, 1), "mine-wall");
             }
-            Block(new Vector3(2, 1.25f, 4.3f), new Vector3(3.2f, 2.4f, .1f), "black");
-            Block(new Vector3(.45f, 1.2f, 3.15f), new Vector3(.28f, 2.5f, .35f), "wood");
-            Block(new Vector3(3.55f, 1.2f, 3.15f), new Vector3(.28f, 2.5f, .35f), "wood");
-            Block(new Vector3(2, 2.4f, 3.15f), new Vector3(3.4f, .32f, .4f), "planks");
-            for (int z = -1; z <= 3; z++)
+            Block(new Vector3(2, 1.5f, 5.1f), new Vector3(3.1f, 3, .2f), "black");
+            foreach (float x in new[] { .45f, 3.55f })
             {
-                Block(new Vector3(2, .08f, z), new Vector3(1.4f, .07f, .18f), "planks");
-                Block(new Vector3(1.5f, .12f, z), new Vector3(.08f, .06f, 1), "iron");
-                Block(new Vector3(2.5f, .12f, z), new Vector3(.08f, .06f, 1), "iron");
+                Block(new Vector3(x, 1.35f, 3.15f), new Vector3(.35f, 2.8f, .4f), "mine-timber");
+                Block(new Vector3(x, .18f, 3.15f), new Vector3(.55f, .38f, .62f), "mine-steel");
+                Block(new Vector3(x, 2.04f, 2.83f), new Vector3(.42f, .08f, .4f), "mine-steel");
+                Block(new Vector3(x, 1.8f, 2.83f), new Vector3(.27f, .4f, .26f), "mine-lamp");
+                Block(new Vector3(x, 1.56f, 2.83f), new Vector3(.42f, .08f, .4f), "mine-steel");
             }
-            Tree(-4.9f, 3.4f); Tree(-5, 4.3f); Tree(5.4f, 4.1f);
-            // A squat wooden supply crate, flowers, stepped grass and little torches.
-            Block(new Vector3(-2.6f, .4f, -.5f), new Vector3(.9f, .8f, .7f), "planks");
-            Block(new Vector3(-2.6f, .43f, -.87f), new Vector3(.12f, .21f, .06f), "gold");
-            foreach (var p in new[] { new Vector3(-2.7f,.15f,-2), new Vector3(3.9f,.15f,-1.6f), new Vector3(-3.5f,.15f,0), new Vector3(.7f,.15f,1.6f) })
+            Block(new Vector3(2, 2.65f, 3.15f), new Vector3(3.55f, .38f, .46f), "mine-timber");
+            foreach (float x in new[] { -4.6f, 4.9f })
             {
-                Block(p, new Vector3(.08f,.5f,.08f), "leaves");
-                Block(p + Vector3.up*.24f, new Vector3(.32f,.14f,.14f), "flower");
-                Block(p + Vector3.up*.24f, new Vector3(.14f,.14f,.32f), "flower");
+                Block(new Vector3(x, 1.65f, 3.9f), new Vector3(.35f, 3.3f, .5f), "mine-timber");
+                Block(new Vector3(x, 2.75f, 3.5f), new Vector3(.65f, .13f, .7f), "mine-steel");
+                Block(new Vector3(x, 2.45f, 3.5f), new Vector3(.34f, .48f, .34f), "mine-lamp");
+                Block(new Vector3(x, 2.16f, 3.5f), new Vector3(.52f, .12f, .52f), "mine-steel");
             }
-            foreach (float x in new[] { .2f, 3.8f })
+            Block(new Vector3(0, 3.3f, 4), new Vector3(10.1f, .35f, .5f), "mine-timber");
+            // Tracks lead to the lit mine opening, rather than floating on grass.
+            for (int z = -2; z <= 4; z++)
             {
-                Block(new Vector3(x,.8f,2.7f),new Vector3(.12f,.75f,.12f),"wood");
-                Block(new Vector3(x,1.2f,2.7f),new Vector3(.17f,.24f,.17f),"torch");
+                Block(new Vector3(2, .035f, z), new Vector3(1.55f, .09f, .2f), "mine-timber");
+                foreach (float x in new[] { 1.47f, 2.53f }) Block(new Vector3(x, .11f, z), new Vector3(.08f, .09f, 1.02f), "mine-steel");
             }
-            for(int i=0;i<3;i++) Block(new Vector3(-5+i*4,5.7f+i*.3f,7+i),new Vector3(2.8f,.3f,1.2f),"cloud");
+            // Deliberate clusters of exposed minerals; no noisy full-screen texture.
+            foreach (var p in new[] { new Vector3(-3, 1.2f, 4.21f), new Vector3(-2, 2.2f, 4.21f), new Vector3(5, .8f, 4.21f) })
+                Block(p, new Vector3(.86f, .86f, .16f), p.x > 0 ? "mine-copper" : "mine-coal");
+            Block(new Vector3(-.4f, -.015f, -.8f), new Vector3(2.55f, .14f, 2.55f), "mine-wall");
+            foreach (var p in new[] { new Vector3(-1.8f,.13f,-2), new Vector3(.8f,.1f,-1.9f), new Vector3(-3.8f,.12f,1.5f) })
+                Block(p, new Vector3(.3f, .22f, .34f), "mine-floor");
             foreach (var pair in terrain) MakeMesh("Batched " + pair.Key, pair.Value, GetMaterial(pair.Key));
         }
 
@@ -162,17 +193,18 @@ namespace MineLoot
         public void SetOre(string key, float damage)
         {
             desiredOre = key; damageFraction = Mathf.Clamp01(damage);
-            if (replacement < 0 || replacement >= .08f) oreMaterial.mainTexture = art.Texture("tex-" + desiredOre);
-            crackMaterial.mainTexture = art.Texture("crack" + Mathf.Clamp(1 + Mathf.FloorToInt(damageFraction * 3), 1, 3));
+            if (replacement < 0 || replacement >= .08f) oreMaterial.mainTexture = art.Texture("tex-mine-" + desiredOre);
+            crackMaterial.mainTexture = art.Texture("crack" + Mathf.Clamp(1 + Mathf.FloorToInt(damageFraction * 6), 1, 6));
             crackRenderer.enabled = damageFraction > 0 && replacement < 0;
         }
 
         public void Hit(bool broken)
         {
             // Finish the prior replacement if a stronger pick already breaks the next block.
-            if (replacement >= 0) { oreMaterial.mainTexture = art.Texture("tex-" + desiredOre); replacement = -1; }
+            if (replacement >= 0) { oreMaterial.mainTexture = art.Texture("tex-mine-" + desiredOre); replacement = -1; }
             hit = flash = 1;
-            EmitChips(ore.localPosition + (broken ? Vector3.up * .2f : new Vector3(.55f, .1f, -.8f)), oreMaterial.mainTexture, broken ? 16 : 4, broken);
+            EmitDust(broken);
+            EmitChips(ore.localPosition + (broken ? Vector3.up * .2f : new Vector3(.55f, .1f, -.8f)), oreMaterial.mainTexture, broken ? 44 : 7, broken);
             if (broken) { replacement = 0; crackRenderer.enabled = false; }
         }
 
@@ -183,9 +215,9 @@ namespace MineLoot
             {
                 int p = particleCursor++ % pieces.Count;
                 float angle = particleCursor * 2.399963f;
-                particleAge[p] = 0; particleLife[p] = broken ? .6f : .32f;
+                particleAge[p] = 0; particleLife[p] = broken ? .85f : .42f;
                 particleOrigin[p] = origin;
-                float force = broken ? 2.8f : 1.35f;
+                float force = broken ? 3.4f : 1.3f;
                 particleVelocity[p] = new Vector3(Mathf.Cos(angle) * force, 1.7f + i % 4 * .35f, Mathf.Sin(angle) * force);
                 particleProperties.SetTexture("_MainTex", texture);
                 pieces[p].GetComponent<MeshRenderer>().SetPropertyBlock(particleProperties);
@@ -196,7 +228,7 @@ namespace MineLoot
         {
             if (biome == index) return; biome = index;
             if (IsExpedition) { SetExpeditionBiome(index); return; }
-            view.backgroundColor = index == 0 ? ColorOf("8fcaea") : index == 1 ? ColorOf("a8d9ee") : ColorOf("efcc9b");
+            view.backgroundColor = index == 0 ? ColorOf("213942") : index == 1 ? ColorOf("2b3448") : ColorOf("42333c");
         }
         public bool Paused { get; set; }
         private void Update()
@@ -207,23 +239,32 @@ namespace MineLoot
             else
             {
                 UpdateDevelopment(Time.unscaledDeltaTime);
+                for (int i = 0; i < dust.Length; i++) if (dust[i].gameObject.activeSelf)
+                {
+                    float t = dustTime[i] += Time.unscaledDeltaTime;
+                    if (t >= .65f) { dust[i].gameObject.SetActive(false); continue; }
+                    dust[i].localPosition = dustOrigin[i] + new Vector3(Mathf.Sin(i * 2.4f) * t * .6f, t * .7f, 0);
+                    dust[i].localScale = Vector3.one * (.15f + t * (i % 3 + 1) * .8f);
+                    particleProperties.Clear(); particleProperties.SetColor("_Color", new Color(1, 1, 1, (1 - t / .65f) * .45f));
+                    dust[i].GetComponent<MeshRenderer>().SetPropertyBlock(particleProperties);
+                }
                 hit = Mathf.MoveTowards(hit, 0, Time.unscaledDeltaTime * 6);
                 flash = Mathf.MoveTowards(flash, 0, Time.unscaledDeltaTime * 10);
-                float scale = 1 - hit * .06f;
+                float scale = 1 - hit * .085f;
                 if (replacement >= 0)
                 {
                     replacement += Time.unscaledDeltaTime;
                     if (replacement < .08f) scale = 1 - replacement / .08f;
                     else
                     {
-                        oreMaterial.mainTexture = art.Texture("tex-" + desiredOre);
+                        oreMaterial.mainTexture = art.Texture("tex-mine-" + desiredOre);
                         float t = Mathf.Clamp01((replacement - .08f) / .16f) - 1;
                         scale = 1 + 2.70158f * t * t * t + 1.70158f * t * t;
                     }
                     if (replacement >= .24f) replacement = -1;
                 }
-                ore.localScale = Vector3.one * Mathf.Max(.001f, scale);
-                ore.localPosition = new Vector3(-.4f + Mathf.Sin(hit * 24) * hit * .055f, .95f, -.8f);
+                ore.localScale = new Vector3(1 + hit * .025f, Mathf.Max(.001f, scale), 1 + hit * .025f) * (replacement >= 0 ? Mathf.Max(.001f, scale) : 1);
+                ore.localPosition = new Vector3(-.4f + Mathf.Sin(hit * 20) * hit * .065f, .95f - hit * .055f, -.8f);
                 ore.localEulerAngles = new Vector3(hit * 4, -8, hit * 3);
                 oreMaterial.color = Color.white * (1 + flash * .3f);
                 crackRenderer.enabled = damageFraction > 0 && replacement < 0;
@@ -233,9 +274,11 @@ namespace MineLoot
                 if (!pieces[i].activeSelf) continue;
                 float t = particleAge[i] += Time.unscaledDeltaTime;
                 if (t >= particleLife[i]) { pieces[i].SetActive(false); continue; }
-                pieces[i].transform.localPosition = particleOrigin[i] + particleVelocity[i] * t + Vector3.down * (5 * t * t);
+                Vector3 point = particleOrigin[i] + particleVelocity[i] * t + Vector3.down * (7 * t * t);
+                if (point.y < .08f) point.y = .08f + Mathf.Abs(point.y - .08f) * .2f;
+                pieces[i].transform.localPosition = point;
                 pieces[i].transform.localEulerAngles = new Vector3(i * 27 + t * 180, i * 19 + t * 230, 0);
-                pieces[i].transform.localScale = Vector3.one * (1 - Mathf.Pow(t / particleLife[i], 3));
+                pieces[i].transform.localScale = Vector3.one * (.45f + (i % 5) * .22f) * (1 - Mathf.Pow(t / particleLife[i], 3));
             }
             if (materials.TryGetValue("torch", out var torch)) torch.color = new Color(1.2f + Mathf.Sin(clock * 7) * .08f, 1.07f, .8f);
         }
