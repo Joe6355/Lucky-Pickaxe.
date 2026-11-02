@@ -104,7 +104,7 @@ namespace MineLoot
             if (offlineVideoPaid)
             {
                 if (offlineWindowOpen) CloseModal();
-                sounds.Play("reward"); Notice(ticketVideo ? "+3 ЖЕТОНА" : "СКЛАД · НАГРАДА ×2", ticketVideo ? "Подарок за просмотр видео" : "+" + ShortAmount(offlineVideoCredit) + " монет за просмотр видео");
+                sounds.Play("reward"); Notice(ticketVideo ? "+1 ЖЕТОН" : "СКЛАД · НАГРАДА ×2", ticketVideo ? "Подарок за просмотр видео" : "+" + ShortAmount(offlineVideoCredit) + " монет за просмотр видео");
                 offlineNoticeQueued = game.HasOfflineReward;
                 offlineVideoMessage = null;
             }
@@ -127,7 +127,7 @@ namespace MineLoot
             applicationPaused = paused; skipEconomyFrame = true;
             platformInput.interactable = !paused;
             platformInput.blocksRaycasts = !paused;
-            stage.Paused = shaft.Paused = paused;
+            stage.Paused = shaft.Paused = enchantingWorld.Paused = paused;
             sounds.SetSuspended(paused || !audioFocused);
             if (!paused)
             {

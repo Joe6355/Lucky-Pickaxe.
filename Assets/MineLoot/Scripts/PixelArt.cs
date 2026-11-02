@@ -54,7 +54,7 @@ namespace MineLoot
                 string body = kind == "brick" ? "#9d7664" : kind == "roof" ? "#915747" : kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
                 ColorUtility.TryParseHtmlString(body, out var baseColor);
                 if (mining)
-                    ColorUtility.TryParseHtmlString(kind == "floor" ? "#465760" : kind == "wall" ? "#374a55" : kind == "timber" ? "#936742" : kind == "steel" ? "#69838b" : kind == "skin" ? "#e6b590" : kind == "cloth" ? "#418c91" : kind == "lamp" ? "#ffe2a0" : kind == "ancient" ? "#75616a" : "#7d8b95", out baseColor);
+                    ColorUtility.TryParseHtmlString(kind == "floor" ? "#465760" : kind == "wall" ? "#374a55" : kind == "timber" ? "#936742" : kind == "steel" ? "#69838b" : kind == "skin" ? "#e6b590" : kind == "uniform" ? "#385d76" : kind == "cloth" ? "#418c91" : kind == "lamp" ? "#ffe2a0" : kind == "ancient" ? "#75616a" : "#7d8b95", out baseColor);
                 int seed = 313; foreach (char letter in kind) seed = unchecked(seed * 31 + letter);
                 var rng = new System.Random(seed);
                 var shades = new float[8, 8];
@@ -78,6 +78,19 @@ namespace MineLoot
                         for (int x = y % 8 == 0 ? 0 : 4; x < 16; x += 8) R(x, y, 1, 4, kind == "brick" ? "#5f5b53" : "#573c34");
                     }
                 }
+                if (kind == "bookshelf")
+                {
+                    R(0, 0, 16, 16, "#60452e");
+                    string[] books = { "#b45a4d", "#537f9f", "#d6ad58", "#648966", "#8d6b9d", "#a96340" };
+                    for (int row = 0; row < 2; row++) for (int book = 0; book < 6; book++)
+                    {
+                        int x = 1 + book * 2, y = 2 + row * 7, h = 4 + book % 2;
+                        R(x, y, 2, h, books[(book + row * 3) % books.Length]); R(x, y + 1, 1, 1, "#dbbf87");
+                    }
+                    R(0, 0, 16, 1, "#b48b55"); R(0, 7, 16, 1, "#a47e4c"); R(0, 14, 16, 2, "#b48b55"); R(14, 0, 2, 16, "#9b7445");
+                }
+                if (kind == "enchant-cloth") { R(0,0,16,16,"#9a344b"); R(0,0,16,1,"#d47473"); R(0,14,16,2,"#5b2942"); R(3,3,10,10,"#ae4059"); }
+                if (kind == "book-page") { R(0,0,16,16,"#e9d8ad"); R(1,1,14,14,"#f5e9c8"); for(int y=3;y<14;y+=3) R(3,y,9-y%3,1,"#a78d77"); }
                 if (kind == "fire")
                 {
                     R(0, 0, 16, 16, "#bd4e27"); R(2, 6, 12, 10, "#ef8c30");
@@ -100,7 +113,7 @@ namespace MineLoot
                         R(x, y, 2, 1, shine);
                     }
                 }
-                if (mining)
+                if (mining && kind != "skin" && kind != "cloth" && kind != "uniform" && kind != "lamp" && kind != "timber" && kind != "steel")
                 {
                     bool masonry = kind == "floor" || kind == "wall";
                     R(0, 0, 16, 1, masonry ? "#526771" : "#a5b3bb"); R(0, 1, 1, 15, masonry ? "#526771" : "#93a5af");

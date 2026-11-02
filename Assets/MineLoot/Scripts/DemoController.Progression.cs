@@ -28,7 +28,7 @@ namespace MineLoot
                 Label(materialFrames[i].transform, new[] { "0", "2", "5", "12", "20", "32" }[i], 2, 42, 62, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
             }
             equippedNext = Label(equipmentAside.transform, "", 24, 294, 432, 52, 21, Ink);
-            ButtonAt(equipmentAside.transform, "ЗАЧАРОВАТЬ КИРКУ →", 24, 474, 432, 44, () => { productionTab = false; ShowWorkshop(); }, Hex("c9bce1"), Ink).name = "Open enchantments";
+            ButtonAt(equipmentAside.transform, "ЗАЧАРОВАТЬ КИРКУ →", 24, 474, 432, 44, ShowEnchanting, Hex("c9bce1"), Ink).name = "Open enchantments";
             ButtonAt(equipmentAside.transform, "ШАХТЁРЫ И ТЕХНИКА →", 24, 532, 432, 44, ShowTeam, Hex("bad5ca"), Ink).name = "Open team desktop";
         }
 
@@ -52,10 +52,10 @@ namespace MineLoot
             Label(parent, "Видео, достижения и добыча склада", 40, 37, 400, 22, 16, Hex("d3e5dd"));
             var video = Card(parent, "Video reward", 24, 78, 432, 216, Panel);
             Icon(video.transform, "ticket", 20, 22, 54, 46);
-            Label(video.transform, "+3 ЖЕТОНА", 94, 14, 316, 36, 27, Ink, FontStyle.Bold);
+            Label(video.transform, "+1 ЖЕТОН", 94, 14, 316, 36, 27, Ink, FontStyle.Bold);
             Label(video.transform, "За полный просмотр видео", 94, 52, 316, 26, 19, Muted);
             videoTicketsState = Label(video.transform, "", 20, 92, 392, 48, 18, Muted);
-            videoTicketsButton = ButtonAt(video.transform, "СМОТРЕТЬ ВИДЕО · +3 ЖЕТОНА", 20, 154, 392, 44, ClaimTicketsWithVideo, Hex("d8bf80"), Ink);
+            videoTicketsButton = ButtonAt(video.transform, "СМОТРЕТЬ ВИДЕО · +1 ЖЕТОН", 20, 154, 392, 44, ClaimTicketsWithVideo, Hex("d8bf80"), Ink);
             videoTicketsButton.name = "Video tickets"; videoTicketsButton.GetComponentInChildren<Text>().fontSize = 20;
             var warehouse = Card(parent, "Warehouse reward", 24, 310, 432, 132, Panel);
             Icon(warehouse.transform, "warehouse", 20, 20, 48, 48);

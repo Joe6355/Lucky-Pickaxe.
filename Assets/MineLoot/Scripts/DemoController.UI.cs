@@ -115,11 +115,12 @@ namespace MineLoot
 
             Card(shell, "Navigation", 24, 888, 432, 58, Hex("9d9f98"));
             mineTab = ButtonAt(shell, "ШАХТА", 32, 893, 100, 45, () => ShowPage(false), Panel, Ink);
-            workshopTab = ButtonAt(shell, "ЧАРЫ", 137, 893, 100, 45, ShowWorkshop, Panel, Ink);
+            workshopTab = ButtonAt(shell, "УЛУЧШЕНИЯ", 137, 893, 100, 45, ShowWorkshop, Panel, Ink);
             rollTab = ButtonAt(shell, "РУЛЕТКА", 242, 893, 100, 45, () => ShowPage(true), Panel, Ink);
             rewardsTab = ButtonAt(shell, "НАГРАДЫ", 347, 893, 100, 45, ShowRewards, Panel, Ink);
             rewardsTab.name = "Open rewards";
-            foreach (var tab in new[] { mineTab, workshopTab, rollTab, rewardsTab }) tab.GetComponentInChildren<Text>().fontSize = 18;
+            foreach (var tab in new[] { mineTab, workshopTab, rollTab, rewardsTab }) tab.GetComponentInChildren<Text>().fontSize = 16;
+            workshopTab.GetComponentInChildren<Text>().fontSize = 14;
             workshopTab.name = "МАСТЕРСКАЯ";
             mineTab.name = "КЛИКЕР"; rollTab.name = "РУЛЕТКА ШАХТЁРА";
             mineNavMark = PanelAt(shell, "Mine selected", Hex("77b69c"), 49, 940, 66, 3);
@@ -202,8 +203,8 @@ namespace MineLoot
             Icon(page, "forge", 257, 500, 37, 37);
             forgeTitle = Label(page, "Кузница 0", 304, 493, 136, 27, 22, Ink, FontStyle.Bold);
             forgeDetail = Label(page, "", 304, 519, 140, 22, 16, Muted);
-            forgeButton = ButtonAt(page, "", 257, 548, 187, 30, Forge, Hex("e5c488"), Hex("3a3020"));
-            forgeButton.name = "Upgrade forge"; forgeLabel = forgeButton.GetComponentInChildren<Text>();
+            forgeButton = ButtonAt(page, "", 257, 548, 187, 30, RepairEquippedPick, Hex("e5c488"), Hex("3a3020"));
+            forgeButton.name = "Repair pick"; forgeLabel = forgeButton.GetComponentInChildren<Text>();
             nextUpgrade = Label(page, "", 24, 596, 432, 22, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
             ButtonAt(page, "ШАХТЁРЫ И ТЕХНИКА →", 24, 642, 432, 42, ShowTeam, Hex("bad5ca"), Ink).name = "Open team";
             BuildEquipmentAside(page);
@@ -248,8 +249,9 @@ namespace MineLoot
             rollRewardIcon = Icon(page, "coin", 38, 508, 28, 28);
             rollGain = Label(page, "ДОБЕРИСЬ ДО СУНДУКОВ", 82, 498, 356, 27, 21, Hex("f5d88d"), FontStyle.Bold);
             rollStatus = Label(page, "Открой перестановку в мастерской", 82, 523, 356, 19, 16, Hex("c6c8b8"));
-            spinButton = ButtonAt(page, "КИРКИ · 1 ЖЕТОН", 24, 550, 432, 44, Spin, Color.white, Hex("35291c"));
-            spinButton.image.sprite = art.Get("ui-brass"); spinButton.GetComponentInChildren<Text>().fontSize = 22;
+            spinButton = ButtonAt(page, "КИРКИ · 1 ЖЕТОН", 24, 550, 260, 44, Spin, Color.white, Hex("35291c"));
+            spinButton.image.sprite = art.Get("ui-brass"); var spinText = spinButton.GetComponentInChildren<Text>(); spinText.resizeTextForBestFit = true; spinText.resizeTextMinSize = 14; spinText.resizeTextMaxSize = 20;
+            batchButton = ButtonAt(page, "×10 · 10 ЖЕТОНОВ", 296, 550, 160, 44, SpinBatch, Hex("d4c08a"), Ink); batchButton.name = "Spin batch"; batchButton.GetComponentInChildren<Text>().fontSize = 17;
             spinButton.name = "ЗАПУСТИТЬ КИРКИ";
             ButtonAt(page, "Правила", 24, 600, 148, 25, ShowOdds, Panel, Muted).name = "ШАНСЫ И ПРАВИЛА";
             abandonButton = ButtonAt(page, "Сменить · 1 жетон", 180, 600, 172, 25, ShowAbandonConfirmation, Panel, Muted);
@@ -260,28 +262,29 @@ namespace MineLoot
         private void BuildWorkshop(Transform page)
         {
             Card(page, "Workshop header", 24, 0, 432, 58, Hex("355a60"));
-            Label(page, "ЗАЧАРОВАНИЯ", 40, 0, 250, 38, 26, Hex("fff2d8"), FontStyle.Bold);
-            Label(page, "Сила инструмента и шахты", 40, 34, 250, 22, 16, Hex("d3e5dd"));
+            Label(page, "УЛУЧШЕНИЯ", 40, 0, 250, 38, 26, Hex("fff2d8"), FontStyle.Bold);
+            Label(page, "Кирка, шахта и зачарования", 40, 34, 250, 22, 16, Hex("d3e5dd"));
             prestigeButton = ButtonAt(page, "ПРЕСТИЖ", 302, 14, 142, 31, ShowPrestige, Hex("bac6a1"), Ink);
             prestigeButton.name = "Open prestige"; prestigeButton.GetComponentInChildren<Text>().fontSize = 18;
-            equipmentTab = ButtonAt(page, "ЧАРЫ", 24, 68, 211, 31, () => SetWorkshopSection(false), Panel, Ink);
+            equipmentTab = ButtonAt(page, "ПРОКАЧКА", 24, 68, 211, 31, () => SetWorkshopSection(false), Panel, Ink);
             equipmentTab.name = "Equipment section";
-            productionTabButton = ButtonAt(page, "ШАХТЁРЫ И ТЕХНИКА", 245, 68, 211, 31, () => SetWorkshopSection(true), Panel, Ink);
+            productionTabButton = ButtonAt(page, "ШАХТЁРЫ", 245, 68, 211, 31, () => SetWorkshopSection(true), Panel, Ink);
             productionTabButton.name = "Production section";
             equipmentTab.GetComponentInChildren<Text>().fontSize = productionTabButton.GetComponentInChildren<Text>().fontSize = 18;
             for (int i = 0; i < workshopButtons.Length; i++)
             {
-                int slot = i, x = 24 + i % 2 * 221, y = 108 + i / 2 * 182;
-                var card = Card(page, "Upgrade card " + i, x, y, 211, 172, Panel); workshopCards[i] = card.gameObject;
+                int slot = i, x = 24 + i % 2 * 221, y = 148 + i / 2 * 170;
+                var card = Card(page, "Upgrade card " + i, x, y, 211, 166, Panel); workshopCards[i] = card.gameObject;
                 workshopIcons[i] = Icon(card.transform, "pick1", 12, 12, 34, 34);
                 workshopTitles[i] = Label(card.transform, "", 54, 7, 145, 25, 18, Ink, FontStyle.Bold);
                 workshopLevels[i] = Label(card.transform, "", 54, 32, 145, 20, 16, Muted);
-                workshopEffects[i] = Label(card.transform, "", 12, 56, 187, 44, 16, Ink);
-                workshopStates[i] = Label(card.transform, "", 12, 106, 187, 22, 16, Muted);
-                PanelAt(card.transform, "Upgrade progress track " + i, Hex("717b6a"), 12, 132, 187, 3);
-                workshopProgress[i] = PanelAt(card.transform, "Upgrade progress " + i, Hex("a6cb6a"), 12, 132, 0, 3);
-                workshopButtons[i] = ButtonAt(card.transform, "", 12, 140, 187, 26, () => Purchase(WorkshopKind(slot)), Hex("d9bd80"), Hex("352b20"));
+                workshopEffects[i] = Label(card.transform, "", 12, 54, 187, 44, 16, Ink);
+                workshopStates[i] = Label(card.transform, "", 12, 101, 187, 22, 16, Muted);
+                PanelAt(card.transform, "Upgrade progress track " + i, Hex("717b6a"), 12, 126, 187, 3);
+                workshopProgress[i] = PanelAt(card.transform, "Upgrade progress " + i, Hex("a6cb6a"), 12, 126, 0, 3);
+                workshopButtons[i] = ButtonAt(card.transform, "", 12, 136, 187, 26, () => Purchase(WorkshopKind(slot)), Hex("d9bd80"), Hex("352b20"));
             }
+            BuildEnchantmentSection(page);
             productionSummary = Card(page, "Production summary", 245, 420, 211, 156, Hex("b1c197")).gameObject;
             Label(productionSummary.transform, "РУДНИК", 12, 8, 187, 28, 23, Ink, FontStyle.Bold);
             productionRateLabel = Label(productionSummary.transform, "", 12, 38, 187, 31, 22, Ink, FontStyle.Bold);
@@ -289,10 +292,10 @@ namespace MineLoot
             productionBreakdown = Label(productionSummary.transform, "", 12, 76, 187, 22, 16, Muted);
             productionSynergy = Label(productionSummary.transform, "", 12, 100, 187, 22, 16, Muted);
             productionTotal = Label(productionSummary.transform, "", 12, 125, 187, 22, 16, Muted);
-            purchaseAmountButton = ButtonAt(page, "", 24, 658, 211, 36, CyclePurchaseAmount, Hex("b5c48f"), Ink);
+            purchaseAmountButton = ButtonAt(page, "", 24, 662, 211, 32, CyclePurchaseAmount, Hex("b5c48f"), Ink);
             purchaseAmountButton.name = "Purchase amount"; purchaseAmountButton.GetComponentInChildren<Text>().fontSize = 17;
-            workshopFootnote = Label(page, "", 245, 664, 211, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
-            offlineButton = ButtonAt(page, "", 245, 658, 211, 36, ShowOfflineReward, Hex("b5c48f"), Ink);
+            workshopFootnote = Label(page, "", 245, 668, 211, 24, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
+            offlineButton = ButtonAt(page, "", 245, 662, 211, 32, ShowOfflineReward, Hex("b5c48f"), Ink);
             offlineButton.name = "Open warehouse"; offlineButtonLabel = offlineButton.GetComponentInChildren<Text>(); offlineButtonLabel.fontSize = 18;
         }
 
@@ -303,7 +306,7 @@ namespace MineLoot
         private void SetWorkshopSection(bool production)
         {
             if (applicationPaused || busy || modal != null) return;
-            productionTab = production; RefreshWorkshop(); RefreshGuide();
+            workshopSection = production ? 1 : 0; productionTab = production; RefreshWorkshop(); RefreshGuide();
         }
 
         public void CyclePurchaseAmount()
@@ -320,13 +323,13 @@ namespace MineLoot
             string Value(int before, int after) => preview && rank < MineGame.UpgradeMax(kind) ? before + " > " + after : before.ToString();
             switch (kind)
             {
-                case UpgradeKind.Pickaxe: return "Доход: " + Value(game.ClickPower, game.ClickPower + game.ClickUpgradeGain * (target - rank)) + "\nУрон: " + Value(game.MiningDamage, MineGame.ToolDamage(target) + game.Progress.efficiencyLevel);
+                case UpgradeKind.Pickaxe: return "Доход: " + Value(game.ClickPower, game.ClickPower + game.ClickUpgradeGain * (target - rank)) + "\nУрон: " + Value(game.MiningDamage, game.DamageForUpgrades(target, game.Progress.efficiencyLevel));
                 case UpgradeKind.Forge: return "Алмаз: " + Value(game.DiamondChance, 10 + target) + "%\nСила: +" + Value(game.PowerBonus, target / 2);
                 case UpgradeKind.Swap: return "Обменов: " + Value(rank, target) + "\nВ рулетке";
-                case UpgradeKind.Efficiency: return "Урон: " + Value(game.MiningDamage, MineGame.ToolDamage(game.Progress.upgradeLevel) + target) + "\nСильнее каждый удар";
+                case UpgradeKind.Efficiency: return "Урон: " + Value(game.MiningDamage, game.DamageForUpgrades(game.Progress.upgradeLevel, target)) + "\nСильнее каждый удар";
                 case UpgradeKind.Fortune: return "Руда: +" + Value(rank * 25, target * 25) + "% монет\nНаграда за целый блок";
                 case UpgradeKind.Haste: return "Скорость: +" + Value(rank * 8, target * 8) + "%\nБыстрее при удержании";
-                case UpgradeKind.Press: return "Ударов: " + Value(game.HitsRequired, MineGame.HitsPerTicket - target) + "\nЗа один жетон";
+                case UpgradeKind.Press: return "Ударов: " + Value(game.HitsRequired, MineGame.HitsPerTicket - target * 5) + "\nЗа один жетон";
                 case UpgradeKind.Treasure: return "Сундук: +" + Value(rank * 15, target * 15) + "%\nНаграды в рулетке";
                 case UpgradeKind.Worker: return "По " + Rate(game.WorkerProductionMilli) + " монеты/с\nШахтёры: " + Value(rank, target);
                 case UpgradeKind.Drill: return "По " + Rate(game.DrillProductionMilli) + " монет/с\nКузница: +" + game.DrillBonus + "%";
@@ -339,21 +342,22 @@ namespace MineLoot
         private void RefreshWorkshop()
         {
             string[] icons = { PickSprites[game.PickTier], "forge", "swap", "pick-head2", "ticket", "chest", "worker", "drill", "cart", "rails", "warehouse", "enchant-fortune", "enchant-haste" };
-            equipmentTab.image.color = productionTab ? Panel : Hex("a4c975"); productionTabButton.image.color = productionTab ? Hex("a4c975") : Panel;
+            ApplyWorkshopSection();
+            equipmentTab.image.color = workshopSection != 0 ? Panel : Hex("a4c975"); productionTabButton.image.color = workshopSection == 1 ? Hex("a4c975") : Panel;
             productionSummary.SetActive(false);
             productionRateLabel.text = "+" + Rate(game.ProductionMilli) + " монет/с";
             productionBreakdown.text = "Буры: +" + game.DrillBonus + "%";
             productionSynergy.text = "Логистика: +" + game.CartBonus + "%";
             productionTotal.text = "Добыто: " + ShortAmount(game.Progress.totalProduced);
-            purchaseAmountButton.interactable = !busy;
+            purchaseAmountButton.gameObject.SetActive(workshopSection < 2); purchaseAmountButton.interactable = !busy;
             purchaseAmountButton.GetComponentInChildren<Text>().text = "ПОКУПКА: " + (purchaseAmount == int.MaxValue ? "МАКС." : "×" + purchaseAmount);
-            workshopFootnote.gameObject.SetActive(true); workshopFootnote.text = productionTab ? "+" + Rate(game.ProductionMilli) + " монет/с" : "Сохраняется сразу";
+            workshopFootnote.gameObject.SetActive(workshopSection < 2); workshopFootnote.text = productionTab ? "+" + Rate(game.ProductionMilli) + " монет/с" : "Сохраняется сразу";
             offlineButton.gameObject.SetActive(false); offlineButton.interactable = !busy; // Warehouse is directly accessible from Rewards.
             offlineButtonLabel.text = game.HasOfflineReward ? "СКЛАД: " + ShortAmount(game.Progress.offlineCoins) : "СКЛАД · ДО " + game.OfflineHours + " Ч.";
             offlineButton.image.color = game.HasOfflineReward ? Hex("d9bd80") : Hex("b5c48f");
             for (int i = 0; i < workshopButtons.Length; i++)
             {
-                workshopCards[i].SetActive(true);
+                workshopCards[i].SetActive(workshopSection < 2);
                 var kind = WorkshopKind(i);
                 workshopTitles[i].text = UpgradeNames[(int)kind]; workshopIcons[i].sprite = art.Get(icons[(int)kind]); workshopButtons[i].name = "Buy " + kind;
                 int rank = game.UpgradeLevel(kind), max = MineGame.UpgradeMax(kind), unlock = game.UpgradeUnlock(kind);

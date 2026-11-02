@@ -117,6 +117,7 @@ namespace MineLoot
             Frame(dialogRoot, (width - 480) / 2, 0, 480, 960);
             ResizeWorldView(stage, mineDisplay, 2);
             ResizeWorldView(shaft, shaftDisplay, shaftPresentation.localScale.x);
+            ResizeWorldView(enchantingWorld, enchantingDisplay, 2);
             ApplyPageVisibility();
             Refresh();
         }
@@ -149,8 +150,10 @@ namespace MineLoot
             Frame(workshopPage.GetComponent<RectTransform>(), (width - workshopWidth) / 2, 168, workshopWidth, 740);
             Frame(workshopPage.transform, "Workshop header", 24, 0, workshopWidth - 48, 60);
             ButtonFrame(prestigeButton, workshopWidth - 180, 14, 132, 32);
-            ButtonFrame(equipmentTab, 24, 76, (workshopWidth - 64) / 2, 38);
-            ButtonFrame(productionTabButton, workshopWidth / 2 + 8, 76, (workshopWidth - 64) / 2, 38);
+            var sections = new[] { equipmentTab, productionTabButton, enchantingTab, draftToolsTab };
+            float sectionWidth = (workshopWidth - 84) / 4;
+            for (int i = 0; i < sections.Length; i++) ButtonFrame(sections[i], 24 + i * (sectionWidth + 12), 76, sectionWidth, 38);
+            ReflowEnchanting(workshopWidth);
             for (int i = 0; i < workshopCards.Length; i++)
             {
                 Frame(workshopCards[i].GetComponent<RectTransform>(), 24 + i % 3 * (cardWidth + 16), 130 + i / 3 * 254, cardWidth, 238);
@@ -225,7 +228,7 @@ namespace MineLoot
                 Frame(rollRewardIcon.rectTransform, 16, 20, 48, 48);
                 Frame(rollGain.rectTransform, 80, 12, column - 96, 64); FontSize(rollGain, 26);
                 Frame(rollStatus.rectTransform, 16, 86, column - 32, 58); FontSize(rollStatus, 20);
-                ButtonFrame(spinButton, x, 237, column, 64);
+                LayoutRollButtons(x, 237, column, 64);
                 Frame(expeditionActions, x, 317, column, 98);
                 ButtonFrame(expeditionActions.Find("ШАНСЫ И ПРАВИЛА").GetComponent<Button>(), 0, 0, (column - 12) / 2, 40);
                 ButtonFrame(abandonButton, (column + 12) / 2, 0, (column - 12) / 2, 40);
@@ -239,7 +242,7 @@ namespace MineLoot
                 Frame(expeditionResult, "Result panel", 0, 2, width, 42);
                 Frame(rollGain.rectTransform, 58, 0, width - 76, 27);
                 Frame(rollStatus.rectTransform, 58, 25, width - 76, 19);
-                ButtonFrame(spinButton, 24, 632, width, 44);
+                LayoutRollButtons(24, 632, width, 44);
                 Frame(expeditionActions, 24, 682, width, 25);
                 float button = (width - 16) / 3;
                 ButtonFrame(expeditionActions.Find("ШАНСЫ И ПРАВИЛА").GetComponent<Button>(), 0, 0, button, 25);

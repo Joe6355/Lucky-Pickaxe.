@@ -38,6 +38,7 @@ namespace MineLoot
         public string DisplayedOre => oreMaterial.mainTexture.name;
         public bool IsReplacing => replacement >= 0;
         public bool IsExpedition { get; private set; }
+        public bool IsEnchanting { get; private set; }
 
         public void ResizeViewport(int width, int height)
         {
@@ -50,11 +51,11 @@ namespace MineLoot
             if (Application.isPlaying) Destroy(previous); else DestroyImmediate(previous);
         }
 
-        public void Initialize(PixelArt art, bool expedition = false)
+        public void Initialize(PixelArt art, bool expedition = false, bool enchanting = false)
         {
             this.art = art;
-            IsExpedition = expedition;
-            if (expedition) transform.localPosition = Vector3.right * 1000;
+            IsExpedition = expedition; IsEnchanting = enchanting;
+            if (expedition || enchanting) transform.localPosition = Vector3.right * (enchanting ? 2000 : 1000);
             particleProperties = new MaterialPropertyBlock();
             gameObject.layer = Layer;
             Target = new RenderTexture(expedition ? 432 : 864, expedition ? 417 : 560, 24) { name = "Block world view", filterMode = FilterMode.Point, antiAliasing = 1 };
@@ -64,6 +65,13 @@ namespace MineLoot
             view.nearClipPlane = .1f; view.farClipPlane = 100; view.targetTexture = Target; view.depth = -10;
             view.transform.localPosition = new Vector3(8.3f, 6.4f, -10.8f); view.transform.LookAt(transform.position + new Vector3(0, .8f, 1));
             Camera.main.cullingMask &= ~(1 << Layer);
+            if (enchanting)
+            {
+                view.orthographic = false; view.fieldOfView = 52; view.backgroundColor = ColorOf("292337");
+                view.transform.localPosition = new Vector3(0, 2.1f, -4);
+                view.transform.LookAt(transform.position + new Vector3(0, 1.25f, .45f));
+                BuildEnchantingRoom(); return;
+            }
             if (expedition)
             {
                 view.orthographicSize = 4.65f;
@@ -235,6 +243,7 @@ namespace MineLoot
         {
             if (Paused) return;
             clock += Time.unscaledDeltaTime;
+            if (IsEnchanting) { UpdateEnchantingRoom(); return; }
             if (IsExpedition) UpdateExpedition();
             else
             {

@@ -168,44 +168,7 @@ namespace MineLoot
 
         private void BuildProduction()
         {
-            Vector3[] positions = { new Vector3(-2.5f, 0, -1.7f), new Vector3(-1.8f, 0, 2.4f), new Vector3(3.8f, 0, .2f) };
-            for (int i = 0; i < workers.Length; i++)
-            {
-                var batch = new Dictionary<string, Geometry>();
-                foreach (float x in new[] { -.145f, .145f })
-                {
-                    Block(new Vector3(x, .12f, -.07f), new Vector3(.23f, .24f, .4f), "black", batch: batch);
-                    Block(new Vector3(x, .43f, 0), new Vector3(.21f, .45f, .25f), "mine-steel", batch: batch);
-                }
-                Block(new Vector3(0, .81f, 0), new Vector3(.58f, .54f, .34f), "mine-cloth", batch: batch);
-                Block(new Vector3(0, .6f, -.02f), new Vector3(.6f, .09f, .38f), "mine-timber", batch: batch);
-                Block(new Vector3(0, .6f, -.22f), new Vector3(.13f, .11f, .05f), "metal-gold", batch: batch);
-                foreach (float x in new[] { -.19f, .19f }) Block(new Vector3(x, .86f, -.18f), new Vector3(.065f, .38f, .035f), "mine-steel", batch: batch);
-                Block(new Vector3(-.37f, .82f, 0), new Vector3(.19f, .37f, .27f), "mine-cloth", batch: batch);
-                Block(new Vector3(-.37f, .6f, -.01f), new Vector3(.18f, .16f, .24f), "mine-skin", batch: batch);
-                Block(new Vector3(0, 1.22f, -.02f), new Vector3(.45f, .42f, .41f), "mine-skin", batch: batch);
-                Block(new Vector3(0, 1.1f, -.24f), new Vector3(.3f, .11f, .05f), "mine-timber", batch: batch);
-                Block(new Vector3(0, 1.21f, -.26f), new Vector3(.09f, .09f, .06f), "mine-skin", batch: batch);
-                foreach (float x in new[] { -.11f, .11f })
-                {
-                    Block(new Vector3(x, 1.28f, -.232f), new Vector3(.095f, .065f, .025f), "black", batch: batch);
-                    Block(new Vector3(x - .018f, 1.29f, -.25f), Vector3.one * .025f, "mine-lamp", batch: batch);
-                }
-                Block(new Vector3(0, 1.43f, -.02f), new Vector3(.52f, .14f, .49f), "metal-gold", batch: batch);
-                Block(new Vector3(0, 1.51f, -.01f), new Vector3(.4f, .12f, .38f), "metal-gold", batch: batch);
-                Block(new Vector3(0, 1.41f, -.06f), new Vector3(.56f, .045f, .52f), "mine-timber", batch: batch);
-                Block(new Vector3(0, 1.44f, -.305f), new Vector3(.2f, .19f, .09f), "mine-steel", batch: batch);
-                Block(new Vector3(0, 1.44f, -.36f), new Vector3(.12f, .12f, .03f), "mine-lamp", batch: batch);
-                workers[i] = DevelopmentGroup("Working miner " + i, batch, positions[i]);
-                batch = new Dictionary<string, Geometry>();
-                Block(new Vector3(0, -.12f, 0), new Vector3(.2f, .3f, .25f), "mine-cloth", batch: batch);
-                Block(new Vector3(0, -.33f, -.05f), new Vector3(.19f, .18f, .23f), "mine-skin", batch: batch);
-                Block(new Vector3(0, -.34f, -.16f), new Vector3(.075f, .58f, .08f), "mine-timber", batch: batch);
-                Block(new Vector3(0, -.03f, -.16f), new Vector3(.62f, .1f, .15f), "mine-steel", batch: batch);
-                Block(new Vector3(-.26f, -.09f, -.16f), new Vector3(.1f, .18f, .15f), "mine-steel", batch: batch);
-                workerTools[i] = DevelopmentGroup("Miner tool " + i, batch, Vector3.zero);
-                workerTools[i].SetParent(workers[i], false); workerTools[i].localPosition = new Vector3(.37f, 1, -.02f); workerTools[i].gameObject.SetActive(true);
-            }
+            BuildMiningWorkers();
             var rig = new Dictionary<string, Geometry>();
             Block(new Vector3(0, .16f, 0), new Vector3(1.1f, .32f, .8f), "metal-dark", batch: rig);
             foreach (float x in new[] { -.4f, .4f }) Block(new Vector3(x, .9f, .2f), new Vector3(.13f, 1.5f, .15f), "metal-gold", batch: rig);
@@ -226,7 +189,11 @@ namespace MineLoot
         public void SetProduction(int workerCount, int drillCount, int carts, bool richVein)
         {
             if (IsExpedition) return;
-            for (int i = 0; i < workers.Length; i++) workers[i].gameObject.SetActive(workerCount >= (i == 0 ? 1 : i == 1 ? 5 : 10));
+            for (int i = 0; i < workers.Length; i++)
+            {
+                bool visible = workerCount >= (i == 0 ? 1 : i == 1 ? 5 : 10);
+                workers[i].gameObject.SetActive(visible); workerRocks[i].gameObject.SetActive(visible);
+            }
             drillRig.gameObject.SetActive(drillCount > 0);
             if (carts > 0 && !cart.gameObject.activeSelf) { cart.gameObject.SetActive(true); mineBuildTime[0] = 1; cart.localScale = Vector3.one; }
             for (int i = 0; i < veinSparks.Length; i++) veinSparks[i].gameObject.SetActive(richVein);
@@ -287,7 +254,7 @@ namespace MineLoot
         private void UpdateDevelopment(float dt)
         {
             if (DevelopmentTier < 0) return;
-            for (int i = 0; i < workers.Length; i++) if (workers[i].gameObject.activeSelf) workerTools[i].localEulerAngles = new Vector3(Mathf.Sin(clock * 3 + i * 2) * 42, 0, -22);
+            UpdateMiningWorkers();
             if (DrillVisible) drillSpindle.localEulerAngles = new Vector3(0, clock * 250, 0);
             if (VeinVisible) for (int i = 0; i < veinSparks.Length; i++)
             {
