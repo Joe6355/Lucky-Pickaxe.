@@ -9,7 +9,7 @@ namespace MineLoot
     public sealed partial class DemoController : MonoBehaviour
     {
         private static readonly Color Back = Hex("172631"), Panel = Hex("f0eadc"), Muted = Hex("596975"), Ink = Hex("243541");
-        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд", "Медь", "Лазурит", "Редстоун", "Древние обломки" };
+        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд", "Медь", "Лазурит", "Редстоун", "Древние обломки", "Камень" };
         private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная", "Незеритовая" };
         private static readonly string[] PickSprites = { "pick-wood", "pick-stone", "pick2", "pick-gold", "pick4", "pick-netherite" };
         private static readonly string[] CampNames = { "ПЕРВАЯ ШТОЛЬНЯ", "КАМЕННЫЙ ЗАБОЙ", "ЖЕЛЕЗНЫЙ РУДНИК", "ЗОЛОТОЙ ПРИИСК", "АЛМАЗНАЯ ШАХТА", "ДРЕВНИЕ ГЛУБИНЫ" };
@@ -161,7 +161,7 @@ namespace MineLoot
             if (applicationPaused || busy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
             lastMineTime = Time.unscaledTime;
             game.Mine(); var hit = game.LastHit; rockPulse = 1;
-            mineStatus.text = hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
+            mineStatus.text = hit.ore == MineGame.StoneKind ? "Камень · +" + hit.experience + " опыта" : hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
             if (hit.tickets > 0) mineStatus.text += " · +" + hit.tickets + " жетон";
             stage.Hit(hit.broken);
             sounds.Play(hit.levels > 0 ? "level" : hit.broken ? "stone-break" : "stone-hit");
@@ -172,7 +172,7 @@ namespace MineLoot
                 StartCoroutine(FloatReward(minePage.transform, point.x - 90, -point.y));
             }
             else { gainCoins += hit.coins; gainExperience += hit.experience; }
-            if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel);
+            if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel, hit.ore != MineGame.StoneKind);
             else if (hit.veinFound) Notice("БОГАТАЯ ЖИЛА", "Нажми золотую кнопку рядом с рудой\nВременное усиление ручной добычи");
             if (game.Progress.hits == 0) visualTicket = 0;
             Persist();
@@ -312,12 +312,14 @@ namespace MineLoot
             noticeRect.SetAsLastSibling();
         }
 
-        private void LevelNotice(int before, int after)
+        private void LevelNotice(int before, int after, bool payLevelRewards = true)
         {
             string unlock = ""; int coins = 0;
             for (int i = 1; i < OreNames.Length; i++) if (MineGame.OreUnlockLevel(i) > before && MineGame.OreUnlockLevel(i) <= after) unlock = "Открыто: " + OreNames[i] + "\n";
             for (int level = before + 1; level <= after; level++) coins += level * 40;
-            Notice("ШАХТЁР · УРОВЕНЬ " + after, unlock + "+" + coins + " монет · +" + (after - before) + " жетон");
+            int tickets = after / 5 - before / 5;
+            string reward = payLevelRewards ? "+" + coins + " монет" + (tickets > 0 ? " · +" + tickets + " жетон" : "") : "Камень даёт только опыт";
+            Notice("ШАХТА · УРОВЕНЬ " + after, unlock + reward);
         }
 
         public void ToggleSpeed()
@@ -747,16 +749,16 @@ namespace MineLoot
             coinLabel.resizeTextForBestFit = true; coinLabel.resizeTextMinSize = 16; coinLabel.resizeTextMaxSize = 28;
             ticketLabel.text = game.Progress.tickets.ToString("N0", interfaceCulture);
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
-            powerLabel.text = "+" + game.ManualClickPower + " за удар";
+            powerLabel.text = game.IsMiningStone ? "Только опыт" : "+" + game.ManualClickPower + " за удар";
             richVeinButton.gameObject.SetActive(game.VeinOffered);
-            richVeinTimer.text = game.VeinActive ? "×" + game.RichVeinMultiplier + " · " + (int)Math.Ceiling(game.Progress.veinBoostLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
+            richVeinTimer.text = game.VeinActive ? (game.IsMiningStone ? "Для руды · " : "×" + game.RichVeinMultiplier + " · ") + (int)Math.Ceiling(game.Progress.veinBoostLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
             progressLabel.text = game.Progress.hits + " / " + game.HitsRequired;
-            levelLabel.text = "ШАХТЁР · УР. " + game.MinerLevel;
+            levelLabel.text = "ШАХТА · УР. " + game.MinerLevel;
             stageBadge.text = game.LevelGoal == 0 ? "МАКС. УРОВЕНЬ" : game.LevelExperience + "/" + game.LevelGoal + " ОПЫТА";
             if (previousLevel != game.MinerLevel) { previousLevel = game.MinerLevel; visualExperience = 0; }
             if (previousOre != game.Progress.oreKind || game.LastHit.broken) { previousOre = game.Progress.oreKind; visualHealth = 1; }
             veinLabel.text = OreNames[game.Progress.oreKind] + " · " + (game.OreHealth - game.Progress.oreDamage) + "/" + game.OreHealth;
-            oreFill.color = game.Progress.oreKind >= 3 ? Hex("80e3bb") : Hex("e1ce82");
+            oreFill.color = game.IsMiningStone ? Hex("a5b4bd") : game.Progress.oreKind >= 3 ? Hex("80e3bb") : Hex("e1ce82");
             for (int slot = 0; slot < MineGame.OreCount; slot++)
             {
                 int i = MineGame.OreAtDisplayIndex(slot); bool unlocked = game.IsOreUnlocked(i);
@@ -792,7 +794,7 @@ namespace MineLoot
             spinButton.interactable = (!busy || AwaitingPickChoice) && !game.Progress.batchActive && !game.Progress.pendingBatch;
             RefreshBatchButton();
             abandonButton.interactable = !busy && game.CanAbandon;
-            string action = AwaitingPickChoice ? "КОПАТЬ · БЕЗ ДОПЛАТЫ" :
+            string action = AwaitingPickChoice ? "НАЧАТЬ ДОБЫЧУ" :
                 busy ? RollPhase == "reels" ? "ВЫПАДАЮТ КИРКИ…" : RollPhase == "exchange" ? "ОБМЕН КИРОК…" : "КИРКИ В РАБОТЕ…" :
                 game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КИРКИ · 1 ЖЕТОН";
             spinButton.GetComponentInChildren<Text>().text = action;

@@ -58,7 +58,7 @@ namespace MineLoot
                     break;
                 case 2:
                     title = "Рулетка за жетон"; icon = "ticket";
-                    detail = game.Progress.tickets == 0 ? "Каждые " + game.HitsRequired + " ударов дают жетон.\nЗапуск может не принести монет." : "Бедрок губит сундук; обсидиан\nпробивает лишь алмазная кирка.";
+                    detail = game.Progress.tickets == 0 ? game.HitsRequired + " ударов по руде = жетон.\nБросок может не дать монет." : "Бедрок губит сундук; обсидиан\nпробивает лишь алмазная кирка.";
                     guideTarget = game.Progress.tickets == 0 ? minePage.activeSelf ? rock : mineTab.GetComponent<RectTransform>() : rollPage.activeSelf ? spinButton.GetComponent<RectTransform>() : rollTab.GetComponent<RectTransform>();
                     break;
                 case 3:

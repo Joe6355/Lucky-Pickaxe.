@@ -9,7 +9,7 @@ namespace MineLoot
         private readonly Transform[] mineStructures = new Transform[4], forgeStructures = new Transform[4];
         private readonly float[] mineBuildTime = new float[4], forgeBuildTime = new float[4];
         private readonly Transform[] cartWheels = new Transform[4], forgeSmoke = new Transform[6];
-        private Transform cart, hoistWheel, hoistBucket, hoistRope, crystalSign;
+        private Transform cart, hoistWheel, hoistBucket, hoistRope;
         private MeshRenderer cartBody, cartCargo;
         private Vector3 smokeOrigin;
         private readonly Transform[] workers = new Transform[3], workerTools = new Transform[3], veinSparks = new Transform[6];
@@ -119,10 +119,17 @@ namespace MineLoot
                 Block(new Vector3(x, 3.2f, 3.04f), Vector3.one * .18f, "diamond", batch: batch);
             }
             Block(new Vector3(2, 2.67f, 2.93f), new Vector3(1.28f, .12f, .17f), "metal-gold", batch: batch);
+            Block(new Vector3(2,2.74f,2.9f),new Vector3(.78f,.58f,.14f),"mine-timber",batch:batch);
+            foreach(float x in new[]{1.66f,2.34f}) Block(new Vector3(x,2.74f,2.81f),new Vector3(.055f,.58f,.05f),"metal-gold",batch:batch);
+            foreach(float y in new[]{2.48f,3f}) Block(new Vector3(2,y,2.81f),new Vector3(.78f,.055f,.05f),"metal-gold",batch:batch);
             mineStructures[3] = DevelopmentGroup("Diamond mine lanterns", batch, Vector3.zero, new Vector3(2, 2.4f, 3.04f));
-            var crest = new Geometry(); AddCube(crest, Vector3.zero, Vector3.one * .45f, 1);
-            crystalSign = MakeMesh("Floating mine crest", crest, GetMaterial("diamond")).transform;
-            crystalSign.SetParent(mineStructures[3], false); crystalSign.localPosition = new Vector3(0, .55f, -.14f);
+            var crest=new Geometry();
+            crest.vertices.AddRange(new[]{new Vector3(0,.21f,0),new Vector3(.23f,0,0),new Vector3(0,-.21f,0),new Vector3(-.23f,0,0)});
+            for(int i=0;i<4;i++) crest.normals.Add(Vector3.back);
+            crest.uv.AddRange(new[]{new Vector2(.5f,1),new Vector2(1,.5f),new Vector2(.5f,0),new Vector2(0,.5f)});
+            crest.indices.AddRange(new[]{0,1,2,0,2,3});
+            var emblem=MakeMesh("Mounted mineral emblem",crest,GetMaterial("emblem-cyan")).transform;
+            emblem.SetParent(mineStructures[3],false); emblem.localPosition=new Vector3(0,.34f,-.275f);
 
             var forgeOrigin = new Vector3(-2.85f, 0, .7f);
             batch = new Dictionary<string, Geometry>();
@@ -289,11 +296,6 @@ namespace MineLoot
                 float ropeBottom = bucketHeight + .38f, ropeLength = 2.4f - ropeBottom;
                 hoistRope.localPosition = new Vector3(-1, ropeBottom + ropeLength * .5f, 0);
                 hoistRope.localScale = new Vector3(1, ropeLength, 1);
-            }
-            if (mineStructures[3].gameObject.activeSelf)
-            {
-                crystalSign.localPosition = new Vector3(0, .55f + Mathf.Sin(clock * 1.8f) * .06f, -.14f);
-                crystalSign.localEulerAngles = new Vector3(0, clock * 20, 45);
             }
             if (ForgeStage >= 1) GetMaterial("fire").color = new Color(1.15f + Mathf.Sin(clock * 11) * .15f, 1.03f, .85f);
             if (ForgeStage >= 2) for (int i = 0; i < forgeSmoke.Length; i++)

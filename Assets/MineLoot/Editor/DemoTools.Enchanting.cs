@@ -7,7 +7,7 @@ public static partial class DemoTools
     private static void VerifyEnchantingAndBatches(Action<bool,string> check)
     {
         var game = new MineGame(ProgressStore.Decode("{\"version\":12,\"coins\":745,\"tickets\":400,\"hits\":7,\"pressLevel\":2,\"experience\":700,\"upgradeLevel\":20,\"oreDamage\":12}"));
-        check(game.Progress.version == 13 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
+        check(game.Progress.version == 14 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
         game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         check(game.Progress.hits == 35 && game.Progress.enchantingExperience == 700, "v13 reload neither multiplies the counter nor grants old XP again");
         game = new MineGame(new MineProgress { enchantingExperience = 10000, coins = 100000, experience = 700 });

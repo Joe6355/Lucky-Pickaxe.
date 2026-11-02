@@ -92,6 +92,13 @@ async function run() {
   await page.reload(); await waitReady(); saved = await read();
   check(saved.upgradeLevel === 1 && saved.coins === 56 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
 
+  await seed({ ...fresh, coins: 345, tickets: 8, hits: 59, experience: 39, oreKind: 9, oreDamage: 31, veinCharge: 23, veinBoostLeft: 12, guideStep: 5 });
+  await shot("webgl-stone-v025"); await tap(215, 380); saved=await read();
+  check(saved.coins===345 && saved.tickets===8 && saved.hits===59 && saved.experience===57 && saved.enchantingExperience===18 && saved.miningBlocks===1 && saved.oresMined===0 && saved.veinCharge===23,
+    "Real stone break pays XP only, including its level-up, without ticket or vein progress: "+JSON.stringify(saved));
+  await page.reload(); await waitReady(); saved=await read();
+  check(saved.version===14 && saved.coins===345 && saved.tickets===8 && saved.miningBlocks===1 && saved.enchantingExperience===18 && saved.oreKind!==9,"Reload preserves the XP-only stone break and advances to a valuable resource");
+
   await seed({ ...fresh, coins: 600, experience: 100, swapLevel: 1, tickets: 1, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(240, 740);
   await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).rollPending, key);

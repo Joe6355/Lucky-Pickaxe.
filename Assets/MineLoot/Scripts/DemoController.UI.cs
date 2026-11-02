@@ -177,10 +177,10 @@ namespace MineLoot
 
             for (int i = 0; i < MineGame.OreCount; i++)
             {
-                int x = 24 + i * 48;
-                oreSlots[i] = Card(page, "Ore collection " + i, x, 346, 44, 46, Panel);
-                oreIcons[i] = Icon(page, "tile-" + MineGame.OreKeyAt(MineGame.OreAtDisplayIndex(i)), x + 10, 350, 24, 20);
-                oreNames[i] = Label(page, "", x + 2, 370, 40, 20, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
+                float slotWidth = 432f / MineGame.OreCount, x = 24 + i * slotWidth;
+                oreSlots[i] = Card(page, "Ore collection " + i, x, 346, slotWidth - 4, 46, Panel);
+                oreIcons[i] = Icon(page, "tile-" + MineGame.OreKeyAt(MineGame.OreAtDisplayIndex(i)), x + (slotWidth - 28) / 2, 350, 24, 20);
+                oreNames[i] = Label(page, "", x + 2, 370, slotWidth - 8, 20, 16, Ink, FontStyle.Normal, TextAnchor.MiddleCenter);
             }
 
             Card(page, "Next ticket", 24, 400, 432, 48, Hex("c5c7b8"));
@@ -366,7 +366,7 @@ namespace MineLoot
                 workshopLevels[i].text = count > 1 ? "Ур. " + rank + " > " + (rank + count) : "Ур. " + rank + " / " + max;
                 workshopEffects[i].text = UpgradeEffect(kind, true);
                 string prerequisite = game.HasUpgradePrerequisite(kind) ? "" : "Нужен: " + UpgradeNames[(int)game.UpgradePrerequisite(kind).Value];
-                workshopStates[i].text = capped ? "Полностью улучшено" : locked ? "Нужен шахтёр ур. " + unlock : game.HasPendingRoll ? "Заверши бросок" : prerequisite.Length > 0 ? prerequisite : game.CanBuyUpgrade(kind) ? "Можно улучшить" : "Нужно ещё: " + ShortAmount(game.UpgradePrice(kind) - game.Progress.coins);
+                workshopStates[i].text = capped ? "Полностью улучшено" : locked ? "Нужна шахта ур. " + unlock : game.HasPendingRoll ? "Заверши бросок" : prerequisite.Length > 0 ? prerequisite : game.CanBuyUpgrade(kind) ? "Можно улучшить" : "Нужно ещё: " + ShortAmount(game.UpgradePrice(kind) - game.Progress.coins);
                 workshopStates[i].color = locked ? Hex("805644") : Muted;
                 workshopProgress[i].rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, (wideLayout ? workshopCards[i].GetComponent<RectTransform>().sizeDelta.x - 32 : 187f) * rank / max);
                 var button = workshopButtons[i]; button.interactable = !busy && count > 0;
@@ -438,7 +438,7 @@ namespace MineLoot
         {
             if (!prestigeWindowOpen || modal == null) return;
             prestigeSummary.text = "Кристаллы: " + ShortAmount(game.Progress.crystals) + " · Переездов: " + ShortAmount(game.Progress.prestigeCount);
-            string reason = game.MinerLevel < MineGame.MaxMinerLevel ? "Нужен шахтёр ур. 50 · сейчас " + game.MinerLevel : game.HasOfflineReward ? "Сначала забери награду со склада" : game.HasPendingRoll ? "Сначала заверши оплаченный бросок" : game.PrestigeReward == 0 || game.Progress.prestigeCount == MineGame.MaxPrestiges ? "Достигнут предел переездов" : "Шахтёр ур. 50 · можно начать новую шахту";
+            string reason = game.MinerLevel < MineGame.MaxMinerLevel ? "Нужна шахта ур. 50 · сейчас " + game.MinerLevel : game.HasOfflineReward ? "Сначала забери награду со склада" : game.HasPendingRoll ? "Сначала заверши оплаченный бросок" : game.PrestigeReward == 0 || game.Progress.prestigeCount == MineGame.MaxPrestiges ? "Достигнут предел переездов" : "Шахта ур. 50 · можно начать новую шахту";
             prestigeState.text = reason; prestigeReward.text = "За переезд: +" + game.PrestigeReward + " кристаллов";
             for (int i = 0; i < MineGame.PrestigeUpgradeCount; i++)
             {
@@ -672,7 +672,7 @@ namespace MineLoot
             while (elapsed < .65f)
             {
                 elapsed += PlayDelta;
-                label.text = "+" + ShortAmount(gainCoins) + " монет\n+" + gainExperience + " опыта";
+                label.text = (gainCoins > 0 ? "+" + ShortAmount(gainCoins) + " монет\n" : "") + "+" + gainExperience + " опыта";
                 label.rectTransform.anchoredPosition = new Vector2(x, -y + (1 - Mathf.Pow(1 - elapsed / .65f, 3)) * 54);
                 label.color = new Color(1, .94f, .72f, Mathf.Clamp01((.65f - elapsed) / .23f)); yield return null;
             }

@@ -54,7 +54,7 @@ namespace MineLoot
         {
             enchantBurst=Mathf.MoveTowards(enchantBurst,0,Time.unscaledDeltaTime*.7f);
             enchantingBook.localPosition=new Vector3(0,1.5f+Mathf.Sin(clock*1.6f)*.065f+enchantBurst*.12f,0);
-            enchantingBook.localEulerAngles=new Vector3(0,Mathf.Sin(clock*.65f)*13,0);
+            enchantingBook.localEulerAngles=new Vector3(-38,Mathf.Sin(clock*.65f)*6,0);
             bookLeft.localEulerAngles=new Vector3(0,0,-15-Mathf.Sin(clock*3)*4-enchantBurst*12);
             bookRight.localEulerAngles=new Vector3(0,0,15+Mathf.Sin(clock*3+1)*4+enchantBurst*12);
             for (int i=0;i<bookRunes.Length;i++)

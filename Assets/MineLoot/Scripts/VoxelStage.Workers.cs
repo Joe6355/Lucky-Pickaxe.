@@ -9,6 +9,8 @@ namespace MineLoot
         private readonly MeshRenderer[] workerCracks = new MeshRenderer[3], workerOreRenderers = new MeshRenderer[3];
         private readonly int[] workerLastCycle = { -1, -1, -1 }, workerImpacts = new int[3];
         private readonly Vector3[] workerHomes = new Vector3[3];
+        private readonly Transform[,] workerLimbs = new Transform[3,6];
+        private static readonly Vector3 WorkerGrip = new Vector3(.42f,.9f,.3f), WorkerTip = new Vector3(0,.46f,.5f);
         public int WorkerStrikeCount => workerImpacts[0] + workerImpacts[1] + workerImpacts[2];
 
         private void BuildMiningWorkers()
@@ -40,29 +42,65 @@ namespace MineLoot
                 Block(new Vector3(0,.22f,.324f),new Vector3(.105f,.1f,.018f),"mine-lamp",batch:head);
                 workerHeads[i]=DevelopmentGroup("Miner head "+i,head,Vector3.zero);
                 workerHeads[i].SetParent(workers[i],false); workerHeads[i].localPosition=new Vector3(0,1.38f,0); workerHeads[i].gameObject.SetActive(true);
-                var arms=new Dictionary<string,Geometry>();
-                foreach(float x in new[]{-.23f,.23f})
+                var tool=new Dictionary<string,Geometry>();
+                Block(new Vector3(0,.21f,0),new Vector3(.065f,.78f,.075f),"mine-timber",batch:tool);
+                Block(new Vector3(0,.61f,-.03f),new Vector3(.14f,.12f,.54f),"mine-steel",batch:tool);
+                Block(new Vector3(0,.58f,.27f),new Vector3(.12f,.1f,.17f),"mine-steel",batch:tool);
+                Block(new Vector3(0,.53f,.36f),new Vector3(.1f,.1f,.12f),"mine-steel",batch:tool);
+                var point=new Geometry();
+                Vector3[] rim={new Vector3(-.05f,.61f,.35f),new Vector3(.05f,.61f,.35f),new Vector3(.05f,.51f,.35f),new Vector3(-.05f,.51f,.35f)};
+                for(int side=0;side<4;side++)
                 {
-                    Block(new Vector3(x,-.12f,.16f),new Vector3(.17f,.4f,.2f),"mine-cloth",batch:arms);
-                    Block(new Vector3(x*.65f,-.29f,.34f),new Vector3(.17f,.16f,.18f),"mine-skin",batch:arms);
+                    int n=point.vertices.Count; Vector3 a=rim[side],b=rim[(side+1)%4];
+                    Vector3 normal=Vector3.Cross(WorkerTip-a,b-a).normalized;
+                    point.vertices.AddRange(new[]{a,WorkerTip,b}); point.normals.AddRange(new[]{normal,normal,normal});
+                    point.uv.AddRange(new[]{Vector2.zero,Vector2.one,new Vector2(1,0)}); point.indices.AddRange(new[]{n,n+1,n+2});
                 }
-                Block(new Vector3(0,-.02f,.42f),new Vector3(.065f,.74f,.075f),"mine-timber",batch:arms);
-                Block(new Vector3(0,.32f,.42f),new Vector3(.62f,.1f,.15f),"mine-steel",batch:arms);
-                foreach(float x in new[]{-.26f,.26f}) Block(new Vector3(x,.265f,.42f),new Vector3(.1f,.16f,.15f),"mine-steel",batch:arms);
-                workerTools[i]=DevelopmentGroup("Two-handed mining swing "+i,arms,Vector3.zero);
-                workerTools[i].SetParent(workers[i],false); workerTools[i].localPosition=new Vector3(0,1.0f,.02f); workerTools[i].gameObject.SetActive(true);
-                var baseShape=new Geometry(); AddCube(baseShape,new Vector3(0,.17f,0),new Vector3(.88f,.34f,.88f),1);
-                var pedestal=MakeMesh("Worker outcrop base "+i,baseShape,GetMaterial("mine-wall")); pedestal.transform.SetParent(workers[i],false);
-                pedestal.transform.localPosition=workers[i].localRotation==Quaternion.identity?Vector3.zero:Quaternion.Inverse(workers[i].localRotation)*(targets[i]-homes[i]-Vector3.up*.78f);
-                var rockShape=new Geometry(); AddCube(rockShape,Vector3.zero,Vector3.one*.78f,1);
+                // Point and crossbar lie in the YZ swing plane, outside the head and torso.
+                workerTools[i]=DevelopmentGroup("Two-handed mining swing "+i,tool,Vector3.zero);
+                workerTools[i].SetParent(workers[i],false); workerTools[i].localPosition=WorkerGrip; workerTools[i].gameObject.SetActive(true);
+                MakeMesh("Pickaxe tapered point "+i,point,GetMaterial("mine-steel")).transform.SetParent(workerTools[i],false);
+                var tip=new GameObject("Pick striking point"); tip.layer=Layer; tip.transform.SetParent(workerTools[i],false); tip.transform.localPosition=WorkerTip;
+                for(int limb=0;limb<6;limb++)
+                {
+                    var shape=new Geometry(); AddCube(shape,Vector3.zero,Vector3.one,1);
+                    workerLimbs[i,limb]=MakeMesh("Miner limb "+i+" "+limb,shape,GetMaterial(limb<2?"mine-cloth":"mine-skin")).transform;
+                    workerLimbs[i,limb].SetParent(workers[i],false);
+                }
+                var baseShape=new Geometry(); AddCube(baseShape,new Vector3(.42f,.17f,1.43f),new Vector3(.96f,.34f,.96f),1);
+                MakeMesh("Worker outcrop base "+i,baseShape,GetMaterial("mine-wall")).transform.SetParent(workers[i],false);
+                var rockShape=new Geometry(); AddCube(rockShape,Vector3.zero,Vector3.one*.9f,1);
                 var oreObject=MakeMesh("Worker ore "+i,rockShape,GetMaterial("mine-iron"));
-                workerRocks[i]=oreObject.transform; workerRocks[i].localPosition=targets[i]; workerOreRenderers[i]=oreObject.GetComponent<MeshRenderer>();
-                var cracks=new Geometry(); AddCube(cracks,Vector3.zero,Vector3.one*.785f,1);
+                workerRocks[i]=oreObject.transform; workerRocks[i].localPosition=transform.InverseTransformPoint(workers[i].TransformPoint(new Vector3(.42f,.78f,1.43f)));
+                workerRocks[i].localRotation=workers[i].localRotation; workerOreRenderers[i]=oreObject.GetComponent<MeshRenderer>();
+                var cracks=new Geometry(); AddCube(cracks,Vector3.zero,Vector3.one*.906f,1);
                 var crackMat=new Material(Resources.Load<Shader>("VoxelShadow")){mainTexture=art.Texture("crack1")}; materials.Add("Worker cracks "+i,crackMat);
                 var overlay=MakeMesh("Worker rock cracks "+i,cracks,crackMat); overlay.transform.SetParent(workerRocks[i],false);
                 workerCracks[i]=overlay.GetComponent<MeshRenderer>(); workerCracks[i].enabled=false;
                 workerRocks[i].gameObject.SetActive(false);
             }
+        }
+        private void PoseWorkerArms(int i)
+        {
+            Vector3 left=workers[i].InverseTransformPoint(workerTools[i].TransformPoint(new Vector3(0,.15f,0)));
+            Vector3 right=workers[i].InverseTransformPoint(workerTools[i].TransformPoint(new Vector3(0,-.1f,0)));
+            Vector3 leftElbow=new Vector3(-.4f,.8f,.48f),rightElbow=new Vector3(.58f,.78f,.4f);
+            PlaceWorkerLimb(workerLimbs[i,0],new Vector3(-.34f,1.03f,.02f),leftElbow,.17f);
+            PlaceWorkerLimb(workerLimbs[i,1],new Vector3(.34f,1.03f,.02f),rightElbow,.17f);
+            PlaceWorkerLimb(workerLimbs[i,2],leftElbow,left,.14f);
+            PlaceWorkerLimb(workerLimbs[i,3],rightElbow,right,.14f);
+            for(int hand=0;hand<2;hand++)
+            {
+                workerLimbs[i,4+hand].localPosition=hand==0?left:right;
+                workerLimbs[i,4+hand].localRotation=workerTools[i].localRotation;
+                workerLimbs[i,4+hand].localScale=Vector3.one*.14f;
+            }
+        }
+        private static void PlaceWorkerLimb(Transform limb,Vector3 start,Vector3 end,float width)
+        {
+            limb.localPosition=(start+end)*.5f;
+            limb.localRotation=Quaternion.FromToRotation(Vector3.up,end-start);
+            limb.localScale=new Vector3(width,(end-start).magnitude,width);
         }
         private void UpdateMiningWorkers()
         {
@@ -70,8 +108,9 @@ namespace MineLoot
             {
                 if(!workers[i].gameObject.activeSelf) continue;
                 float time=clock*1.2f+i*.31f, phase=time-Mathf.Floor(time); int cycle=Mathf.FloorToInt(time);
-                float swing=phase<.3f?Mathf.Lerp(5,-58,phase/.3f):phase<.56f?Mathf.Lerp(-58,45,Mathf.Pow((phase-.3f)/.26f,2)):Mathf.Lerp(45,5,(phase-.56f)/.44f);
+                float swing=phase<.3f?Mathf.Lerp(5,-55,Mathf.SmoothStep(0,1,phase/.3f)):phase<.56f?Mathf.Lerp(-55,40,Mathf.Pow((phase-.3f)/.26f,2)):phase<.62f?40:Mathf.Lerp(40,5,Mathf.SmoothStep(0,1,(phase-.62f)/.38f));
                 workerTools[i].localEulerAngles=new Vector3(swing,0,0);
+                PoseWorkerArms(i);
                 float lean=phase>.3f&&phase<.7f?Mathf.Sin((phase-.3f)/.4f*Mathf.PI):0;
                 workers[i].localPosition=workerHomes[i]+Vector3.up*(lean*.018f);
                 workerHeads[i].localEulerAngles=new Vector3(lean*9,0,0);
@@ -80,7 +119,8 @@ namespace MineLoot
                     workerLastCycle[i]=cycle; workerImpacts[i]++;
                     bool broken=workerImpacts[i]%6==0;
                     string key=new[]{"iron","copper","coal"}[(workerImpacts[i]/6+i)%3];
-                    EmitChips(workerRocks[i].localPosition,art.Texture("tex-mine-"+key),broken?14:3,broken);
+                    Vector3 contact=transform.InverseTransformPoint(workers[i].TransformPoint(WorkerGrip+Quaternion.Euler(40,0,0)*WorkerTip));
+                    EmitChips(contact,art.Texture("tex-mine-"+key),broken?14:3,broken);
                     workerCracks[i].enabled=!broken;
                     workerCracks[i].sharedMaterial.mainTexture=art.Texture("crack"+(1+workerImpacts[i]%6));
                     if(broken) workerOreRenderers[i].sharedMaterial=GetMaterial("mine-"+key);

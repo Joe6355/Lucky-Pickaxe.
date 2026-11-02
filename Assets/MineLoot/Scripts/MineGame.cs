@@ -8,7 +8,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 13;
+        public int version = 14;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -22,7 +22,7 @@ namespace MineLoot
         public long totalClicks;
         public int totalRolls;
         public long experience;
-        public long oresMined;
+        public long oresMined, miningBlocks;
         public int oreKind;
         public int oreDamage;
         public int boardSeed;
@@ -74,7 +74,7 @@ namespace MineLoot
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
         public const int PrestigeUpgradeCount = 9, MaxPrestiges = 1000000, MaxCrystals = 10000000;
         public const int GuideStepCount = 5;
-        public const int OreCount = 9, VideoTickets = 1, VideoCooldownSeconds = 180;
+        public const int OreCount = 10, StoneKind = 9, VideoTickets = 1, VideoCooldownSeconds = 180;
         private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 14875000;
         private static readonly PrestigeUpgrade[] PrestigeUpgrades = {
             new PrestigeUpgrade("Верный удар", "+25% монет\nза удар и руду", "pick4", 2),
@@ -88,12 +88,12 @@ namespace MineLoot
             new PrestigeUpgrade("Сила жилы", "Жила даёт\n×4 монеты", "tile-diamond", 5)
         };
         public static PrestigeUpgrade PrestigeUpgradeAt(int index) => PrestigeUpgrades[index];
-        // IDs 0..4 belong to existing saves. Display/unlock order is independent of the ID.
-        private static readonly int[] OreLevels = { 1, 3, 7, 14, 20, 2, 5, 10, 30 };
-        private static readonly int[] OreHealths = { 48, 96, 160, 240, 320, 64, 128, 192, 640 };
-        private static readonly int[] OreRewards = { 96, 224, 440, 760, 1200, 144, 320, 560, 2400 };
-        private static readonly string[] OreKeys = { "coal", "iron", "gold", "diamond", "emerald", "copper", "lapis", "redstone", "ancient" };
-        private static readonly int[] OreOrder = { 0, 5, 1, 6, 2, 7, 3, 4, 8 };
+        // IDs 0..8 belong to existing saves; stone is appended. Display order is independent of the ID.
+        private static readonly int[] OreLevels = { 1, 3, 7, 14, 20, 2, 5, 10, 30, 1 };
+        private static readonly int[] OreHealths = { 48, 96, 160, 240, 320, 64, 128, 192, 640, 32 };
+        private static readonly int[] OreRewards = { 96, 224, 440, 760, 1200, 144, 320, 560, 2400, 0 };
+        private static readonly string[] OreKeys = { "coal", "iron", "gold", "diamond", "emerald", "copper", "lapis", "redstone", "ancient", "stone" };
+        private static readonly int[] OreOrder = { 9, 0, 5, 1, 6, 2, 7, 3, 4, 8 };
         private static readonly int[] OreCycle = { 0, 1, 0, 2, 3, 1, 4, 2, 5, 3, 6, 4, 7, 5, 8 };
         private static readonly int[] PickRanks = { 0, 2, 5, 12, 20, 32 };
         private static readonly int[] PickDamage = { 1, 2, 4, 6, 9, 15 };
@@ -104,7 +104,7 @@ namespace MineLoot
             new Milestone("Искатель удачи", "Сделай 5 бросков рулетки", "ticket", 5, 240, 1),
             new Milestone("Железный век", "Улучши кирку до уровня 5", "pick2", 5, 300, 1),
             new Milestone("Проходчик", "Разбей 50 блоков рулетки", "tile-iron", 50, 400, 1),
-            new Milestone("Алмазная жила", "Достигни уровня шахтёра 7", "tile-diamond", 7, 500, 1),
+            new Milestone("Алмазная жила", "Развей шахту до уровня 7", "tile-diamond", 7, 500, 1),
             new Milestone("Первый манёвр", "Купи перестановку кирок", "swap", 1, 200, 1),
             new Milestone("Верный удар", "Подними остроту до 3", "pick-head2", 3, 600, 1),
             new Milestone("Новый горизонт", "Доберись до пласта 10", "tile-gold", 10, 800, 1),
@@ -113,8 +113,8 @@ namespace MineLoot
             new Milestone("Кристальная кирка", "Улучши кирку до уровня 20", "pick4", 20, 1500, 1),
             new Milestone("Охотник за кладом", "Подними сокровища до 5", "chest", 5, 1400, 1),
             new Milestone("Хранитель реликвий", "Собери 3 реликвии", "tile-emerald", 3, 1200, 1),
-            new Milestone("Опытный шахтёр", "Достигни уровня шахтёра 25", "pick-gold", 25, 1800, 1),
-            new Milestone("Легенда шахты", "Достигни уровня шахтёра 50", "medal", 50, 3000, 2)
+            new Milestone("Опытный шахтёр", "Развей шахту до уровня 25", "pick-gold", 25, 1800, 1),
+            new Milestone("Легенда шахты", "Развей шахту до уровня 50", "medal", 50, 3000, 2)
         };
         public static int MilestoneCount => Milestones.Length;
         public static Milestone MilestoneAt(int index) => Milestones[index];
@@ -127,6 +127,7 @@ namespace MineLoot
         public bool IsOreUnlocked(int kind) => kind >= 0 && kind < OreCount && (MinerLevel >= OreLevels[kind] || (Progress.oreUnlocks & (1 << kind)) != 0);
         private int UnlockedOreAt(int index) { foreach (int kind in OreOrder) if (IsOreUnlocked(kind) && index-- == 0) return kind; return 0; }
         public static int OreAtDisplayIndex(int index) => OreOrder[index];
+        public bool IsMiningStone => Progress.oreKind == StoneKind;
         public string OreKey => OreKeys[Progress.oreKind];
         public int OreHealth => OreHealths[Progress.oreKind];
         public int OreReward => OreRewards[Progress.oreKind] * (100 + Progress.fortuneLevel * 25) / 100 * (100 + EnchantmentLevel(EnchantKind.Fortune) * 20) / 100 * (HasPrestigeUpgrade(0) ? 125 : 100) / 100;
@@ -223,7 +224,7 @@ namespace MineLoot
             bool legacyGuide = Progress.version < 11;
             bool legacyMining = Progress.version < 12;
             bool legacyEnchanting = Progress.version < 13;
-            Progress.version = 13;
+            Progress.version = 14;
             Progress.fortuneLevel = Math.Max(0, Math.Min(10, Progress.fortuneLevel));
             Progress.hasteLevel = Math.Max(0, Math.Min(10, Progress.hasteLevel));
             Progress.videoTicketsReadyUtc = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.videoTicketsReadyUtc));
@@ -302,6 +303,7 @@ namespace MineLoot
             // Old clicks count toward the new level; migration never pays historical level rewards.
             Progress.experience = Math.Max(0, Math.Min(ExperienceForLevel(MaxMinerLevel), legacy ? Progress.totalClicks : Progress.experience));
             Progress.oresMined = Math.Max(0, Math.Min(CoinLimit, Progress.oresMined));
+            Progress.miningBlocks = Math.Max(Progress.oresMined, Math.Min(CoinLimit, Progress.miningBlocks));
             Progress.oreUnlocks = Math.Max(0, Progress.oreUnlocks) & ((1 << OreCount) - 1);
             int[] oldLevels = { 1, 2, 4, 7, 10 };
             for (int i = 0; i < OreCount; i++)
@@ -379,7 +381,8 @@ namespace MineLoot
         public bool Mine()
         {
             if (ActionsLocked) { LastHit = default; return false; }
-            var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = ManualClickPower, experience = 1, rich = VeinActive };
+            bool stone = IsMiningStone;
+            var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = stone ? 0 : ManualClickPower, experience = stone ? 2 : 1, rich = !stone && VeinActive };
             int previousLevel = MinerLevel;
             int previousUnlocks = UnlockedOres;
             Progress.oreDamage += hit.damage;
@@ -388,22 +391,23 @@ namespace MineLoot
             {
                 hit.broken = true;
                 hit.coins += OreReward * ManualMultiplier;
-                hit.experience += 12 + OreLevels[Progress.oreKind] * 2;
-                Progress.oresMined = Math.Min(CoinLimit, Progress.oresMined + 1);
+                hit.experience += stone ? 16 : 12 + OreLevels[Progress.oreKind] * 2;
+                Progress.miningBlocks = Math.Min(CoinLimit, Progress.miningBlocks + 1);
+                if (!stone) Progress.oresMined = Math.Min(CoinLimit, Progress.oresMined + 1);
                 Progress.oreDamage = 0;
-                if (!VeinOffered && !VeinActive && ++Progress.veinCharge >= RichVeinTarget)
+                if (!stone && !VeinOffered && !VeinActive && ++Progress.veinCharge >= RichVeinTarget)
                 {
                     Progress.veinCharge = 0; Progress.veinOfferLeft = VeinOfferSeconds; hit.veinFound = true;
                 }
             }
-            hit.coins += GainExperience(hit.experience, out hit.tickets, out hit.experience);
+            hit.coins += GainExperience(hit.experience, out hit.tickets, out hit.experience, !stone);
             hit.levels = MinerLevel - previousLevel;
             if (hit.broken)
-                Progress.oreKind = UnlockedOreAt(UnlockedOres > previousUnlocks ? UnlockedOres - 1 : OreCycle[Progress.oresMined % OreCycle.Length] % UnlockedOres);
+                Progress.oreKind = Progress.miningBlocks % 4 == 3 ? StoneKind : UnlockedOres > previousUnlocks ? UnlockedOreAt(UnlockedOres - 1) : UnlockedOreAt(1 + OreCycle[Progress.miningBlocks % OreCycle.Length] % (UnlockedOres - 1));
             AddCoins(hit.coins);
             Progress.totalClicks = Math.Min(CoinLimit, Progress.totalClicks + 1);
-            Progress.hits++;
-            bool ticket = Progress.hits == HitsRequired;
+            if (!stone) Progress.hits++;
+            bool ticket = !stone && Progress.hits == HitsRequired;
             if (ticket) { Progress.hits = 0; hit.tickets++; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
             LastHit = hit;
             return ticket;
@@ -420,15 +424,15 @@ namespace MineLoot
             return true;
         }
 
-        private int GainExperience(int amount, out int tickets, out int awarded)
+        private int GainExperience(int amount, out int tickets, out int awarded, bool payLevelRewards = true)
         {
             int scaled = amount * PrestigeExperiencePercent + Progress.experienceCarry;
             awarded = scaled / 100; Progress.experienceCarry = scaled % 100;
             int before = MinerLevel, coins = 0;
             Progress.experience = Math.Min(ExperienceForLevel(MaxMinerLevel), Progress.experience + awarded);
-            tickets = MinerLevel / 5 - before / 5;
+            tickets = payLevelRewards ? MinerLevel / 5 - before / 5 : 0;
             CreditEnchantingExperience(awarded);
-            for (int level = before + 1; level <= MinerLevel; level++) coins += 40 * level;
+            if (payLevelRewards) for (int level = before + 1; level <= MinerLevel; level++) coins += 40 * level;
             Progress.tickets = Math.Min(1000000, Progress.tickets + tickets);
             return coins;
         }
@@ -760,7 +764,7 @@ namespace MineLoot
                 totalCrystals = previous.totalCrystals + reward, prestigeUpgrades = previous.prestigeUpgrades,
                 milestoneClaims = previous.milestoneClaims, milestoneBest = (long[])previous.milestoneBest.Clone(),
                 guideStep = GuideStepCount,
-                totalClicks = previous.totalClicks, oresMined = previous.oresMined, totalRolls = previous.totalRolls,
+                totalClicks = previous.totalClicks, oresMined = previous.oresMined, miningBlocks = previous.miningBlocks, totalRolls = previous.totalRolls,
                 totalBlocks = previous.totalBlocks, claimedContracts = previous.claimedContracts,
                 totalProduced = previous.totalProduced, totalOfflineCoins = previous.totalOfflineCoins,
                 lastSeenUtc = previous.lastSeenUtc, videoTicketsReadyUtc = previous.videoTicketsReadyUtc, videoTicketClaims = previous.videoTicketClaims

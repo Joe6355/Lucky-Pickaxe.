@@ -194,7 +194,7 @@ namespace MineLoot
             Frame(hero, "Tap hint", 12, 480, width - 24, 29);
             Frame(mineStatus.rectTransform, 12, 480, width - 24, 29); FontSize(mineStatus, 20);
             Frame(oresLayout, 24, 586, width, 54);
-            float slot = (width - 32) / MineGame.OreCount;
+            float slot = (width - 4 * (MineGame.OreCount - 1)) / MineGame.OreCount;
             for (int i = 0; i < MineGame.OreCount; i++)
             {
                 float x = i * (slot + 4);
