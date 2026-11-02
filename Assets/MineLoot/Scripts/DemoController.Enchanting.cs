@@ -24,9 +24,9 @@ namespace MineLoot
 
         private void BuildEnchantmentSection(Transform page)
         {
-            enchantingTab = ButtonAt(page, "ЗАЧАРОВАНИЕ", 24, 106, 211, 31, ShowEnchanting, Panel, Ink);
+            enchantingTab = ButtonAt(page, "ЗАЧАРОВАНИЕ", 24, 98, 211, 26, ShowEnchanting, Panel, Ink);
             enchantingTab.name = "Enchanting section"; enchantingTab.GetComponentInChildren<Text>().fontSize = 17;
-            draftToolsTab = ButtonAt(page, "ТЕСТ", 245, 106, 211, 31, () => SelectUpgradeSection(3), Hex("e6cc8e"), Ink);
+            draftToolsTab = ButtonAt(page, "ТЕСТ", 245, 98, 211, 26, () => SelectUpgradeSection(3), Hex("e6cc8e"), Ink);
             draftToolsTab.name = "Draft tools section"; draftToolsTab.gameObject.SetActive(DraftToolsEnabled);
             enchantingArea = MakeRect(page, "Enchanting area", 0, 0, 480, 720).gameObject;
             var window = Card(enchantingArea.transform, "Enchanting room", 24, 148, 432, 196, Hex("3c354a")); enchantingWindow = window.rectTransform;
@@ -91,12 +91,12 @@ namespace MineLoot
 
         public void ShowEnchanting()
         {
-            if (applicationPaused || busy || modal != null || game.Progress.batchActive) return;
+            if (applicationPaused || EconomyBusy || modal != null) return;
             ShowWorkshop(); SelectUpgradeSection(2);
         }
         private void SelectUpgradeSection(int section)
         {
-            if (applicationPaused || busy || modal != null || section == 3 && !DraftToolsEnabled) return;
+            if (applicationPaused || EconomyBusy || modal != null || section == 3 && !DraftToolsEnabled) return;
             workshopSection = section; productionTab = section == 1; holding = false;
             RefreshWorkshop(); RefreshEnchanting(); RefreshGuide();
         }
@@ -124,20 +124,20 @@ namespace MineLoot
             {
                 enchantDescriptions[i].text = DescribeEnchantments(game.EnchantmentOffer(i), true);
                 enchantButtons[i].GetComponentInChildren<Text>().text = (game.IsEnchanted ? (wideLayout ? "Заменить · " : "Заменить\n") : (wideLayout ? "Зачаровать · " : "Зачаровать\n")) + ShortAmount(game.EnchantmentCost(i)) + " опыта";
-                enchantButtons[i].interactable = !busy && !applicationPaused && game.CanEnchant(i);
+                enchantButtons[i].interactable = !EconomyBusy && !applicationPaused && game.CanEnchant(i);
             }
             enchantingHint.text = "Перезачарование заменяет чары и стоит дороже.";
             draftToolsState.text = "Монеты: " + ShortAmount(game.Progress.coins) + "\nОпыт на чары: " + ShortAmount(game.Progress.enchantingExperience) + "\nЖетоны: " + game.Progress.tickets;
         }
         public void EnchantEquippedPick(int slot)
         {
-            if (applicationPaused || busy || modal != null || !game.Enchant(slot, () => random.NextDouble())) return;
+            if (applicationPaused || EconomyBusy || modal != null || !game.Enchant(slot, () => random.NextDouble())) return;
             Persist(); Flush(); enchantingWorld.PlayEnchantment(); sounds.Play("rare"); Refresh();
             Notice("КИРКА ЗАЧАРОВАНА", DescribeEnchantments(game.Progress.enchantments, true));
         }
         public void RepairEquippedPick()
         {
-            if (applicationPaused || busy || modal != null || !game.RepairPick()) return;
+            if (applicationPaused || EconomyBusy || modal != null || !game.RepairPick()) return;
             Persist(); Flush(); sounds.Play("metal"); Refresh();
         }
         private void BuildDraftTools(Transform page)
@@ -152,7 +152,7 @@ namespace MineLoot
         }
         public void GrantDraftResources(int kind)
         {
-            if (!DraftToolsEnabled || applicationPaused || busy || modal != null || game.ActionsLocked) return;
+            if (!DraftToolsEnabled || applicationPaused || EconomyBusy || modal != null || game.EconomyLocked) return;
             if (kind == 0) game.Progress.coins = Math.Min(MineGame.CoinLimit, game.Progress.coins + 100000000);
             else if (kind == 1) game.Progress.enchantingExperience = Math.Min(MineGame.EnchantingExperienceLimit, game.Progress.enchantingExperience + 10000);
             else if (kind == 2) game.Progress.tickets = Math.Min(1000000, game.Progress.tickets + 10);

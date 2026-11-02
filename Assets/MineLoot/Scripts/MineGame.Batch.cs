@@ -5,6 +5,10 @@ namespace MineLoot
     public sealed partial class MineGame
     {
         public bool ActionsLocked => HasPendingRoll || Progress.batchActive;
+        // View-only pause is not saved; paid picks and the remaining queue stay in MineProgress.
+        public bool RoulettePaused { get; set; }
+        public bool EconomyLocked => ActionsLocked && !RoulettePaused;
+        public bool UpgradeActionsLocked(UpgradeKind kind) => ActionsLocked && (!RoulettePaused || kind == UpgradeKind.Forge || kind == UpgradeKind.Swap || kind == UpgradeKind.Treasure);
         public bool CanStartBatch => !ActionsLocked && Progress.tickets >= 10;
         private void SanitizeBatch()
         {

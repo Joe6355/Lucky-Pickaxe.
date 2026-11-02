@@ -74,7 +74,7 @@ namespace MineLoot
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
         public const int PrestigeUpgradeCount = 9, MaxPrestiges = 1000000, MaxCrystals = 10000000;
         public const int GuideStepCount = 5;
-        public const int OreCount = 10, StoneKind = 9, VideoTickets = 1, VideoCooldownSeconds = 180;
+        public const int OreCount = 10, StoneKind = 9, VideoTickets = 10, VideoCooldownSeconds = 180, OfflineVideoMultiplier = 3;
         private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 14875000;
         private static readonly PrestigeUpgrade[] PrestigeUpgrades = {
             new PrestigeUpgrade("Верный удар", "+25% монет\nза удар и руду", "pick4", 2),
@@ -174,9 +174,9 @@ namespace MineLoot
         public long ProductionMilli => (Progress.workerCount * 2000L + Progress.drillCount * 12000L * (10 + Progress.forgeLevel) / 10) * (100 + CartBonus) / 100 * (HasPrestigeUpgrade(1) ? 125 : 100) / 100;
         public int OfflineHours => 4 + Progress.warehouseLevel * 2;
         public bool HasOfflineReward => Progress.offlineCoins > 0;
-        public bool CanClaimOffline => HasOfflineReward && !ActionsLocked && Progress.coins < CoinLimit;
-        public long DoubledOfflineReward => Progress.offlineCoins * 2;
-        public bool CanDoubleOffline => CanClaimOffline && DoubledOfflineReward <= CoinLimit - Progress.coins;
+        public bool CanClaimOffline => HasOfflineReward && !EconomyLocked && Progress.coins < CoinLimit;
+        public long RewardedOfflineReward => Progress.offlineCoins * OfflineVideoMultiplier;
+        public bool CanClaimRewardedOffline => CanClaimOffline && RewardedOfflineReward <= CoinLimit - Progress.coins;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
         public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
@@ -190,7 +190,7 @@ namespace MineLoot
         public bool CanForge => CanBuyUpgrade(UpgradeKind.Forge);
         public long ContractTarget => (Progress.claimedContracts + 1L) * 25;
         public int ContractReward => 100 + 40 * Math.Min(1000, Progress.claimedContracts);
-        public bool CanClaim => !ActionsLocked && Progress.totalBlocks >= ContractTarget;
+        public bool CanClaim => !EconomyLocked && Progress.totalBlocks >= ContractTarget;
         public bool CanUpgrade => CanBuyUpgrade(UpgradeKind.Pickaxe);
         public bool IsPerfect => Array.TrueForAll(Progress.depths, d => d == Rows);
         public bool IsComplete
@@ -380,7 +380,7 @@ namespace MineLoot
 
         public bool Mine()
         {
-            if (ActionsLocked) { LastHit = default; return false; }
+            if (EconomyLocked) { LastHit = default; return false; }
             bool stone = IsMiningStone;
             var hit = new MineHit { ore = Progress.oreKind, damage = MiningDamage, coins = stone ? 0 : ManualClickPower, experience = stone ? 2 : 1, rich = !stone && VeinActive };
             int previousLevel = MinerLevel;
@@ -414,7 +414,7 @@ namespace MineLoot
         }
 
         public long VideoWaitSeconds(long utc) => Math.Max(0, Progress.videoTicketsReadyUtc - Math.Max(0, Math.Min(MaxUtcSeconds, utc)));
-        public bool CanClaimVideoTickets(long utc) => utc > 0 && utc <= MaxUtcSeconds && VideoWaitSeconds(utc) == 0 && !ActionsLocked && Progress.tickets <= 1000000 - VideoTickets && Progress.videoTicketClaims < 1000000;
+        public bool CanClaimVideoTickets(long utc) => utc > 0 && utc <= MaxUtcSeconds && VideoWaitSeconds(utc) == 0 && !EconomyLocked && Progress.tickets <= 1000000 - VideoTickets && Progress.videoTicketClaims < 1000000;
         // The controller calls this only after the matching SDK onRewarded callback.
         public bool ClaimVideoTickets(long utc)
         {
@@ -459,7 +459,7 @@ namespace MineLoot
 
         public bool ActivateVein()
         {
-            if (ActionsLocked || !VeinOffered || VeinActive) return false;
+            if (EconomyLocked || !VeinOffered || VeinActive) return false;
             Progress.veinOfferLeft = 0; Progress.veinBoostLeft = RichVeinDuration;
             return true;
         }
@@ -498,11 +498,11 @@ namespace MineLoot
             return true;
         }
 
-        public bool ClaimOffline(bool doubled = false)
+        public bool ClaimOffline(bool rewarded = false)
         {
-            if (doubled ? !CanDoubleOffline : !CanClaimOffline) return false;
-            long credit = doubled ? DoubledOfflineReward : Math.Min(CoinLimit - Progress.coins, Progress.offlineCoins);
-            AddCoins(credit); Progress.offlineCoins = doubled ? 0 : Progress.offlineCoins - credit;
+            if (rewarded ? !CanClaimRewardedOffline : !CanClaimOffline) return false;
+            long credit = rewarded ? RewardedOfflineReward : Math.Min(CoinLimit - Progress.coins, Progress.offlineCoins);
+            AddCoins(credit); Progress.offlineCoins = rewarded ? 0 : Progress.offlineCoins - credit;
             Progress.totalProduced = Math.Min(CoinLimit, Progress.totalProduced + credit);
             Progress.totalOfflineCoins = Math.Min(CoinLimit, Progress.totalOfflineCoins + credit);
             if (!HasOfflineReward) ClearOfflineReward();
@@ -613,13 +613,13 @@ namespace MineLoot
 
         public UpgradeKind? UpgradePrerequisite(UpgradeKind kind) => kind == UpgradeKind.Drill || kind == UpgradeKind.Warehouse ? UpgradeKind.Worker : kind == UpgradeKind.Cart ? UpgradeKind.Drill : kind == UpgradeKind.Rails ? UpgradeKind.Cart : (UpgradeKind?)null;
         public bool HasUpgradePrerequisite(UpgradeKind kind) => !UpgradePrerequisite(kind).HasValue || UpgradeLevel(UpgradePrerequisite(kind).Value) > 0;
-        public bool CanBuyUpgrade(UpgradeKind kind) => !ActionsLocked && HasUpgradePrerequisite(kind) && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
+        public bool CanBuyUpgrade(UpgradeKind kind) => !UpgradeActionsLocked(kind) && HasUpgradePrerequisite(kind) && UpgradeLevel(kind) < UpgradeMax(kind) && MinerLevel >= UpgradeUnlock(kind) && Progress.coins >= UpgradePrice(kind);
 
         // Quote without changing the wallet, ticket progress or any upgrade. Each rank keeps its own gate.
         public int QuoteUpgrade(UpgradeKind kind, int requested, out long price)
         {
             price = 0;
-            if (requested <= 0 || ActionsLocked || !HasUpgradePrerequisite(kind)) return 0;
+            if (requested <= 0 || UpgradeActionsLocked(kind) || !HasUpgradePrerequisite(kind)) return 0;
             int rank = UpgradeLevel(kind), count = 0, limit = Math.Min(requested, UpgradeMax(kind) - rank), miner = MinerLevel;
             while (count < limit && miner >= UpgradeUnlock(kind, rank + count))
             {
@@ -708,7 +708,7 @@ namespace MineLoot
         }
 
         public bool MilestoneClaimed(int index) => index >= 0 && index < MilestoneCount && (Progress.milestoneClaims & (1 << index)) != 0;
-        public bool CanClaimMilestone(int index) => index >= 0 && index < MilestoneCount && !ActionsLocked && !MilestoneClaimed(index) && MilestoneValue(index) >= Milestones[index].target;
+        public bool CanClaimMilestone(int index) => index >= 0 && index < MilestoneCount && !EconomyLocked && !MilestoneClaimed(index) && MilestoneValue(index) >= Milestones[index].target;
         public int ClaimedMilestones
         {
             get { int count = 0; for (int i = 0; i < MilestoneCount; i++) if (MilestoneClaimed(i)) count++; return count; }
@@ -860,7 +860,7 @@ namespace MineLoot
         public RollResult ResolveRoll()
         {
             if (!HasPendingRoll) return null;
-            var result = new RollResult { levelBefore = MinerLevel, newStratum = Progress.pendingNewStratum };
+            var result = new RollResult { levelBefore = MinerLevel, newStratum = Progress.pendingNewStratum, blockReward = BlockReward, chestReward = ChestReward };
             for (int c = 0; c < Columns; c++)
             {
                 result.types[c] = Progress.pendingTypes[c];
@@ -970,7 +970,7 @@ namespace MineLoot
         public readonly bool[] lostBefore = new bool[MineGame.Columns], lostAfter = new bool[MineGame.Columns];
         public readonly BlockKind[] blockedBy = new BlockKind[MineGame.Columns];
         public readonly int[] usedPower = new int[MineGame.Columns], stopRows = new int[MineGame.Columns];
-        public int hardness;
+        public int hardness, blockReward, chestReward;
         public int broken;
         public int reward;
         public int chests;

@@ -51,14 +51,14 @@ namespace MineLoot
 
         public void ClaimOfflineWithVideo()
         {
-            if (applicationPaused || busy || !offlineWindowOpen || !rewardedAvailable || !game.CanDoubleOffline || RewardedVideoPending) return;
+            if (applicationPaused || EconomyBusy || !offlineWindowOpen || !rewardedAvailable || !game.CanClaimRewardedOffline || RewardedVideoPending) return;
             ticketVideo = false;
             RequestRewardedVideo();
         }
 
         public void ClaimTicketsWithVideo()
         {
-            if (applicationPaused || busy || modal != null || !rewardedAvailable || !game.CanClaimVideoTickets(SessionUtc) || RewardedVideoPending) return;
+            if (applicationPaused || EconomyBusy || modal != null || !rewardedAvailable || !game.CanClaimVideoTickets(SessionUtc) || RewardedVideoPending) return;
             ticketVideo = true;
             RequestRewardedVideo();
         }
@@ -104,7 +104,7 @@ namespace MineLoot
             if (offlineVideoPaid)
             {
                 if (offlineWindowOpen) CloseModal();
-                sounds.Play("reward"); Notice(ticketVideo ? "+1 ЖЕТОН" : "СКЛАД · НАГРАДА ×2", ticketVideo ? "Подарок за просмотр видео" : "+" + ShortAmount(offlineVideoCredit) + " монет за просмотр видео");
+                sounds.Play("reward"); Notice(ticketVideo ? "+10 ЖЕТОНОВ" : "СКЛАД · НАГРАДА ×3", ticketVideo ? "Подарок за просмотр видео" : "+" + ShortAmount(offlineVideoCredit) + " монет за просмотр видео");
                 offlineNoticeQueued = game.HasOfflineReward;
                 offlineVideoMessage = null;
             }
@@ -127,7 +127,8 @@ namespace MineLoot
             applicationPaused = paused; skipEconomyFrame = true;
             platformInput.interactable = !paused;
             platformInput.blocksRaycasts = !paused;
-            stage.Paused = shaft.Paused = enchantingWorld.Paused = paused;
+            stage.Paused = enchantingWorld.Paused = paused;
+            shaft.Paused = paused || !roulette;
             sounds.SetSuspended(paused || !audioFocused);
             if (!paused)
             {

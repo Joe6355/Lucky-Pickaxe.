@@ -10,7 +10,7 @@ namespace MineLoot
         private float RollAnimationScale => batchVisual ? .3f : FastRoll ? .5f : 1;
         public void SpinBatch()
         {
-            if (applicationPaused || modal != null) return;
+            if (applicationPaused || !roulette || modal != null) return;
             if (game.Progress.batchActive)
             {
                 game.StopBatch(); Persist(); Flush(); Refresh(); return;

@@ -158,7 +158,8 @@ namespace MineLoot
             {
                 Frame(workshopCards[i].GetComponent<RectTransform>(), 24 + i % 3 * (cardWidth + 16), 130 + i / 3 * 254, cardWidth, 238);
                 Frame(workshopIcons[i].rectTransform, 18, 20, 48, 48);
-                Frame(workshopTitles[i].rectTransform, 82, 18, cardWidth - 100, 32); FontSize(workshopTitles[i], 24);
+                ButtonFrame(workshopInfoButtons[i],cardWidth-44,18,28,28);
+                Frame(workshopTitles[i].rectTransform, 82, 18, cardWidth - 136, 32); FontSize(workshopTitles[i], 24);
                 Frame(workshopLevels[i].rectTransform, 82, 50, cardWidth - 100, 24); FontSize(workshopLevels[i], 19);
                 Frame(workshopEffects[i].rectTransform, 16, 88, cardWidth - 32, 55); FontSize(workshopEffects[i], 21);
                 Frame(workshopStates[i].rectTransform, 16, 151, cardWidth - 32, 26); FontSize(workshopStates[i], 18);

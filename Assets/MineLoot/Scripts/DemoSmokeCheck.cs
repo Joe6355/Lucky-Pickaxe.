@@ -37,13 +37,13 @@ namespace MineLoot
                 if (candidate.IsExpedition) shaft = candidate; else if (!candidate.IsEnchanting) stage = candidate;
             Check(stage != null && stage.OreVertices == 24 && stage.StaticBatches < 24, "Mining diorama uses a cubic ore mesh and batched static terrain");
             Check(shaft != null && shaft.VisibleBlocks == 25 && !shaft.gameObject.activeSelf, "Roulette shaft is intact and sleeps outside its own page");
-            CheckLayout(); Capture("unity-v025-start.png");
+            CheckLayout(); Capture("unity-v026-start.png");
             for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.1f); }
             Check(demo.Game.Progress.oreDamage == 12 && demo.Game.Progress.oresMined == 0 && demo.Game.Progress.coins == 176 && demo.Game.Progress.tickets == 2, "Twelve real clicks damage durable coal and still earn a roulette ticket");
-            Check(stage.CrackVisible, "Durable ore visibly cracks before breaking"); Capture("unity-v025-cracks.png");
+            Check(stage.CrackVisible, "Durable ore visibly cracks before breaking"); Capture("unity-v026-cracks.png");
             for (int i = 12; i < 48; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.1f); }
             Check(demo.Game.Progress.oresMined == 1 && demo.Game.Progress.coins == 640 && demo.Game.Progress.tickets == 2, "Full wooden-tool block pays the ore bonus and level reward once");
-            Capture("unity-v025-break.png");
+            Capture("unity-v026-break.png");
             Click("Upgrade pickaxe"); Click("Upgrade pickaxe");
             Check(demo.Game.PickTier == 1 && demo.Game.MiningDamage == 2 && demo.Game.Progress.coins == 376, "The visible tool upgrade reaches stone with a real damage improvement");
             yield return VerifyTicketVideo(demo);
@@ -55,21 +55,23 @@ namespace MineLoot
                 demo.RestoreForSmoke(new MineProgress { coins = 1000000, experience = MineGame.ExperienceForLevel(50), upgradeLevel = 32, forgeLevel = 6, workerCount = 10, drillCount = 2, cartCount = 2, oreKind = 8, oreDamage = 250, enchantingExperience = 10000 });
                 yield return new WaitForSecondsRealtime(.3f);
                 Check(demo.Game.PickTier == 5 && stage.VisibleWorkers == 3 && stage.DrillVisible && stage.CartVisible, "Netherite tool, miners, cart and drill are presented at " + size);
-                CheckLayout(); Capture("unity-v025-mine-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v026-mine-" + size.x + ".png");
                 Click("МАСТЕРСКАЯ");
                 Check(FindButton("Buy Fortune") != null && FindButton("Buy Haste") != null && FindButton("Mine rock") == null, "Enchantments have a direct dedicated page without the mining screen behind them");
                 int reward = demo.Game.OreReward; float swing = demo.Game.SwingSeconds;
                 Click("Buy Fortune"); Click("Buy Haste");
                 Check(demo.Game.OreReward > reward && demo.Game.SwingSeconds < swing, "Real enchantment buttons apply fortune and haste at " + size);
-                CheckLayout(); Capture("unity-v025-enchantments-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v026-enchantments-" + size.x + ".png");
                 Click("Production section"); Check(FindButton("Buy Press") != null && FindButton("Buy Worker") != null, "Production retains the token press and workers in one section");
-                CheckLayout(); Capture("unity-v025-production-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v026-production-" + size.x + ".png");
                 yield return VerifyEnchantingUi(demo, stage, size.x);
                 demo.ShowRewards();
                 Check(FindButton("Video tickets") != null && FindButton("Rewards milestones") != null && FindButton("Claim contract") != null, "Rewards expose video, achievements, warehouse and contract directly");
-                CheckLayout(); Capture("unity-v025-rewards-" + size.x + ".png");
-                demo.ShowPage(true); CheckLayout(); Capture("unity-v025-roulette-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v026-rewards-" + size.x + ".png");
+                demo.ShowPage(true); CheckLayout(); Capture("unity-v026-roulette-" + size.x + ".png");
             }
+            yield return VerifyHighLevelUi(demo,stage);
+            yield return VerifyRouletteTabPause(demo);
             yield return VerifyStoneUi(demo);
             yield return VerifyRollBatch(demo);
             demo.RestoreForSmoke(new MineProgress { coins = 10000, swapLevel = 1, tickets = 1 });
@@ -92,7 +94,7 @@ namespace MineLoot
             long xp=demo.Game.Progress.enchantingExperience, lifetime=demo.Game.Progress.experience, cost=demo.Game.EnchantmentCost(2);
             int offer=demo.Game.EnchantmentOffer(2); Click("Enchant offer 2");
             Check(demo.Game.Progress.enchantments==offer && demo.Game.Progress.enchantingExperience==xp-cost && demo.Game.Progress.experience==lifetime, "Visible enchanting offer spends only the promised XP and applies its exact enchantments");
-            CheckLayout(); Capture("unity-v025-table-"+width+".png");
+            CheckLayout(); Capture("unity-v026-table-"+width+".png");
             foreach(var room in GetComponentsInChildren<VoxelStage>(true)) if(room.IsEnchanting)
                 Check(Mathf.Abs(Mathf.DeltaAngle(room.transform.Find("Floating open book").localEulerAngles.x,-38))<.1f,"Book pages face the player at a 38 degree inclination");
             xp=demo.Game.Progress.enchantingExperience; cost=demo.Game.EnchantmentCost(0); offer=demo.Game.EnchantmentOffer(0);
@@ -103,22 +105,22 @@ namespace MineLoot
             Check(demo.Game.Progress.coins==wallet+100000000 && demo.Game.Progress.enchantingExperience>=10000 && demo.Game.Progress.tickets>=12, "Temporary test tab grants the explicitly requested resources through real buttons");
             wallet=demo.Game.Progress.coins; demo.OnBrowserPause("1"); demo.GrantDraftResources(0); demo.OnBrowserPause("0");
             Check(demo.Game.Progress.coins==wallet, "Paused testing controls cannot mutate the wallet");
-            CheckLayout(); Capture("unity-v025-tools-"+width+".png");
+            CheckLayout(); Capture("unity-v026-tools-"+width+".png");
             demo.Game.Progress.pickWear=50; demo.ShowPage(false); long repair=demo.Game.RepairCost;
             Click("Repair pick");
             Check(demo.Game.Progress.pickWear==0 && demo.Game.Progress.coins==wallet-repair && demo.Game.IsEnchanted, "Repair is directly available in the mine and retains the equipped enchantments");
             int strikes=stage.WorkerStrikeCount; yield return new WaitForSecondsRealtime(1.2f);
             Check(stage.WorkerStrikeCount>strikes, "Background miners reach their own ore and emit actual timed strikes");
-            CheckLayout(); Capture("unity-v025-enchanted-mine-"+width+".png");
-            VerifyWorkerContact(stage);
+            CheckLayout(); Capture("unity-v026-enchanted-mine-"+width+".png");
+            yield return VerifyWorkerContact(stage);
         }
 
-        private void VerifyWorkerContact(VoxelStage stage)
+        private IEnumerator VerifyWorkerContact(VoxelStage stage)
         {
             for(int i=0;i<3;i++)
             {
                 var miner=stage.transform.Find("Background miner "+i);
-                var tool=miner.Find("Two-handed mining swing "+i);
+                var tool=miner.Find("Mining swing "+i);
                 var tip=tool.Find("Pick striking point"); var ore=stage.transform.Find("Worker ore "+i);
                 Quaternion saved=tool.localRotation; Vector3 oreScale=ore.localScale; ore.localScale=Vector3.one;
                 bool clear=true;
@@ -129,13 +131,72 @@ namespace MineLoot
                         clear &= miner.InverseTransformPoint(mesh.transform.TransformPoint(vertex)).x>.30f;
                 }
                 Check(clear,"Entire pick stays beside head and torso throughout miner "+i+" swing");
-                tool.localRotation=Quaternion.Euler(40,0,0);
-                Vector3 contact=ore.InverseTransformPoint(tip.position);
-                Check(Mathf.Abs(contact.z+.45f)<.006f && Mathf.Abs(contact.x)<.44f && Mathf.Abs(contact.y)<.44f,"Pick point reaches the front face of miner "+i+" ore at impact");
                 tool.localRotation=saved; ore.localScale=oreScale;
+                float deadline=Time.realtimeSinceStartup+2;
+                while(Mathf.Abs(Mathf.DeltaAngle(tool.localEulerAngles.x,40))>.01f && Time.realtimeSinceStartup<deadline) yield return null;
+                Vector3 contact=Quaternion.Inverse(ore.rotation)*(tip.position-ore.position);
+                Check(Mathf.Abs(contact.z+.45f)<.006f && Mathf.Abs(contact.x)<.44f && Mathf.Abs(contact.y)<.44f,"Pick point reaches the front face of miner "+i+" ore at impact");
+                for(int limb=0;limb<4;limb++)
+                    Check(miner.Find("Miner limb "+i+" "+limb).localScale.y<.4f,"Miner arm segment stays compact instead of stretching across the chest");
             }
             Check(stage.transform.Find("Floating mine crest")==null && stage.transform.Find("Diamond mine lanterns/Mounted mineral emblem")!=null,"Entrance displays a fixed framed emblem instead of a floating ore cube");
         }
+        private IEnumerator VerifyHighLevelUi(DemoController demo,VoxelStage stage)
+        {
+            foreach(var size in new[]{new Vector2Int(390,844),new Vector2Int(1280,720)})
+            {
+                Screen.SetResolution(size.x,size.y,false);yield return new WaitForSecondsRealtime(.2f);
+                demo.RestoreForSmoke(new MineProgress {coins=MineGame.CoinLimit,experience=MineGame.ExperienceForLevel(50),upgradeLevel=88,forgeLevel=10,workerCount=10,hasteLevel=10,fortuneLevel=10,efficiencyLevel=10,treasureLevel=10,swapLevel=3});
+                yield return null;Canvas.ForceUpdateCanvases();
+                var price=FindButton("Upgrade pickaxe").GetComponentInChildren<Text>();
+                Check(price.cachedTextGenerator.lineCount==1 && !price.text.Contains("\n") && price.text.Contains("млрд"),"Billion-coin quick upgrade price stays on one readable line");
+                CheckLayout();Capture("unity-v026-high-price-"+size.x+".png");
+                var copper=stage.transform.Find("Batched mine-copper").GetComponent<MeshFilter>().sharedMesh.bounds.size;
+                Check(Mathf.Abs(copper.z/copper.x-1)<.01f,"Background mineral outcrop has cube proportions instead of a compressed slab");
+                demo.ShowWorkshop();CheckLayout();Capture("unity-v026-upgrades-"+size.x+".png");
+                for(int card=0;card<6;card++)
+                {
+                    Click("Upgrade info "+card);yield return null;
+                    Check(GameObject.Find("Upgrade details modal")!=null,"Every upgrade has an accessible explanation");
+                    CheckLayout();if(card==3) Capture("unity-v026-upgrade-help-"+size.x+".png");
+                    Click("Close upgrade details");yield return null;
+                }
+                demo.Game.Progress.efficiencyLevel=0;demo.Game.Progress.coins=100000;demo.ShowWorkshop();demo.CyclePurchaseAmount();
+                int quoteCount=demo.Game.QuoteUpgrade(UpgradeKind.Efficiency,10,out long quotePrice);
+                Click("Upgrade info 0");yield return null;bool exactQuote=false;
+                string expectedPrice="Цена за "+quoteCount+" ур.: "+quotePrice.ToString("N0",System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))+" монет";
+                foreach(var text in GetComponentsInChildren<Text>(false)) exactQuote|=text.text==expectedPrice;
+                Check(quoteCount==10 && exactQuote,"Upgrade explanation shows the exact full price for the selected ten-level purchase");
+                CheckLayout();Capture("unity-v026-bulk-help-"+size.x+".png");Click("Close upgrade details");yield return null;
+                Click("Open prestige");yield return null;
+                foreach(var text in GetComponentsInChildren<Text>(false)) Check(!text.text.ToLowerInvariant().Contains("переезд"),"New-mine UI uses an explicit reset description instead of unexplained relocations");
+                CheckLayout();Capture("unity-v026-new-mine-"+size.x+".png");Click("Close prestige");
+            }
+        }
+        private IEnumerator VerifyRouletteTabPause(DemoController demo)
+        {
+            demo.RestoreForSmoke(new MineProgress {coins=100000,tickets=20,swapLevel=1,experience=MineGame.ExperienceForLevel(50)});
+            demo.ShowPage(true);demo.SpinForSmoke(()=>.6);yield return new WaitForSecondsRealtime(.1f);
+            Click("КЛИКЕР");string picks=string.Join(",",demo.Game.Progress.pendingTypes),phase=demo.RollPhase;int settled=demo.SettledReels;
+            long clicks=demo.Game.Progress.totalClicks;
+            yield return new WaitForSecondsRealtime(.7f);
+            Check(demo.IsRoulettePaused && demo.RollPhase==phase && demo.SettledReels==settled && demo.Game.Progress.tickets==19,"Switching away freezes a paid reel animation without disabling navigation");
+            Click("Mine rock");yield return null;
+            Check(demo.Game.Progress.totalClicks==clicks+1 && string.Join(",",demo.Game.Progress.pendingTypes)==picks,"Mine remains playable while roulette keeps its exact paid picks");
+            demo.ShowWorkshop();Click("Production section");Click("Buy Worker");
+            Check(demo.Game.Progress.workerCount==1 && demo.IsRoulettePaused,"Safe production purchase works while roulette is paused");
+            CheckLayout();Capture("unity-v026-paused-roulette.png");
+            demo.ShowPage(true);yield return WaitForChoice(demo);demo.Spin();yield return FinishRoll(demo);
+            Check(demo.Game.Progress.totalRolls==1 && !demo.Game.HasPendingRoll && demo.Game.Progress.tickets==19,"Returning resumes the same roll and credits its result once");
+            demo.RestoreForSmoke(new MineProgress {tickets=20,coins=100000,experience=MineGame.ExperienceForLevel(50)});
+            demo.ShowPage(true);Click("Spin batch");yield return new WaitForSecondsRealtime(.1f);demo.ShowRewards();
+            int remaining=demo.Game.Progress.batchRemaining,completed=demo.Game.Progress.batchCompleted,tickets=demo.Game.Progress.tickets;
+            yield return new WaitForSecondsRealtime(1.5f);
+            Check(demo.IsRoulettePaused && demo.Game.Progress.batchRemaining==remaining && demo.Game.Progress.batchCompleted==completed && demo.Game.Progress.tickets==tickets,"Hidden ten-roll series cannot resolve or start another paid draw");
+            demo.ShowPage(true);Click("Spin batch");yield return FinishRoll(demo);
+            Check(demo.Game.Progress.batchCompleted==1 && demo.Game.Progress.tickets==19,"Returning and stopping a paused series preserves all unstarted tickets");
+        }
+
         private IEnumerator VerifyStoneUi(DemoController demo)
         {
             Screen.SetResolution(480,960,false); yield return new WaitForSecondsRealtime(.3f);
@@ -144,9 +205,9 @@ namespace MineLoot
             bool onlyXp=false,heading=false;
             foreach(var text in GetComponentsInChildren<Text>(false)) { onlyXp|=text.text=="Только опыт"; heading|=text.text.StartsWith("ШАХТА · УР."); }
             Check(onlyXp && heading,"Stone panel explicitly shows XP-only and mine-level heading");
-            CheckLayout(); Capture("unity-v025-stone.png"); demo.Game.Progress.oreDamage=31; Click("Mine rock");
+            CheckLayout(); Capture("unity-v026-stone.png"); demo.Game.Progress.oreDamage=31; Click("Mine rock");
             Check(demo.Game.LastHit.broken && demo.Game.LastHit.experience==18 && demo.Game.Progress.coins==345 && demo.Game.Progress.tickets==8 && demo.Game.Progress.hits==59 && demo.Game.Progress.enchantingExperience==18,"Real stone click breaks the block, advances a level and journals XP without coins or tickets");
-            yield return new WaitForSecondsRealtime(.2f); CheckLayout(); Capture("unity-v025-stone-break.png");
+            yield return new WaitForSecondsRealtime(.2f); CheckLayout(); Capture("unity-v026-stone-break.png");
         }
 
         private IEnumerator VerifyRollBatch(DemoController demo)
@@ -161,7 +222,7 @@ namespace MineLoot
             float deadline=Time.realtimeSinceStartup+30;
             while((demo.IsBusy||demo.Game.Progress.batchActive)&&Time.realtimeSinceStartup<deadline) yield return null;
             Check(!demo.IsBusy&&!demo.Game.Progress.batchActive&&demo.Game.Progress.totalRolls==10&&demo.Game.Progress.batchCompleted==10, "A restored ten-roll series completes itself without ten manual confirmations or an eleventh roll");
-            CheckLayout(); Capture("unity-v025-batch-result.png");
+            CheckLayout(); Capture("unity-v026-batch-result.png");
             demo.RestoreForSmoke(new MineProgress{tickets=10}); demo.ShowPage(true); Click("Spin batch"); Click("Spin batch");
             deadline=Time.realtimeSinceStartup+8;
             while(demo.IsBusy&&Time.realtimeSinceStartup<deadline) yield return null;
@@ -180,14 +241,14 @@ namespace MineLoot
             Check(requests == 1 && demo.IsPaused && demo.RewardedVideoPending, "Only one explicit ticket video may open and it pauses the game");
             demo.OnRewardedVideo("stale:rewarded"); Check(demo.Game.Progress.tickets == 2, "Unrelated SDK callback cannot award tickets");
             demo.OnRewardedVideo(request + ":rewarded"); demo.OnRewardedVideo(request + ":rewarded");
-            Check(demo.Game.Progress.tickets == 3 && ProgressStore.Load(key).Progress.videoTicketClaims == 1, "Matching onRewarded persists exactly three tickets once before close");
+            Check(demo.Game.Progress.tickets == 12 && ProgressStore.Load(key).Progress.videoTicketClaims == 1, "Matching onRewarded persists exactly ten tickets once before close");
             demo.OnRewardedVideo(request + ":closed"); yield return null;
             Check(!demo.IsPaused && !FindButton("Video tickets").interactable, "Close resumes the game and exposes the saved cooldown");
             demo.AdvanceSessionForSmoke(180); demo.ShowPage(false); demo.ShowRewards();
             Click("Video tickets"); demo.OnRewardedVideo(request + ":closed"); yield return null;
-            Check(demo.Game.Progress.tickets == 3 && !demo.IsPaused, "Closing a new video without onRewarded gives no gift and restores input");
+            Check(demo.Game.Progress.tickets == 12 && !demo.IsPaused, "Closing a new video without onRewarded gives no gift and restores input");
             Click("Video tickets"); demo.OnRewardedVideo(request + ":error"); yield return null;
-            Check(demo.Game.Progress.tickets == 3 && !demo.IsPaused, "Ad failure never pays a ticket gift");
+            Check(demo.Game.Progress.tickets == 12 && !demo.IsPaused, "Ad failure never pays a ticket gift");
             demo.ConfigureRewardedForSmoke(null); demo.ConfigureSessionForSmoke(epoch, null);
             PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save();
         }
@@ -434,7 +495,7 @@ namespace MineLoot
                 demo.AdvanceSessionForSmoke(600); demo.ReturnForSmoke(epoch + 600); yield return null;
                 Check(!FindButton("Claim offline with video").interactable && FindButton("Claim offline reward").interactable, "Native demo preserves ordinary claim without inventing a video provider");
                 demo.ConfigureRewardedForSmoke(id => { request = id; requests++; return true; });
-                Check(FindButton("Claim offline with video").interactable, "An available provider enables the explicit doubled claim");
+                Check(FindButton("Claim offline with video").interactable, "An available provider enables the explicit tripled claim");
                 CheckLayout(); Capture("unity-offline-video.png");
                 Click("Claim offline with video");
                 Check(demo.RewardedVideoPending && demo.IsPaused && audio.Suspended && !FindButton("Claim offline reward").interactable, "Opening video immediately freezes gameplay, audio and ordinary collection");
@@ -447,16 +508,16 @@ namespace MineLoot
                 Check(demo.Game.Progress.coins == 80, "A callback for another request cannot issue a reward");
                 demo.OnRewardedVideo(request + ":rewarded");
                 var paid = ProgressStore.Load(key);
-                Check(demo.IsPaused && paid.Progress.coins == 1280 && !paid.HasOfflineReward && paid.Progress.totalOfflineCoins == 1200, "onRewarded persists the doubled wallet and consumed crate before the video closes");
+                Check(demo.IsPaused && paid.Progress.coins == 1880 && !paid.HasOfflineReward && paid.Progress.totalOfflineCoins == 1800, "onRewarded persists the tripled wallet and consumed crate before the video closes");
                 demo.OnRewardedVideo(request + ":rewarded");
-                Check(demo.Game.Progress.coins == 1280 && demo.Game.Progress.totalOfflineCoins == 1200, "Duplicate reward callbacks cannot credit twice");
+                Check(demo.Game.Progress.coins == 1880 && demo.Game.Progress.totalOfflineCoins == 1800, "Duplicate reward callbacks cannot credit twice");
                 string firstRequest = request;
                 demo.OnBrowserPause("1"); demo.OnRewardedVideo(request + ":closed");
                 Check(demo.IsPaused && !demo.RewardedVideoPending && audio.Suspended, "Closing a rewarded video leaves independent host pause intact");
                 demo.OnBrowserPause("0"); yield return null;
-                Check(!demo.IsPaused && !demo.Game.HasOfflineReward && demo.Game.Progress.coins == 1280 && GameObject.Find("Offline reward modal") == null && audio.Muted == muted, "Resume presents one paid result and ad time cannot generate another crate");
+                Check(!demo.IsPaused && !demo.Game.HasOfflineReward && demo.Game.Progress.coins == 1880 && GameObject.Find("Offline reward modal") == null && audio.Muted == muted, "Resume presents one paid result and ad time cannot generate another crate");
                 demo.RestoreForSmoke(ProgressStore.Load(key).Progress); yield return null;
-                Check(!demo.Game.HasOfflineReward && !demo.Game.ClaimOffline(true) && demo.Game.Progress.coins == 1280, "Reload immediately after the reward cannot replay its payout");
+                Check(!demo.Game.HasOfflineReward && !demo.Game.ClaimOffline(true) && demo.Game.Progress.coins == 1880, "Reload immediately after the reward cannot replay its payout");
 
                 demo.AdvanceSessionForSmoke(600); demo.ReturnForSmoke(epoch + 1235); yield return null;
                 long ordinary = demo.Game.Progress.offlineCoins, wallet = demo.Game.Progress.coins;
@@ -474,7 +535,7 @@ namespace MineLoot
                 demo.ConfigureRewardedForSmoke(null); Click("Claim offline reward"); yield return null;
                 Check(!demo.Game.HasOfflineReward && demo.Game.Progress.coins == wallet + ordinary && !ProgressStore.Load(key).HasOfflineReward, "After cancellation the ordinary button still saves the exact original payout");
 
-                demo.RestoreForSmoke(new MineProgress { coins = MineGame.CoinLimit - 1199, workerCount = 1 });
+                demo.RestoreForSmoke(new MineProgress { coins = MineGame.CoinLimit - 1799, workerCount = 1 });
                 demo.Game.RecordSession(epoch); demo.ReturnForSmoke(epoch + 600); yield return null;
                 demo.ConfigureRewardedForSmoke(id => true);
                 Check(!FindButton("Claim offline with video").interactable && FindButton("Claim offline reward").interactable, "Insufficient room disables the video offer while retaining ordinary partial claim");
@@ -912,6 +973,13 @@ namespace MineLoot
             {
                 button.GetComponent<RectTransform>().GetWorldCorners(corners);
                 Check(corners[0].x >= -1 && corners[2].x <= Screen.width + 1 && corners[0].y >= -1 && corners[2].y <= Screen.height + 1, "Control inside viewport: " + button.name);
+            }
+            var firstCard=GameObject.Find("Upgrade card 0");var lowerTab=FindButton("Enchanting section");
+            if(firstCard!=null && lowerTab!=null)
+            {
+                var cardCorners=new Vector3[4];var tabCorners=new Vector3[4];
+                firstCard.GetComponent<RectTransform>().GetWorldCorners(cardCorners);lowerTab.GetComponent<RectTransform>().GetWorldCorners(tabCorners);
+                Check(cardCorners[2].y <= tabCorners[0].y-1,"Upgrade cards do not overlap the section navigation");
             }
             foreach (var text in GetComponentsInChildren<Text>(false))
                 if (!text.resizeTextForBestFit) Check(text.preferredHeight <= text.rectTransform.rect.height + 2, "Text fits height: " + text.text);

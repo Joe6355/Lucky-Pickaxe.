@@ -11,7 +11,7 @@ namespace MineLoot
         public int PickLifetime => PickLifetimes[PickTier];
         public int PickCondition => Math.Max(0, PickLifetime - Progress.pickWear);
         public long RepairCost => Math.Max(1, (30L + PickTier * 50) * Progress.pickWear / PickLifetime);
-        public bool CanRepair => !ActionsLocked && Progress.pickWear > 0 && Progress.coins >= RepairCost;
+        public bool CanRepair => !EconomyLocked && Progress.pickWear > 0 && Progress.coins >= RepairCost;
         public bool IsEnchanted => Progress.enchantments != 0;
         public int EnchantmentLevel(EnchantKind kind) => EnchantmentLevel(Progress.enchantments, kind);
         public static int EnchantmentLevel(int set, EnchantKind kind) => (set >> ((int)kind * 4)) & 15;
@@ -52,7 +52,7 @@ namespace MineLoot
             // Bounded growth keeps rerolls available in long sessions and avoids overflow.
             return Math.Min(100000, baseCost + Progress.enchantCount * (20L + PickTier * 5)) * (slot + 1);
         }
-        public bool CanEnchant(int slot) => slot >= 0 && slot < 3 && !ActionsLocked && Progress.enchantCount < 1000000 && Progress.enchantingExperience >= EnchantmentCost(slot);
+        public bool CanEnchant(int slot) => slot >= 0 && slot < 3 && !EconomyLocked && Progress.enchantCount < 1000000 && Progress.enchantingExperience >= EnchantmentCost(slot);
         public bool Enchant(int slot, Func<double> random)
         {
             if (!CanEnchant(slot)) return false;

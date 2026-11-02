@@ -179,7 +179,10 @@ namespace MineLoot
             var rig = new Dictionary<string, Geometry>();
             Block(new Vector3(0, .16f, 0), new Vector3(1.1f, .32f, .8f), "metal-dark", batch: rig);
             foreach (float x in new[] { -.4f, .4f }) Block(new Vector3(x, .9f, .2f), new Vector3(.13f, 1.5f, .15f), "metal-gold", batch: rig);
-            Block(new Vector3(0, 1.65f, .1f), new Vector3(1.1f, .3f, .65f), "iron", batch: rig);
+            Block(new Vector3(0, 1.65f, .1f), new Vector3(1.1f, .3f, .65f), "mine-steel", batch: rig);
+            Block(new Vector3(0,1.65f,-.236f),new Vector3(.58f,.16f,.025f),"metal-dark",batch:rig);
+            foreach(float x in new[]{-.43f,.43f}) Block(new Vector3(x,1.65f,-.24f),Vector3.one*.07f,"metal-gold",batch:rig);
+            Block(new Vector3(.12f,1.68f,-.255f),new Vector3(.09f,.06f,.025f),"mine-lamp",batch:rig);
             drillRig = DevelopmentGroup("Automatic mine drill", rig, new Vector3(3.8f, 0, 1.45f));
             var spindle = new Geometry();
             for (int i = 0; i < 4; i++) AddCube(spindle, new Vector3(0, -.22f * i, 0), Vector3.one * (.4f - i * .07f), 1);

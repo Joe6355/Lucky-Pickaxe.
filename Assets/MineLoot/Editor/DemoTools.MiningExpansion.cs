@@ -22,10 +22,10 @@ public static partial class DemoTools
         const long now = 1800000000;
         game = new MineGame();
         check(!game.ClaimVideoTickets(0) && !game.ClaimVideoTickets(long.MaxValue), "Invalid reward timestamps never pay");
-        check(game.CanClaimVideoTickets(now) && game.ClaimVideoTickets(now) && game.Progress.tickets == 3 && game.Progress.coins == 80 && game.Progress.videoTicketClaims == 1, "A verified video pays exactly three tickets without coins or experience");
+        check(game.CanClaimVideoTickets(now) && game.ClaimVideoTickets(now) && game.Progress.tickets == 12 && game.Progress.coins == 80 && game.Progress.videoTicketClaims == 1, "A verified video pays exactly ten tickets without coins or experience");
         check(!game.ClaimVideoTickets(now) && !game.ClaimVideoTickets(now + 179) && game.VideoWaitSeconds(now + 179) == 1, "Duplicate reward and cooldown boundary cannot pay again");
         reload = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
-        check(!reload.ClaimVideoTickets(now + 179) && reload.ClaimVideoTickets(now + 180) && reload.Progress.tickets == 4, "Cooldown survives reload and opens at the exact boundary");
+        check(!reload.ClaimVideoTickets(now + 179) && reload.ClaimVideoTickets(now + 180) && reload.Progress.tickets == 22, "Cooldown survives reload and opens at the exact boundary");
         reload.Progress.experience = MineGame.ExperienceForLevel(50);
         long ready = reload.Progress.videoTicketsReadyUtc;
         check(reload.Prestige(() => .5) && reload.Progress.videoTicketsReadyUtc == ready && !reload.CanClaimVideoTickets(now + 180), "Prestige cannot bypass the video cooldown");

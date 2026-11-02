@@ -53,4 +53,29 @@ public static partial class DemoTools
         game=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress))); game.ResolveRoll();
         check(!game.Progress.batchActive && game.Progress.totalRolls==1 && game.Progress.tickets==9 && !game.ContinueBatch(()=>.6), "Stop preserves the current paid draw and never spends its nine unstarted tickets");
     }
+    private static void VerifyRoulettePauseRules(Action<bool,string> check)
+    {
+        var game=new MineGame(new MineProgress {coins=100000,experience=MineGame.ExperienceForLevel(50),tickets=20,swapLevel=2,enchantingExperience=10000,pickWear=20});
+        game.BeginRoll(()=>.6); string picks=string.Join(",",game.Progress.pendingTypes);
+        check(game.EconomyLocked && !game.CanUpgrade && !game.CanEnchant(0),"A visible paid roll keeps its existing transaction protection");
+        game.RoulettePaused=true; long coins=game.Progress.coins; game.Mine();
+        check(game.Progress.totalClicks==1 && game.Progress.coins>coins && game.HasPendingRoll && string.Join(",",game.Progress.pendingTypes)==picks && game.Progress.tickets==19,"Paused roulette permits mining without changing its paid picks or spending another ticket");
+        check(game.Upgrade() && game.BuyUpgrade(UpgradeKind.Worker) && game.Enchant(0,()=>.5) && game.RepairPick(),"Paused roulette permits safe tool, worker, enchantment and repair transactions");
+        check(!game.BuyUpgrade(UpgradeKind.Forge) && !game.BuyUpgrade(UpgradeKind.Swap) && !game.BuyUpgrade(UpgradeKind.Treasure) && !game.Abandon(()=>.5) && !game.Prestige(()=>.5),"Pause cannot change pending roulette power, reward rules, shaft or reset its paid state");
+        check(game.ClaimVideoTickets(1800000000) && game.Progress.tickets==29,"Ten-ticket video is available from Rewards while a draw is paused");
+        var expected=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        check(!expected.RoulettePaused && expected.EconomyLocked && expected.Progress.tickets==29,"Reload preserves the paid roll without persisting a bypass of its visible lock");
+        var roll=game.ResolveRoll();var restoredRoll=expected.ResolveRoll();
+        check(roll.reward==restoredRoll.reward && string.Join(",",roll.powers)==string.Join(",",restoredRoll.powers),"Resuming or reloading a paused roll produces exactly the same outcome");
+        game=new MineGame(new MineProgress {tickets=20,coins=100000,experience=MineGame.ExperienceForLevel(50)});
+        game.BeginBatch(()=>.6);game.RoulettePaused=true;game.Mine();
+        check(game.Progress.batchRemaining==9 && game.Progress.batchCompleted==0 && game.Progress.tickets==19 && game.Progress.totalClicks==1,"Independent mining cannot advance the paused ten-roll queue");
+        game.StopBatch();game.ResolveRoll();
+        check(game.Progress.tickets==19 && game.Progress.totalRolls==1 && game.Progress.batchCompleted==1,"Stopping a paused series retains its one paid result and all unstarted tickets");
+        game=new MineGame(new MineProgress {tickets=999991});
+        check(!game.ClaimVideoTickets(1800000000) && game.Progress.videoTicketClaims==0,"Ten-ticket gift refuses an overflowing wallet without consuming the cooldown");
+        game=new MineGame(new MineProgress {tickets=999990});
+        check(game.ClaimVideoTickets(1800000000) && game.Progress.tickets==1000000,"Ten-ticket gift fits exactly at the ticket limit");
+    }
+
 }

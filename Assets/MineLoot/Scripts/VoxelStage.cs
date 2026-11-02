@@ -172,7 +172,7 @@ namespace MineLoot
             }
             // Deliberate clusters of exposed minerals; no noisy full-screen texture.
             foreach (var p in new[] { new Vector3(-3, 1.2f, 4.21f), new Vector3(-2, 2.2f, 4.21f), new Vector3(5, .8f, 4.21f) })
-                Block(p, new Vector3(.86f, .86f, .16f), p.x > 0 ? "mine-copper" : "mine-coal");
+                Block(p, Vector3.one * .86f, p.x > 0 ? "mine-copper" : "mine-coal");
             Block(new Vector3(-.4f, -.015f, -.8f), new Vector3(2.55f, .14f, 2.55f), "mine-wall");
             foreach (var p in new[] { new Vector3(-1.8f,.13f,-2), new Vector3(.8f,.1f,-1.9f), new Vector3(-3.8f,.12f,1.5f) })
                 Block(p, new Vector3(.3f, .22f, .34f), "mine-floor");

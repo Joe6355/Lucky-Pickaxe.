@@ -44,7 +44,6 @@ namespace MineLoot
         private Text miningGain;
         private long gainCoins;
         private int gainExperience;
-        private long displayedCoins = -1;
         private Vector2 pickHome;
         private float visualHealth = 1, visualExperience, visualTicket, upgradePulse, noticeTime;
         private int previousLevel, previousOre = -1;
@@ -63,6 +62,8 @@ namespace MineLoot
         public bool FastRoll { get; private set; }
         public MineGame Game => game;
         public bool IsBusy => busy;
+        public bool IsRoulettePaused => !roulette && (busy || game.Progress.batchActive);
+        private bool EconomyBusy => busy && !IsRoulettePaused;
         public bool AwaitingPickChoice => game.HasPendingRoll && RollPhase == "choice";
         public int SelectedPick => selectedPick;
 
@@ -86,7 +87,7 @@ namespace MineLoot
 
         private void RestorePresentation()
         {
-            busy = false; displayedCoins = -1; selectedPick = -1; RollPhase = "idle";
+            busy = false; selectedPick = -1; RollPhase = "idle";
             if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
             if (dialogShade != null) dialogShade.SetActive(false);
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = false;
@@ -106,7 +107,7 @@ namespace MineLoot
         {
             if (!SmokeMode) return;
             if (!showGuide) progress.guideStep = MineGame.GuideStepCount;
-            StopAllCoroutines(); game = new MineGame(progress); RestorePresentation();
+            StopAllCoroutines(); if(miningGain!=null) { Destroy(miningGain.gameObject); miningGain=null; } game = new MineGame(progress); RestorePresentation();
         }
 
         private void Update()
@@ -114,9 +115,9 @@ namespace MineLoot
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
             if (applicationPaused) return;
             float dt = PlayDelta;
-            if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !busy && modal == null && Application.isFocused);
+            if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !EconomyBusy && modal == null && Application.isFocused);
             skipEconomyFrame = false;
-            if (!busy && game.Progress.batchActive && modal == null) ContinueRollBatch();
+            if (roulette && !busy && game.Progress.batchActive && modal == null) ContinueRollBatch();
             if (selectedPage == 3 && Time.unscaledTime >= nextRewardsRefresh) { nextRewardsRefresh = Time.unscaledTime + .5f; RefreshRewards(); }
             if (offlineNoticeQueued && !busy && modal == null && !game.ActionsLocked) ShowOfflineReward();
             rockPulse = Mathf.MoveTowards(rockPulse, 0, dt * 4.5f);
@@ -158,7 +159,7 @@ namespace MineLoot
 
         public void Mine()
         {
-            if (applicationPaused || busy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
+            if (applicationPaused || EconomyBusy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
             lastMineTime = Time.unscaledTime;
             game.Mine(); var hit = game.LastHit; rockPulse = 1;
             mineStatus.text = hit.ore == MineGame.StoneKind ? "Камень · +" + hit.experience + " опыта" : hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
@@ -222,7 +223,7 @@ namespace MineLoot
 
         public void ClaimOfflineReward()
         {
-            if (applicationPaused || busy || !offlineWindowOpen) return;
+            if (applicationPaused || EconomyBusy || !offlineWindowOpen) return;
             long before = game.Progress.coins;
             if (!game.ClaimOffline()) return;
             long credit = game.Progress.coins - before;
@@ -232,21 +233,21 @@ namespace MineLoot
 
         public void ActivateRichVein()
         {
-            if (applicationPaused || busy || modal != null || !game.ActivateVein()) return;
+            if (applicationPaused || EconomyBusy || modal != null || !game.ActivateVein()) return;
             Persist(); Flush(); Refresh(); sounds.Play("crystal");
             Notice("БОГАТАЯ ЖИЛА · ×" + game.RichVeinMultiplier, "Монеты от ручной добычи\n" + game.RichVeinDuration + " секунд на экране шахты");
         }
 
         public void BuyPrestigeUpgrade(int index)
         {
-            if (applicationPaused || busy || !prestigeWindowOpen || !prestigeTree.activeSelf || !game.BuyPrestigeUpgrade(index)) return;
+            if (applicationPaused || EconomyBusy || !prestigeWindowOpen || !prestigeTree.activeSelf || !game.BuyPrestigeUpgrade(index)) return;
             Persist(); Flush(); Refresh(); sounds.Play("upgrade");
             Notice(MineGame.PrestigeUpgradeAt(index).title.ToUpperInvariant(), "Постоянное улучшение сохранено");
         }
 
         public void ConfirmPrestige()
         {
-            if (applicationPaused || busy || !prestigeWindowOpen || !prestigeConfirmation.activeSelf) return;
+            if (applicationPaused || EconomyBusy || !prestigeWindowOpen || !prestigeConfirmation.activeSelf) return;
             int reward = game.PrestigeReward;
             if (!game.Prestige(() => random.NextDouble())) return;
             // Save the new run and awarded crystals together, before changing any presentation.
@@ -258,7 +259,7 @@ namespace MineLoot
 
         public void Upgrade()
         {
-            if (applicationPaused || busy || modal != null) return;
+            if (applicationPaused || EconomyBusy || modal != null) return;
             int tier = game.PickTier;
             if (!game.Upgrade()) return;
             mineStatus.text = "Кирка улучшена! +" + game.ClickPower + " за удар";
@@ -271,7 +272,7 @@ namespace MineLoot
         public void Forge()
         {
             int previousStage = stage.ForgeStage;
-            if (applicationPaused || busy || modal != null || !game.Forge()) return;
+            if (applicationPaused || EconomyBusy || modal != null || !game.Forge()) return;
             sounds.Play("upgrade"); mineStatus.text = "Кузница: алмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus;
             Persist(); Flush(); Refresh();
             if (stage.ForgeStage > previousStage) Notice("КУЗНИЦА УЛУЧШЕНА", ForgeFeatures[stage.ForgeStage] + "\nАлмаз " + game.DiamondChance + "% · бонус силы +" + game.PowerBonus);
@@ -279,7 +280,7 @@ namespace MineLoot
 
         public void ClaimContract()
         {
-            if (applicationPaused || busy || modal != null) return;
+            if (applicationPaused || EconomyBusy || modal != null) return;
             int reward = game.ContractReward;
             if (!game.ClaimContract()) return;
             sounds.Play("reward"); Notice("КОНТРАКТ ВЫПОЛНЕН", "+" + reward + " монет · +1 жетон"); Persist(); Flush(); Refresh();
@@ -287,7 +288,7 @@ namespace MineLoot
 
         public void ClaimMilestone(int index)
         {
-            if (applicationPaused || busy || !milestoneBookOpen || !game.ClaimMilestone(index)) return;
+            if (applicationPaused || EconomyBusy || !milestoneBookOpen || !game.ClaimMilestone(index)) return;
             var goal = MineGame.MilestoneAt(index);
             Persist(); Flush(); Refresh(); RefreshMilestoneBook();
             sounds.Play("reward"); Notice("ЦЕЛЬ ВЫПОЛНЕНА", goal.title + "\n+" + goal.coins + " монет · +" + goal.tickets + " жет.");
@@ -297,7 +298,7 @@ namespace MineLoot
         {
             if (purchaseAmount == 1 && kind == UpgradeKind.Pickaxe) { Upgrade(); return; }
             if (purchaseAmount == 1 && kind == UpgradeKind.Forge) { Forge(); return; }
-            if (applicationPaused || busy || modal != null) return;
+            if (applicationPaused || EconomyBusy || modal != null) return;
             int count = game.BuyUpgrade(kind, purchaseAmount);
             if (count == 0) return;
             if (kind == UpgradeKind.Pickaxe) upgradePulse = 1;
@@ -343,7 +344,7 @@ namespace MineLoot
 
         private void SelectPage(int page)
         {
-            if (applicationPaused || busy || modal != null || game.Progress.batchActive) return;
+            if (applicationPaused || modal != null) return;
             holding = false;
             selectedPage = page; ApplyPageVisibility(); Refresh();
         }
@@ -351,6 +352,8 @@ namespace MineLoot
         private void ApplyPageVisibility()
         {
             roulette = selectedPage == 1;
+            game.RoulettePaused = IsRoulettePaused;
+            shaft.Paused = applicationPaused || !roulette;
             bool mining = selectedPage == 0;
             minePage.SetActive(mining); rollPage.SetActive(roulette); workshopPage.SetActive(selectedPage == 2); rewardsPage.SetActive(selectedPage == 3);
             mineTab.image.color = mining ? Hex("a4c975") : Panel;
@@ -376,7 +379,7 @@ namespace MineLoot
 
         private void StartRoll(Func<double> draw)
         {
-            if (applicationPaused || busy || modal != null) return;
+            if (applicationPaused || busy || !roulette || modal != null) return;
             if (game.Progress.tickets == 0) { ShowPage(false); mineStatus.text = "До жетона: " + (game.HitsRequired - game.Progress.hits) + " ударов"; return; }
             if (!game.BeginRoll(draw)) return;
             batchVisual = false;
@@ -392,18 +395,17 @@ namespace MineLoot
             Array.Copy(game.Progress.depths, shownDepths, 5);
             Array.Copy(game.Progress.damage, shownDamage, 5);
             Array.Copy(game.Progress.lostColumns, shownLost, 5);
-            DrawBoard(); Refresh(); StartCoroutine(AnimateReels());
+            DrawBoard(); Refresh(); StartCoroutine(RunRoulette(AnimateReels()));
         }
 
         private void CommitPicks()
         {
-            if (applicationPaused || !AwaitingPickChoice || modal != null) return;
-            long walletBefore = game.Progress.coins;
+            if (applicationPaused || !roulette || !AwaitingPickChoice || modal != null) return;
             var result = game.ResolveRoll();
             if (result == null) return;
-            displayedCoins = walletBefore; selectedPick = -1;
+            selectedPick = -1;
             // The second transaction awards the resolved strike exactly once, before its animation.
-            Persist(); Flush(); Refresh(); StartCoroutine(AnimateRoll(result));
+            Persist(); Flush(); Refresh(); StartCoroutine(RunRoulette(AnimateRoll(result)));
         }
 
         private void EnterPickChoice()
@@ -439,7 +441,7 @@ namespace MineLoot
 
         public void SelectPick(int column)
         {
-            if (applicationPaused || !AwaitingPickChoice || modal != null || !game.CanSwap || !game.IsActiveColumn(column)) return;
+            if (applicationPaused || !roulette || !AwaitingPickChoice || modal != null || !game.CanSwap || !game.IsActiveColumn(column)) return;
             if (selectedPick == column)
             {
                 selectedPick = -1; rollStatus.text = "Нажми две разные кирки или копай сразу"; Refresh(); return;
@@ -456,7 +458,7 @@ namespace MineLoot
             }
             selectedPick = -1; RollPhase = "exchange";
             // Save the chosen arrangement before moving its icons; reload cannot restore the exchange.
-            Persist(); Flush(); Refresh(); StartCoroutine(AnimateExchange(first, column));
+            Persist(); Flush(); Refresh(); StartCoroutine(RunRoulette(AnimateExchange(first, column)));
         }
 
         private IEnumerator AnimateExchange(int first, int second)
@@ -493,6 +495,21 @@ namespace MineLoot
             var viewport = (RectTransform)rollBackdrop.transform.parent;
             Vector3 point = shaftPresentation.InverseTransformPoint(viewport.TransformPoint(new Vector3(p.x * viewport.rect.width, -(1 - p.y) * viewport.rect.height)));
             return new Vector2(point.x - 13, point.y + 24);
+        }
+
+        // Advance the existing animations only while their tab is visible, including phase changes.
+        private IEnumerator RunRoulette(IEnumerator animation)
+        {
+            try
+            {
+                while(true)
+                {
+                    if(applicationPaused || !roulette) { yield return null; continue; }
+                    if(!animation.MoveNext()) yield break;
+                    yield return animation.Current;
+                }
+            }
+            finally { (animation as IDisposable)?.Dispose(); }
         }
 
         private IEnumerator AnimateReels()
@@ -585,7 +602,6 @@ namespace MineLoot
             var origins = new Vector2[5]; var targets = new Vector2[5];
             int maxPower = 0, earned = 0;
             foreach (int power in result.usedPower) maxPower = Mathf.Max(maxPower, power);
-            long walletBefore = displayedCoins;
             for (int step = 0; step < maxPower; step++)
             {
                 bool active = false;
@@ -624,7 +640,7 @@ namespace MineLoot
                         reels[c].sprite = art.Get("ui-timber"); reels[c].color = Hex("e7aaa0");
                         powers[c].text = obstacle == BlockKind.Bedrock ? "БЕДРОК" : "СЛОМАНА";
                         powers[c].color = Hex("ffb3a6");
-                        StartCoroutine(FlyPickHead(c, result.types[c], picks[c].rectTransform.anchoredPosition));
+                        StartCoroutine(RunRoulette(FlyPickHead(c, result.types[c], picks[c].rectTransform.anchoredPosition)));
                     }
                     else
                     {
@@ -632,8 +648,8 @@ namespace MineLoot
                         shaft.HitBlock(c, row, broken);
                         if (broken)
                         {
-                            shownDamage[c] = 0; shownDepths[c]++; earned += game.BlockReward;
-                            if (shownDepths[c] == 5) { earned += game.ChestReward; chest = true; }
+                            shownDamage[c] = 0; shownDepths[c]++; earned += result.blockReward;
+                            if (shownDepths[c] == 5) { earned += result.chestReward; chest = true; }
                         }
                         powers[c].text = PowerText(result.powers[c] - step - 1);
                     }
@@ -641,7 +657,7 @@ namespace MineLoot
                 DrawBoard(); sounds.Play(failed ? "shatter" : chest ? "chest" : "break");
                 rollGain.text = failed ? "КИРКА СЛОМАЛАСЬ!" : earned > 0 ? "+ " + ShortAmount(earned) + " МОНЕТ" : "ПОРОДА ТРЕСКАЕТСЯ";
                 rollStatus.text = failed ? obstacle == BlockKind.Bedrock ? "Бедрок · сундук этого прохода потерян" : "Обсидиан · нужна алмазная кирка" : chest ? "Сундук открыт! Сокровища твои" : "Ещё один удар — ещё глубже";
-                coinLabel.text = Math.Min(MineGame.CoinLimit, walletBefore + earned).ToString("N0", interfaceCulture);
+                coinLabel.text = game.Progress.coins.ToString("N0", interfaceCulture);
                 phase = 0;
                 while (phase < 1)
                 {
@@ -680,8 +696,7 @@ namespace MineLoot
             {
                 count = Mathf.Min(1, count + PlayDelta / (.32f * speed));
                 float ease = 1 - Mathf.Pow(1 - count, 3);
-                displayedCoins = walletBefore + (long)Math.Round((game.Progress.coins - walletBefore) * ease);
-                coinLabel.text = displayedCoins.ToString("N0", interfaceCulture);
+                coinLabel.text = game.Progress.coins.ToString("N0", interfaceCulture);
                 rollGain.text = "+ " + ShortAmount(earned + (long)Math.Round((result.reward - earned) * ease)) + " МОНЕТ";
                 yield return null;
             }
@@ -691,9 +706,9 @@ namespace MineLoot
             rollRewardIcon.sprite = art.Get(miss ? "pick-broken" : "coin");
             rollStatus.text = "Сундуки: +" + result.chests + " · потеряно: " + result.lostChests + " · сломано: " + result.brokenPicks;
             sounds.Play(miss ? "shatter" : result.chests > 0 || result.perfect ? "reward" : "hit");
-            if (result.levelAfter > result.levelBefore) { sounds.Play("level"); LevelNotice(result.levelBefore, result.levelAfter); }
+            if (result.levelAfter > result.levelBefore && game.MinerLevel == result.levelAfter) { sounds.Play("level"); LevelNotice(result.levelBefore, result.levelAfter); }
             else if (result.completed) Notice(result.perfect ? "ПЛАСТ ПРОЙДЕН!" : "ВЫЛАЗКА ЗАВЕРШЕНА", result.perfect ? "+" + result.reward + " монет · +1 жетон" : "Часть сундуков потеряна\nБонус пласта не получен");
-            displayedCoins = -1; busy = false; RollPhase = "result";
+            busy = false; RollPhase = "result";
             if (batchVisual && !game.Progress.batchActive)
             {
                 rollGain.text = "СЕРИЯ: " + game.Progress.batchCompleted + " БРОСКОВ";
@@ -720,7 +735,7 @@ namespace MineLoot
 
         public void AbandonFloor()
         {
-            if (applicationPaused || busy || modal != null || !game.Abandon(() => random.NextDouble())) return;
+            if (applicationPaused || EconomyBusy || modal != null || !game.Abandon(() => random.NextDouble())) return;
             Array.Copy(game.Progress.depths, shownDepths, 5); Array.Copy(game.Progress.damage, shownDamage, 5); Array.Copy(game.Progress.lostColumns, shownLost, 5);
             for (int c = 0; c < 5; c++) { picks[c].sprite = art.Get("pick1"); picks[c].color = Color.white; powers[c].text = PowerText(1 + game.PowerBonus); powers[c].color = Hex("ead9ad"); }
             rollGain.text = "НОВАЯ РАСКЛАДКА"; rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
@@ -744,7 +759,7 @@ namespace MineLoot
 
         private void Refresh()
         {
-            coinLabel.text = (displayedCoins >= 0 ? displayedCoins : game.Progress.coins).ToString("N0", interfaceCulture);
+            coinLabel.text = game.Progress.coins.ToString("N0", interfaceCulture);
             // Long values reduce their font size inside their existing bounds.
             coinLabel.resizeTextForBestFit = true; coinLabel.resizeTextMinSize = 16; coinLabel.resizeTextMaxSize = 28;
             ticketLabel.text = game.Progress.tickets.ToString("N0", interfaceCulture);
@@ -767,8 +782,9 @@ namespace MineLoot
                 oreNames[slot].text = unlocked ? (wideLayout ? i == 8 ? "Обломки" : OreNames[i] : "✓") : (wideLayout ? "Ур. " : "") + MineGame.OreUnlockLevel(i);
                 oreNames[slot].color = unlocked ? Ink : Muted;
             }
-            upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : game.UpgradeCost.ToString("N0", interfaceCulture) + " монет";
-            upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 16; upgradeLabel.resizeTextMaxSize = 20;
+            upgradeLabel.text = game.Progress.upgradeLevel >= MineGame.MaxUpgrade ? "Максимум" : ShortAmount(game.UpgradeCost) + " монет";
+            upgradeLabel.resizeTextForBestFit = true; upgradeLabel.resizeTextMinSize = 12; upgradeLabel.resizeTextMaxSize = 20;
+            upgradeLabel.horizontalOverflow = HorizontalWrapMode.Overflow; upgradeLabel.verticalOverflow = VerticalWrapMode.Truncate;
             pickTitle.text = PickNames[game.PickTier];
             pickDetail.text = "Ранг " + game.Progress.upgradeLevel + " · урон " + game.MiningDamage;
             nextUpgrade.text = game.PickTier == 5 ? "Незерит · продолжай усиливать кирку и чары" : "Далее: " + PickNames[game.PickTier + 1] + " · ещё " + (game.NextPickUpgrade - game.Progress.upgradeLevel) + " улучш.";
@@ -776,14 +792,14 @@ namespace MineLoot
             for (int i = 0; i < campSteps.Length; i++) campSteps[i].color = i <= game.PickTier ? Hex("d4ed96") : Hex("455742");
             forgeTitle.text = "Прочность";
             upgradeHint.text = game.ProductionMilli > 0 ? "+" + Rate(game.ProductionMilli) + " монет/с" : "Реликвий: " + game.Relics;
-            upgradeButton.interactable = !busy && game.CanUpgrade;
-            forgeButton.interactable = !busy && game.CanRepair;
+            upgradeButton.interactable = !EconomyBusy && game.CanUpgrade;
+            forgeButton.interactable = !EconomyBusy && game.CanRepair;
             forgeLabel.text = game.Progress.pickWear == 0 ? "Исправна" : "Починить · " + ShortAmount(game.RepairCost);
             forgeDetail.text = game.PickCondition + " / " + game.PickLifetime;
             contractLabel.text = game.CanClaim ? "Забрать" : "В работе";
             contractDetail.text = ShortAmount(System.Math.Min(game.Progress.totalBlocks, game.ContractTarget)) + "/" + ShortAmount(game.ContractTarget) + " · +" + ShortAmount(game.ContractReward);
             contractFill.rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, 240 * Mathf.Clamp01((game.Progress.totalBlocks - game.Progress.claimedContracts * 25) / 25f));
-            contractButton.interactable = !busy && game.CanClaim;
+            contractButton.interactable = !EconomyBusy && game.CanClaim;
             contractButton.image.color = game.CanClaim ? Hex("b3d17a") : Hex("a9ada3");
             contractLabel.color = game.CanClaim ? Ink : Muted;
             upgradeButton.image.color = game.CanUpgrade ? Hex("b2d27b") : Hex("a9ada3");
@@ -804,14 +820,17 @@ namespace MineLoot
                 pickBorders[c].enabled = AwaitingPickChoice && selectedPick == c;
                 if (AwaitingPickChoice) picks[c].rectTransform.localScale = Vector3.one * (selectedPick == c ? 1.1f : 1);
             }
-            mineTab.interactable = rollTab.interactable = workshopTab.interactable = rewardsTab.interactable = !busy && !game.Progress.batchActive;
-            milestoneButton.interactable = !busy;
+            mineTab.interactable = rollTab.interactable = workshopTab.interactable = rewardsTab.interactable = !applicationPaused;
+            var rouletteCaption=rollTab.GetComponentInChildren<Text>();
+            rouletteCaption.text=IsRoulettePaused?"РУЛЕТКА\nПАУЗА":"РУЛЕТКА";
+            rouletteCaption.fontSize=IsRoulettePaused?(wideLayout?18:14):wideLayout?22:16;
+            milestoneButton.interactable = !EconomyBusy;
             milestoneButtonLabel.text = game.ReadyMilestones > 0 ? "ЦЕЛИ " + game.ReadyMilestones : "ЦЕЛИ";
             milestoneButton.image.color = game.ReadyMilestones > 0 ? Hex("c8d981") : Hex("a8b78e");
             RefreshWorkshop();
             RefreshRewards(); RefreshEquipmentAside(); RefreshEnchanting();
             RefreshOfflineWindow();
-            prestigeButton.interactable = !busy; prestigeButton.image.color = game.CanPrestige ? Hex("d4df94") : Hex("bac6a1");
+            prestigeButton.interactable = !EconomyBusy; prestigeButton.image.color = game.CanPrestige ? Hex("d4df94") : Hex("bac6a1");
             RefreshPrestigeWindow();
             if (!busy && RollPhase == "idle")
             {

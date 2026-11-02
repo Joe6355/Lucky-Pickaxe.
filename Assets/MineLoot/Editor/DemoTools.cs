@@ -28,7 +28,7 @@ public static partial class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.25.0";
+        PlayerSettings.bundleVersion = "0.26.0";
         PlayerSettings.defaultScreenWidth = 1280; PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -165,6 +165,7 @@ public static partial class DemoTools
         VerifyMiningExpansion(Check);
         VerifyStoneRules(Check);
         VerifyEnchantingAndBatches(Check);
+        VerifyRoulettePauseRules(Check);
         Directory.CreateDirectory("Logs");
         File.WriteAllText("Logs/rules-check.json", "{\"result\":\"PASS\",\"assertions\":" + assertions + ",\"unity\":\"" + Application.unityVersion + "\"}");
         Debug.Log("MINE_LOOT_RULES: PASS (" + assertions + " assertions)");
@@ -606,41 +607,41 @@ public static partial class DemoTools
         const long epoch = 1700000000;
         var game = new MineGame(new MineProgress { workerCount = 1 });
         game.RecordSession(epoch); game.PrepareOffline(epoch + 600);
-        check(game.CanDoubleOffline && game.DoubledOfflineReward == 1200, "Video offers twice the held offline amount");
-        check(game.ClaimOffline(true) && game.Progress.coins == 1280 && game.Progress.totalOfflineCoins == 1200 && game.Progress.totalProduced == 1200 && !game.HasOfflineReward, "A verified video credits twice the crate and consumes it atomically");
-        check(!game.ClaimOffline(true) && !game.ClaimOffline() && game.Progress.coins == 1280, "A doubled crate cannot pay again through either claim path");
+        check(game.CanClaimRewardedOffline && game.RewardedOfflineReward == 1800, "Video offers three times the held offline amount");
+        check(game.ClaimOffline(true) && game.Progress.coins == 1880 && game.Progress.totalOfflineCoins == 1800 && game.Progress.totalProduced == 1800 && !game.HasOfflineReward, "A verified video credits three times the crate and consumes it atomically");
+        check(!game.ClaimOffline(true) && !game.ClaimOffline() && game.Progress.coins == 1880, "A tripled crate cannot pay again through either claim path");
         check(game.Progress.tickets == 2 && game.Progress.experience == 0 && game.Progress.totalClicks == 0 && game.Progress.offlineRewardRateMilli == 0, "Video awards coins only and clears the consumed crate metadata");
         game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
-        check(game.Progress.version == 14 && game.Progress.coins == 1280 && !game.CanDoubleOffline && !game.ClaimOffline(true), "The existing v11 save stores the rewarded wallet without a replayable claim");
+        check(game.Progress.version == 14 && game.Progress.coins == 1880 && !game.CanClaimRewardedOffline && !game.ClaimOffline(true), "The existing v11 save stores the rewarded wallet without a replayable claim");
 
         game = new MineGame(new MineProgress { workerCount = 1, tickets = 1, swapLevel = 1 });
         game.RecordSession(epoch); game.PrepareOffline(epoch + 600); game.BeginRoll(() => 0);
         string before = JsonUtility.ToJson(game.Progress);
-        check(!game.CanDoubleOffline && !game.ClaimOffline(true) && JsonUtility.ToJson(game.Progress) == before, "Video cannot alter an offline crate during a paid draw");
-        game.ResolveRoll(); game.Progress.coins = MineGame.CoinLimit - 1199;
+        check(!game.CanClaimRewardedOffline && !game.ClaimOffline(true) && JsonUtility.ToJson(game.Progress) == before, "Video cannot alter an offline crate during a paid draw");
+        game.ResolveRoll(); game.Progress.coins = MineGame.CoinLimit - 1799;
         before = JsonUtility.ToJson(game.Progress);
-        check(!game.CanDoubleOffline && !game.ClaimOffline(true) && JsonUtility.ToJson(game.Progress) == before, "Video is refused before credit when its full reward cannot fit");
+        check(!game.CanClaimRewardedOffline && !game.ClaimOffline(true) && JsonUtility.ToJson(game.Progress) == before, "Video is refused before credit when its full reward cannot fit");
         game.Progress.coins--;
-        check(game.CanDoubleOffline && game.ClaimOffline(true) && game.Progress.coins == MineGame.CoinLimit && !game.HasOfflineReward, "The full doubled amount fits exactly at the wallet limit");
+        check(game.CanClaimRewardedOffline && game.ClaimOffline(true) && game.Progress.coins == MineGame.CoinLimit && !game.HasOfflineReward, "The full tripled amount fits exactly at the wallet limit");
 
         game = new MineGame(new MineProgress { workerCount = 1, coins = MineGame.CoinLimit - 5 });
         game.RecordSession(epoch); game.PrepareOffline(epoch + 600);
-        check(!game.CanDoubleOffline && game.ClaimOffline() && game.Progress.offlineCoins == 595, "Video does not prevent an ordinary partial claim near the wallet cap");
-        game.Progress.coins -= 1190;
-        check(game.ClaimOffline(true) && game.Progress.coins == MineGame.CoinLimit && game.Progress.totalOfflineCoins == 1195 && !game.HasOfflineReward, "Only the still-unclaimed remainder is doubled after an ordinary partial claim");
+        check(!game.CanClaimRewardedOffline && game.ClaimOffline() && game.Progress.offlineCoins == 595, "Video does not prevent an ordinary partial claim near the wallet cap");
+        game.Progress.coins -= 1785;
+        check(game.ClaimOffline(true) && game.Progress.coins == MineGame.CoinLimit && game.Progress.totalOfflineCoins == 1790 && !game.HasOfflineReward, "Only the still-unclaimed remainder is tripled after an ordinary partial claim");
 
         game = new MineGame(new MineProgress { workerCount = 100, drillCount = 50, cartCount = 25, railLevel = 10, forgeLevel = 10, warehouseLevel = 4, prestigeCount = 1, prestigeUpgrades = 3 });
         game.RecordSession(epoch); game.PrepareOffline(epoch + 86400);
-        check(game.DoubledOfflineReward == 642600000 && game.ClaimOffline(true) && game.Progress.totalOfflineCoins == 642600000, "The maximum prestige offline crate doubles without overflow");
+        check(game.RewardedOfflineReward == 963900000 && game.ClaimOffline(true) && game.Progress.totalOfflineCoins == 963900000, "The maximum prestige offline crate triples without overflow");
         string key = "LuckyPickaxe.Rewarded.Tests." + Guid.NewGuid().ToString("N");
         try
         {
             ProgressStore.Save(game, key);
             var paid = ProgressStore.Load(key);
-            check(paid.Progress.coins == 642600080 && !paid.HasOfflineReward && !paid.ClaimOffline(true), "PlayerPrefs reload keeps the full doubled payout and no reusable video claim");
+            check(paid.Progress.coins == 963900080 && !paid.HasOfflineReward && !paid.ClaimOffline(true), "PlayerPrefs reload keeps the full tripled payout and no reusable video claim");
             PlayerPrefs.SetString(key, "{\"version\":99}");
             paid = ProgressStore.Load(key);
-            check(paid.Progress.coins == 642600080 && !paid.HasOfflineReward && !paid.ClaimOffline(), "Backup recovery preserves the already-paid video result");
+            check(paid.Progress.coins == 963900080 && !paid.HasOfflineReward && !paid.ClaimOffline(), "Backup recovery preserves the already-paid video result");
         }
         finally { PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup"); PlayerPrefs.Save(); }
     }
@@ -897,7 +898,7 @@ public static partial class DemoTools
         for (int s = 0; s < 4; s++) if (totalMisses[s] == 0 || totalLosses[s] == 0 || totalReroutes[s] == 0 || s > 0 && totalExchanges[s] == 0) throw new Exception("Risk simulation has no actual losses or exchanges");
         Directory.CreateDirectory("Logs"); Directory.CreateDirectory("Docs");
         File.WriteAllText("Logs/balance-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.25\n\nКамень занимает каждый четвёртый блок и даёт только опыт. Остальные здоровье, материалы и цены прежние; бот не покупает новые чары «Удача» и «Спешка». Таблицы не оценивают прохождение с этими чарами.\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Все стратегии забирают контракты и готовые разовые награды книги целей (не более 14140 монет и 17 жетонов за всё прохождение). Базовый приоритет покупок: кузница до уровня min(10, 2 × прочность), затем кирка при наличии монет. После трёх розыгрышей без награды бот меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 покупает только кирку и кузницу, обмен закрыт. Стратегия 1 покупает новые ветки за монеты с соблюдением уровней: перестановку до 3, остроту до min(10, уровень/4), пресс до min(6, уровень/5), сокровища до min(10, уровень/5). Если новая покупка недоступна, действует базовый приоритет кузницы и кирки. Использует до купленного лимита обменов, передавая алмаз на раскрытый обсидиан. Скрытые слои бот не читает.\n");
+        var doc = new System.Text.StringBuilder("# Проверка темпа прогрессии 0.26\n\nКамень занимает каждый четвёртый блок и даёт только опыт. Остальные здоровье, материалы и цены прежние; бот не покупает новые чары «Удача» и «Спешка». Таблицы не оценивают прохождение с этими чарами.\n\nПо 100 воспроизводимых прогонов, seed 0–99, 20 минут на каждую стратегию. Модель: 6 ударов в секунду вне розыгрыша, розыгрыш занимает 3 секунды. Время на размышление игрока не учитывается. Все стратегии забирают контракты и готовые разовые награды книги целей (не более 14140 монет и 17 жетонов за всё прохождение). Базовый приоритет покупок: кузница до уровня min(10, 2 × прочность), затем кирка при наличии монет. После трёх розыгрышей без награды бот меняет раскладку за жетон, без повышения пласта. Учтены обсидиан, бедрок, потерянные сундуки, отсутствие выплат в пустых проходах и бонус пласта только за пять сундуков. Это проверка экономики, не оценка поведения реальных игроков.\n\nСтратегия 0 покупает только кирку и кузницу, обмен закрыт. Стратегия 1 покупает новые ветки за монеты с соблюдением уровней: перестановку до 3, остроту до min(10, уровень/4), пресс до min(6, уровень/5), сокровища до min(10, уровень/5). Если новая покупка недоступна, действует базовый приоритет кузницы и кирки. Использует до купленного лимита обменов, передавая алмаз на раскрытый обсидиан. Скрытые слои бот не читает.\n");
         doc.Append("\nВо всех стратегиях бот активирует богатую жилу при появлении. Таймер жилы идёт только во время ручной добычи; за время рулетки производство монет продолжается. Стратегия 2 повторяет стратегию 1 и раз в 5 секунд проверяет покупку производства: шахтёры до min(30, уровень), буры до min(15, уровень/3), вагонетки до min(10, уровень/4), рельсы до min(10, уровень/4). Стратегия 3 дополнительно предпочитает склад до min(4, уровень/6) с соблюдением цен и уровней. После 10 минут активной игры она сохраняется, возвращается через 8 часов и забирает офлайн-награду, затем продолжает ещё 10 активных минут. Время отсутствия задано тестом; активные минуты в таблице его не включают. Награда считается по производству и вместимости на момент выхода, новые покупки её не пересчитывают.\n");
         for (int s = 0; s < 4; s++)
         {
@@ -979,7 +980,7 @@ public static partial class DemoTools
         }
         if (secondsTotal[1] >= secondsTotal[0]) throw new Exception("Permanent upgrades did not improve average second-run progression");
         File.WriteAllText("Logs/prestige-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Повторное прохождение и престиж 0.25\n\n100 воспроизводимых последовательностей, seed 6355–6454, по четыре шахты до уровня 50. Модель: 6 ударов в секунду вне рулетки, 3 секунды на розыгрыш, без времени на размышление. Бот покупает снаряжение и производство по правилам основной симуляции, забирает контракты и цели, использует раскрытый обсидиан и богатые жилы. Офлайн-доход в этой проверке не используется.\n\nПосле каждого достижения уровня 50 подтверждается один престиж. Каждый переезд даёт +15% опыта, максимум +75%; дробный опыт переносится между начислениями. Приоритет постоянных покупок: запас монет, каменный старт, верный удар, артель, чутьё, долгая жила, своя бригада, секрет клада, сила жилы. Цели и контракты сохраняются между шахтами; старые разовые награды не повторяются. После сброса и покупок выполняется JSON-загрузка, проверяются кристаллы и постоянные узлы.\n\n| Шахта | Среднее время, мин | Минимум, сек | Максимум, сек | Кристаллов за переезд | Куплено узлов всего |\n|---|---:|---:|---:|---:|---:|\n");
+        var doc = new System.Text.StringBuilder("# Повторное прохождение и престиж 0.26\n\n100 воспроизводимых последовательностей, seed 6355–6454, по четыре шахты до уровня 50. Модель: 6 ударов в секунду вне рулетки, 3 секунды на розыгрыш, без времени на размышление. Бот покупает снаряжение и производство по правилам основной симуляции, забирает контракты и цели, использует раскрытый обсидиан и богатые жилы. Офлайн-доход в этой проверке не используется.\n\nПосле каждого достижения уровня 50 подтверждается один престиж. Каждый переезд даёт +15% опыта, максимум +75%; дробный опыт переносится между начислениями. Приоритет постоянных покупок: запас монет, каменный старт, верный удар, артель, чутьё, долгая жила, своя бригада, секрет клада, сила жилы. Цели и контракты сохраняются между шахтами; старые разовые награды не повторяются. После сброса и покупок выполняется JSON-загрузка, проверяются кристаллы и постоянные узлы.\n\n| Шахта | Среднее время, мин | Минимум, сек | Максимум, сек | Кристаллов за переезд | Куплено узлов всего |\n|---|---:|---:|---:|---:|---:|\n");
         for (int i = 0; i < cycles; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F2} | {2} | {3} | {4:F2} | {5:F2} |", i + 1, secondsTotal[i] / runs / 60, fastest[i], slowest[i], crystalsTotal[i] / runs, nodesTotal[i] / runs));
         doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "\nСреднее второе прохождение быстрее первого на {0:F1}%. Это результат заданного поведения бота, не обещание темпа для реального игрока. Сырые результаты: `Logs/prestige-runs.csv` после сборки или меню Simulate balance.", (1 - secondsTotal[1] / secondsTotal[0]) * 100));
         File.WriteAllText("Docs/PrestigeBalance.md", doc.ToString().Replace("\r\n", "\n"));
@@ -1024,7 +1025,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.25.0";
+        PlayerSettings.bundleVersion = "0.26.0";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
@@ -1048,7 +1049,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("Use Unity 2022.3.47f1 for WebGL.");
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.WebGL, BuildTarget.WebGL)) throw new Exception("Install WebGL Build Support for Unity 2022.3.47f1.");
-        PlayerSettings.bundleVersion = "0.25.0";
+        PlayerSettings.bundleVersion = "0.26.0";
         PlayerSettings.WebGL.template = "PROJECT:LuckyPickaxe";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;

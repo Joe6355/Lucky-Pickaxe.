@@ -52,10 +52,10 @@ namespace MineLoot
             Label(parent, "Видео, достижения и добыча склада", 40, 37, 400, 22, 16, Hex("d3e5dd"));
             var video = Card(parent, "Video reward", 24, 78, 432, 216, Panel);
             Icon(video.transform, "ticket", 20, 22, 54, 46);
-            Label(video.transform, "+1 ЖЕТОН", 94, 14, 316, 36, 27, Ink, FontStyle.Bold);
+            Label(video.transform, "+10 ЖЕТОНОВ", 94, 14, 316, 36, 27, Ink, FontStyle.Bold);
             Label(video.transform, "За полный просмотр видео", 94, 52, 316, 26, 19, Muted);
             videoTicketsState = Label(video.transform, "", 20, 92, 392, 48, 18, Muted);
-            videoTicketsButton = ButtonAt(video.transform, "СМОТРЕТЬ ВИДЕО · +1 ЖЕТОН", 20, 154, 392, 44, ClaimTicketsWithVideo, Hex("d8bf80"), Ink);
+            videoTicketsButton = ButtonAt(video.transform, "СМОТРЕТЬ ВИДЕО · +10 ЖЕТОНОВ", 20, 154, 392, 44, ClaimTicketsWithVideo, Hex("d8bf80"), Ink);
             videoTicketsButton.name = "Video tickets"; videoTicketsButton.GetComponentInChildren<Text>().fontSize = 20;
             var warehouse = Card(parent, "Warehouse reward", 24, 310, 432, 132, Panel);
             Icon(warehouse.transform, "warehouse", 20, 20, 48, 48);
@@ -69,9 +69,9 @@ namespace MineLoot
         private void RefreshRewards()
         {
             long wait = game.VideoWaitSeconds(SessionUtc);
-            videoTicketsState.text = RewardedVideoPending ? "Ожидаем результат просмотра…" : wait > 0 ? "Следующий подарок через " + Duration(wait) : !rewardedAvailable ? "Видео доступно в Яндекс Играх.\nЕсли рекламы нет, попробуй позже." : game.HasPendingRoll ? "Сначала заверши бросок рулетки." : "По желанию · один подарок раз в 3 минуты";
-            videoTicketsButton.interactable = !busy && !applicationPaused && rewardedAvailable && game.CanClaimVideoTickets(SessionUtc);
-            rewardsWarehouse.text = game.HasOfflineReward ? "На складе: " + ShortAmount(game.Progress.offlineCoins) + " монет\nМожно забрать или удвоить за видео" : "Офлайн-добыча · до " + game.OfflineHours + " ч.\nШахтёры работают, пока тебя нет";
+            videoTicketsState.text = RewardedVideoPending ? "Ожидаем результат просмотра…" : wait > 0 ? "Следующий подарок через " + Duration(wait) : !rewardedAvailable ? "Видео доступно в Яндекс Играх.\nЕсли рекламы нет, попробуй позже." : game.EconomyLocked ? "Сначала заверши бросок рулетки." : "По желанию · один подарок раз в 3 минуты";
+            videoTicketsButton.interactable = !EconomyBusy && !applicationPaused && rewardedAvailable && game.CanClaimVideoTickets(SessionUtc);
+            rewardsWarehouse.text = game.HasOfflineReward ? "На складе: " + ShortAmount(game.Progress.offlineCoins) + " монет\nМожно забрать или утроить за видео" : "Офлайн-добыча · до " + game.OfflineHours + " ч.\nШахтёры работают, пока тебя нет";
             rewardsGoals.text = game.ReadyMilestones > 0 ? "ДОСТУПНО НАГРАД: " + game.ReadyMilestones : "ДОСТИЖЕНИЯ · " + game.ClaimedMilestones + "/" + MineGame.MilestoneCount;
         }
     }

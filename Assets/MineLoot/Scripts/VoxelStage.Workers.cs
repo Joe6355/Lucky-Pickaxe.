@@ -57,14 +57,14 @@ namespace MineLoot
                     point.uv.AddRange(new[]{Vector2.zero,Vector2.one,new Vector2(1,0)}); point.indices.AddRange(new[]{n,n+1,n+2});
                 }
                 // Point and crossbar lie in the YZ swing plane, outside the head and torso.
-                workerTools[i]=DevelopmentGroup("Two-handed mining swing "+i,tool,Vector3.zero);
+                workerTools[i]=DevelopmentGroup("Mining swing "+i,tool,Vector3.zero);
                 workerTools[i].SetParent(workers[i],false); workerTools[i].localPosition=WorkerGrip; workerTools[i].gameObject.SetActive(true);
                 MakeMesh("Pickaxe tapered point "+i,point,GetMaterial("mine-steel")).transform.SetParent(workerTools[i],false);
                 var tip=new GameObject("Pick striking point"); tip.layer=Layer; tip.transform.SetParent(workerTools[i],false); tip.transform.localPosition=WorkerTip;
                 for(int limb=0;limb<6;limb++)
                 {
                     var shape=new Geometry(); AddCube(shape,Vector3.zero,Vector3.one,1);
-                    workerLimbs[i,limb]=MakeMesh("Miner limb "+i+" "+limb,shape,GetMaterial(limb<2?"mine-cloth":"mine-skin")).transform;
+                    workerLimbs[i,limb]=MakeMesh("Miner limb "+i+" "+limb,shape,GetMaterial(limb<4?"mine-cloth":"mine-timber")).transform;
                     workerLimbs[i,limb].SetParent(workers[i],false);
                 }
                 var baseShape=new Geometry(); AddCube(baseShape,new Vector3(.42f,.17f,1.43f),new Vector3(.96f,.34f,.96f),1);
@@ -82,20 +82,19 @@ namespace MineLoot
         }
         private void PoseWorkerArms(int i)
         {
-            Vector3 left=workers[i].InverseTransformPoint(workerTools[i].TransformPoint(new Vector3(0,.15f,0)));
-            Vector3 right=workers[i].InverseTransformPoint(workerTools[i].TransformPoint(new Vector3(0,-.1f,0)));
-            Vector3 leftElbow=new Vector3(-.4f,.8f,.48f),rightElbow=new Vector3(.58f,.78f,.4f);
-            PlaceWorkerLimb(workerLimbs[i,0],new Vector3(-.34f,1.03f,.02f),leftElbow,.17f);
-            PlaceWorkerLimb(workerLimbs[i,1],new Vector3(.34f,1.03f,.02f),rightElbow,.17f);
-            PlaceWorkerLimb(workerLimbs[i,2],leftElbow,left,.14f);
-            PlaceWorkerLimb(workerLimbs[i,3],rightElbow,right,.14f);
-            for(int hand=0;hand<2;hand++)
-            {
-                workerLimbs[i,4+hand].localPosition=hand==0?left:right;
-                workerLimbs[i,4+hand].localRotation=workerTools[i].localRotation;
-                workerLimbs[i,4+hand].localScale=Vector3.one*.14f;
-            }
+            // Compact voxel arms: one hand swings the pick, the other balances beside the torso.
+            Vector3 right=workers[i].InverseTransformPoint(workerTools[i].TransformPoint(Vector3.zero));
+            Vector3 left=new Vector3(-.35f,.62f,.1f),leftElbow=new Vector3(-.36f,.83f,.07f);
+            Vector3 rightElbow=new Vector3(.43f,.84f,.14f);
+            PlaceWorkerLimb(workerLimbs[i,0],new Vector3(-.35f,1.05f,.01f),leftElbow,.22f);
+            PlaceWorkerLimb(workerLimbs[i,1],new Vector3(.35f,1.05f,.01f),rightElbow,.22f);
+            PlaceWorkerLimb(workerLimbs[i,2],leftElbow,left,.2f);
+            PlaceWorkerLimb(workerLimbs[i,3],rightElbow,right,.2f);
+            workerLimbs[i,4].localPosition=left; workerLimbs[i,4].localRotation=Quaternion.identity;
+            workerLimbs[i,5].localPosition=right; workerLimbs[i,5].localRotation=workerTools[i].localRotation;
+            workerLimbs[i,4].localScale=workerLimbs[i,5].localScale=Vector3.one*.21f;
         }
+
         private static void PlaceWorkerLimb(Transform limb,Vector3 start,Vector3 end,float width)
         {
             limb.localPosition=(start+end)*.5f;
@@ -110,6 +109,8 @@ namespace MineLoot
                 float time=clock*1.2f+i*.31f, phase=time-Mathf.Floor(time); int cycle=Mathf.FloorToInt(time);
                 float swing=phase<.3f?Mathf.Lerp(5,-55,Mathf.SmoothStep(0,1,phase/.3f)):phase<.56f?Mathf.Lerp(-55,40,Mathf.Pow((phase-.3f)/.26f,2)):phase<.62f?40:Mathf.Lerp(40,5,Mathf.SmoothStep(0,1,(phase-.62f)/.38f));
                 workerTools[i].localEulerAngles=new Vector3(swing,0,0);
+                float lift=Mathf.InverseLerp(40,-55,swing);
+                workerTools[i].localPosition=WorkerGrip+new Vector3(0,.18f*lift,-.08f*lift);
                 PoseWorkerArms(i);
                 float lean=phase>.3f&&phase<.7f?Mathf.Sin((phase-.3f)/.4f*Mathf.PI):0;
                 workers[i].localPosition=workerHomes[i]+Vector3.up*(lean*.018f);

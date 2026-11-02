@@ -93,11 +93,27 @@ async function run() {
   check(saved.upgradeLevel === 1 && saved.coins === 56 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
 
   await seed({ ...fresh, coins: 345, tickets: 8, hits: 59, experience: 39, oreKind: 9, oreDamage: 31, veinCharge: 23, veinBoostLeft: 12, guideStep: 5 });
-  await shot("webgl-stone-v025"); await tap(215, 380); saved=await read();
+  await shot("webgl-stone-v026"); await tap(215, 380); saved=await read();
   check(saved.coins===345 && saved.tickets===8 && saved.hits===59 && saved.experience===57 && saved.enchantingExperience===18 && saved.miningBlocks===1 && saved.oresMined===0 && saved.veinCharge===23,
     "Real stone break pays XP only, including its level-up, without ticket or vein progress: "+JSON.stringify(saved));
   await page.reload(); await waitReady(); saved=await read();
   check(saved.version===14 && saved.coins===345 && saved.tickets===8 && saved.miningBlocks===1 && saved.enchantingExperience===18 && saved.oreKind!==9,"Reload preserves the XP-only stone break and advances to a valuable resource");
+
+  await seed({ ...fresh, coins: 100000, tickets: 20, experience: 25480, swapLevel: 1, guideStep: 5, lastSeenUtc: Math.floor(Date.now()/1000) });
+  await tap(292,916); await tap(240,740); await tap(82,916);
+  const tabPaused=await read(); await page.waitForTimeout(2500); let frozen=await read();
+  check(frozen.rollPending && frozen.totalRolls===1 && frozen.tickets===19 && JSON.stringify(frozen.pendingTypes)===JSON.stringify(tabPaused.pendingTypes),"Switching to Mine pauses the paid reels instead of disabling navigation");
+  await tap(215,380); saved=await read();
+  check(saved.totalClicks===tabPaused.totalClicks+1 && saved.coins>tabPaused.coins && saved.tickets===19 && saved.rollPending,"Real mining remains playable while the exact roulette choice is paused");
+  await shot("webgl-v026-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
+  await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
+  saved=await read(); check(saved.totalRolls===1 && saved.tickets===19,"Returning to Roulette resumes its original paid draw without spending another ticket");
+  await seed({...fresh,tickets:20,experience:25480,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+  await tap(292,916); await tap(376,740); await tap(397,916);
+  const queuePause=await read(); await page.waitForTimeout(3500); saved=await read();
+  check(saved.batchRemaining===queuePause.batchRemaining && saved.batchCompleted===queuePause.batchCompleted && saved.totalRolls===queuePause.totalRolls && saved.tickets===queuePause.tickets,"The ten-roll queue stays frozen on Rewards and cannot charge another roll while hidden");
+  await tap(292,916); await tap(376,740);
+  await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
 
   await seed({ ...fresh, coins: 600, experience: 100, swapLevel: 1, tickets: 1, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(240, 740);
@@ -166,7 +182,7 @@ async function run() {
   await page.evaluate(() => { rewardedFixture.callbacks.onRewarded(); rewardedFixture.callbacks.onRewarded(); });
   await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).offlineCoins === 0, key);
   const videoPaid = await read();
-  check(videoPaid.coins === beforeVideo.coins + 2 * beforeVideo.offlineCoins && videoPaid.totalOfflineCoins === 2 * beforeVideo.offlineCoins, "onRewarded journals exactly twice the crate before close; duplicate callbacks cannot pay again");
+  check(videoPaid.coins === beforeVideo.coins + 3 * beforeVideo.offlineCoins && videoPaid.totalOfflineCoins === 3 * beforeVideo.offlineCoins, "onRewarded journals exactly three times the crate before close; duplicate callbacks cannot pay again");
   await page.evaluate(() => rewardedFixture.callbacks.onClose());
   await page.waitForFunction(() => !LuckyPickaxe.status().paused && LuckyPickaxe.status().engineActive);
   check(await page.evaluate(() => LuckyPickaxe.status().gameplayReported), "Closing the rewarded fixture restores GameplayAPI after the controller releases its independent ad pause");
@@ -206,10 +222,10 @@ async function run() {
   await page.evaluate(() => { rewardedFixture.callbacks.onRewarded(); rewardedFixture.callbacks.onRewarded(); });
   await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).videoTicketClaims === 1, key);
   saved = await read();
-  check(saved.tickets === ticketsBefore.tickets + 1 && saved.coins === ticketsBefore.coins && saved.videoTicketClaims === 1, "Ticket video journals one ticket exactly once even with duplicate onRewarded");
+  check(saved.tickets === ticketsBefore.tickets + 10 && saved.coins === ticketsBefore.coins && saved.videoTicketClaims === 1, "Ticket video journals ten tickets exactly once even with duplicate onRewarded");
   await page.evaluate(() => rewardedFixture.callbacks.onClose()); await page.waitForFunction(() => !LuckyPickaxe.status().paused);
   await page.reload(); await waitReady(); saved = await read();
-  check(saved.tickets === 3 && saved.videoTicketClaims === 1 && saved.videoTicketsReadyUtc > Math.floor(Date.now() / 1000), "Reload retains the ticket gift and its cooldown");
+  check(saved.tickets === 12 && saved.videoTicketClaims === 1 && saved.videoTicketsReadyUtc > Math.floor(Date.now() / 1000), "Reload retains the ticket gift and its cooldown");
   await tap(397, 916); await tap(240, 422);
   check(!await page.evaluate(() => LuckyPickaxe.status().rewardedPending), "The visible cooldown prevents opening another ticket video");
   await seed({ ...fresh, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
@@ -236,12 +252,16 @@ async function run() {
   check(saved.workerCount === 1 && saved.coins >= 700, "Reload preserves machinery bought through the dedicated production page");
 
   await seed({ ...fresh, coins: 10000, experience: 25480, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(480, 92); await tap(640, 381); await tap(932, 381); saved = await read();
+  await tap(480, 92); await tap(466,248); const helpWallet=await read();
+  await tap(932,381); saved=await read();
+  check(saved.coins===helpWallet.coins && saved.hasteLevel===0,"Upgrade question opens a modal that blocks purchases behind its shade");
+  await shot("webgl-v026-upgrade-info"); await tap(640,526);
+  await tap(640,381); await tap(932,381); saved=await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Direct enchantments tab buys real Fortune and Haste ranks with their displayed prices");
   await shot("webgl-enchantments"); await page.reload(); await waitReady(); saved = await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Reload retains both new enchantments");
   await seed({ ...fresh, coins: 10000, experience: 700, enchantingExperience: 10000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(480, 92); await tap(749, 197); await shot("webgl-v024-enchanting-room");
+  await tap(480, 92); await tap(749, 197); await shot("webgl-v026-enchanting-room");
   await tap(867, 569); saved = await read();
   check(saved.enchantCount === 1 && saved.enchantments > 0 && saved.enchantingExperience === 9880 && saved.experience === 700, "The dedicated enchanting room spends 120 available XP and applies a real pick enchantment without reducing miner level");
   const enchanted = saved.enchantments;
@@ -251,7 +271,7 @@ async function run() {
   check(saved.enchantCount === 2 && saved.enchantments > 0 && saved.enchantingExperience === 9820 && saved.experience === 700, "Reload retains the exact paid enchantments, reroll counter and unspent XP");
   await tap(480, 92); await tap(967, 197); await tap(640, 351); await tap(640, 411); await tap(640, 470); saved = await read();
   check(saved.coins === 100010000 && saved.enchantingExperience === 19820 && saved.tickets === 12, "Temporary draft tools expose explicit buttons for 100 million coins, enchanting XP and a ten-roll test budget");
-  await shot("webgl-v024-draft-tools");
+  await shot("webgl-v026-draft-tools");
   await seed({ ...fresh, coins: 1000, pickWear: 160, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(1147, 490); saved = await read();
   check(saved.pickWear === 0 && saved.coins === 970, "The mine's direct repair button restores the existing worn pick for its displayed thirty coins");
@@ -275,7 +295,7 @@ async function run() {
   await page.waitForFunction(key => { const d=JSON.parse(localStorage.getItem(key)); return d.batchCompleted===10 && !d.batchActive && !d.rollPending; }, key, { timeout: 60000 });
   saved=await read();
   check(saved.totalRolls === 10 && saved.coins === 80 + saved.batchReward && saved.tickets >= 2, "Reload resumes the paid series, commits exactly ten rewards and never starts an eleventh draw");
-  await page.waitForTimeout(1000); await shot("webgl-v024-ten-roll-result");
+  await page.waitForTimeout(1000); await shot("webgl-v026-ten-roll-result");
   await seed({ ...fresh, tickets: 10, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(376, 740); await tap(376, 740);
   const stopped = await read();
