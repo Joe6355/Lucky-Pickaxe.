@@ -23,7 +23,6 @@ namespace MineLoot
         {
             public int version=1,score,resets;
             public long blocks,coins,tickets,xp;
-            public bool test;
         }
         private Image ratingBadge,profileRatingBadge;
         private Text ratingCaption,profileRatingTitle,profileRatingScore,profileRatingNext,ratingStatus,ratingPageLabel;
@@ -122,10 +121,10 @@ namespace MineLoot
         private void PumpRating()
         {
             if(ratingWindowOpen && Time.unscaledTime>=nextRatingRefresh) {nextRatingRefresh=Time.unscaledTime+.5f;RefreshRating();}
-            if(game==null || game.Progress.ratingTestProfile || accountStatus!="authorized" || ratingSending || Time.unscaledTime<nextRatingSend || game.Mmr<=Math.Max(0,submittedRating)) return;
+            if(game==null || accountStatus!="authorized" || ratingSending || Time.unscaledTime<nextRatingSend || game.Mmr<=Math.Max(0,submittedRating)) return;
             if(SmokeMode && ratingSubmitForSmoke==null) return;
             nextRatingSend=Time.unscaledTime+30;ratingSending=true;
-            var data=new RatingSubmission {score=game.Mmr,blocks=game.RatingBlocks,coins=game.Progress.earnedCoins,tickets=game.Progress.spentTickets,xp=game.Progress.spentEnchantingExperience,resets=game.Progress.prestigeCount,test=game.Progress.ratingTestProfile};
+            var data=new RatingSubmission {score=game.Mmr,blocks=game.RatingBlocks,coins=game.Progress.earnedCoins,tickets=game.Progress.spentTickets,xp=game.Progress.spentEnchantingExperience,resets=game.Progress.prestigeCount};
             string json=JsonUtility.ToJson(data);
             bool accepted=SmokeMode?ratingSubmitForSmoke(json):BrowserPlatform.SubmitRating(json);
             if(!accepted) ratingSending=false;
@@ -140,8 +139,7 @@ namespace MineLoot
             profileRatingNext.text=rank+1<MineGame.RatingRankCount?"До следующей медали: "+(MineGame.RatingThreshold(rank+1)-score).ToString("N0",interfaceCulture)+" MMR":"Высшая медаль шахтёра";
             for(int i=0;i<ratingTabs.Length;i++) {ratingSections[i].SetActive(i==ratingSection);ratingTabs[i].image.color=i==ratingSection?Hex("b6c997"):Panel;}
             ratingStatus.text=ratingData.status=="loading"?"Загружаем рейтинг Яндекса…":ratingData.status=="error"?"Не удалось загрузить таблицу. Попробуй позже.":ratingData.status=="unavailable"?"Общий рейтинг доступен в Яндекс Играх.":ratingData.entries.Length==0?"В рейтинге пока нет игроков. Стань первым!":ratingData.userRank>0?"Твоё место: "+ratingData.userRank+" · в таблице лучший результат":"Лучшие игроки и участники рядом с тобой";
-            if(game.Progress.ratingTestProfile && ratingData.status!="loading") ratingStatus.text="Тестовый прогресс: в общий топ не отправляется.";
-            else if(ratingData.status=="ready" && ratingReceipt.Length>0 && ratingData.userRank==0) ratingStatus.text=ratingReceipt;
+            if(ratingData.status=="ready" && ratingReceipt.Length>0 && ratingData.userRank==0) ratingStatus.text=ratingReceipt;
             for(int i=0;i<5;i++)
             {
                 int index=ratingPage*5+i;bool show=index<ratingData.entries.Length;ratingRows[i].SetActive(show);if(!show) continue;

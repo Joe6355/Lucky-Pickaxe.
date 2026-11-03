@@ -43,10 +43,14 @@ public static partial class DemoTools
         var old=new MineGame(new MineProgress{version=15,coins=100000080,enchantingExperience=888,miningBlocks=111,totalBlocks=222,totalRolls=27});
         check(old.Progress.version==16 && old.Progress.coins==100000080 && old.Progress.enchantingExperience==888 && old.RatingBlocks==333 && old.Progress.spentTickets==27,"v15 migration keeps the wallet, XP, real blocks and known paid draws");
         check(old.Progress.earnedCoins==0 && old.Progress.spentEnchantingExperience==0 && old.Progress.ratingHistoryPartial,"A legacy wallet or available XP cannot invent lifetime ranked earnings or expenditure");
+        var marked=new MineGame(new MineProgress{earnedCoins=12600000,prestigeCount=2,ratingTestProfile=true});
+        check(!marked.Progress.ratingTestProfile && marked.Mmr==378 && marked.Progress.earnedCoins==12600000,"A previously excluded v16 save keeps its 378 MMR and loses only the obsolete marker");
+        reload=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(marked.Progress)));
+        check(!reload.Progress.ratingTestProfile && reload.Mmr==378,"Saving and reloading cannot restore the removed rating restriction");
         game=new MineGame(new MineProgress{coins=10000,experience=MineGame.ExperienceForLevel(50),earnedCoins=123456,spentTickets=9,spentEnchantingExperience=40,miningBlocks=10,totalBlocks=20,ratingTestProfile=true});
         int scoreBefore=game.Mmr;check(game.Prestige(()=>.2),"A rating fixture can complete the normal confirmed reset");
         reload=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
-        check(reload.Progress.earnedCoins==123456 && reload.Progress.spentTickets==9 && reload.Progress.spentEnchantingExperience==40 && reload.RatingBlocks==30 && reload.Progress.ratingTestProfile && reload.Mmr>=scoreBefore,"Reset and JSON reload preserve every lifetime metric, test exclusion and accumulated MMR");
+        check(reload.Progress.earnedCoins==123456 && reload.Progress.spentTickets==9 && reload.Progress.spentEnchantingExperience==40 && reload.RatingBlocks==30 && !reload.Progress.ratingTestProfile && reload.Mmr>=scoreBefore,"Reset and JSON reload preserve lifetime metrics and cannot reintroduce the removed restriction");
         for(int resets=0;resets<10;resets++) check(MineGame.RatingScore(100,123456,9,40,resets+1)>=MineGame.RatingScore(100,123456,9,40,resets),"More completed resets cannot lower MMR: "+resets);
     }
 }

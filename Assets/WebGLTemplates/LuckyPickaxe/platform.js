@@ -127,7 +127,7 @@
   function submitRating(json) {
     if(disposed || !ready || local || account.status!=="authorized" || authPending || ratingSendPending || Date.now()<ratingSendAfter || !sdk?.leaderboards || typeof sdk.leaderboards.setScore!=="function" || typeof sdk.leaderboards.getPlayerEntry!=="function" || typeof sdk.isAvailableMethod!=="function" || typeof json!=="string" || json.length>512) return false;
     let data;try {data=JSON.parse(json);} catch {return false;}
-    if(data?.version!==1 || data.test!==false || !Number.isSafeInteger(data.score) || data.score<=0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
+    if(data?.version!==1 || !Number.isSafeInteger(data.score) || data.score<=0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
     const generation=accountGeneration;ratingSendPending=true;ratingSendAfter=Date.now()+30000;
     Promise.resolve().then(async()=>{
       if(!await sdk.isAvailableMethod("leaderboards.setScore") || !await sdk.isAvailableMethod("leaderboards.getPlayerEntry")) throw new Error("Rating unavailable");

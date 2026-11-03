@@ -30,8 +30,9 @@ namespace MineLoot
                 Progress.earnedCoins=Progress.spentEnchantingExperience=0;
                 Progress.spentTickets=Math.Max(0,Math.Min(10000000,Progress.totalRolls));
                 Progress.ratingHistoryPartial=Progress.totalClicks>0||Progress.totalBlocks>0||Progress.totalRolls>0||Progress.prestigeCount>0||Progress.totalProduced>0;
-                Progress.ratingTestProfile=false;
             }
+            // Retain the old v16 field for save compatibility, without excluding any profile.
+            Progress.ratingTestProfile=false;
             Progress.earnedCoins=Math.Max(0,Math.Min(CoinLimit,Progress.earnedCoins));
             Progress.spentTickets=Math.Max(0,Math.Min(CoinLimit,Progress.spentTickets));
             Progress.spentEnchantingExperience=Math.Max(0,Math.Min(CoinLimit,Progress.spentEnchantingExperience));

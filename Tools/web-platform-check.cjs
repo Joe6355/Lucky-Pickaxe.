@@ -282,7 +282,7 @@ async function run() {
   check(f.calls.length===callsAfterAuthDispose && f.playerCalls===1 && f.api.status().disposed,"A late login result cannot restart a disposed game or fetch another player");
   f=fixture();await start(f);check(!f.api.authorize() && f.api.status().accountStatus==="unavailable","A missing SDK auth provider is reported without a fake login");
 
-  const submission=JSON.stringify({version:1,score:12,blocks:100,coins:100000,tickets:20,xp:1000,resets:2,test:false});
+  const submission=JSON.stringify({version:1,score:12,blocks:100,coins:100000,tickets:20,xp:1000,resets:2});
   const rankingEvent=(f,method="OnBrowserRating")=>JSON.parse(f.calls.filter(e=>e.method===method).at(-1)?.value||"{}");
   async function settleRating(){for(let i=0;i<30;i++) await Promise.resolve();}
   f=fixture({leaderboard:true});await start(f);
@@ -309,8 +309,12 @@ async function run() {
   f=fixture({auth:true,authorized:true,leaderboard:true,ratingUnavailable:true});await start(f);await settleRating();f.api.submitRating(submission);await settleRating();
   check(f.ranking.playerReads===0 && f.ranking.writes.length===0 && rankingEvent(f,"OnBrowserRatingSaved").status==="error","Unavailable leaderboard methods are a recoverable error");
   f=fixture({auth:true,authorized:true,leaderboard:true});await start(f);await settleRating();
-  for(const data of [{test:true},{score:-1},{score:2.5},{score:2147483648},{xp:-1},{version:2}]) check(!f.api.submitRating(JSON.stringify({...JSON.parse(submission),...data})),"Invalid or test-only ranking snapshots never reach the platform: "+JSON.stringify(data));
-  check(f.ranking.writes.length===0,"Temporary resource tests cannot create an online record");
+  for(const data of [{score:-1},{score:2.5},{score:2147483648},{xp:-1},{version:2}]) check(!f.api.submitRating(JSON.stringify({...JSON.parse(submission),...data})),"Invalid ranking snapshots never reach the platform: "+JSON.stringify(data));
+  check(f.ranking.writes.length===0,"Malformed ranking snapshots cannot create an online record");
+  f=fixture({auth:true,authorized:true,leaderboard:true,remoteScore:151});await start(f);await settleRating();
+  const legacySubmission=JSON.stringify({version:1,score:378,blocks:0,coins:12600000,tickets:0,xp:0,resets:2,test:true});
+  check(f.api.submitRating(legacySubmission),"The obsolete test marker cannot block an otherwise valid rating submission");await settleRating();
+  check(f.ranking.writes.length===1 && f.ranking.writes[0].score===378 && rankingEvent(f,"OnBrowserRatingSaved").status==="saved","A formerly marked profile can raise its saved Yandex result from 151 to 378");
   f=fixture({leaderboard:true,ratingReadFails:true});await start(f);f.api.requestRating();await settleRating();check(rankingEvent(f).status==="error" && !f.api.status().failed && !f.api.status().paused,"An unavailable table preserves the active game and exposes a retry state");
   let finishEntries;
   f=fixture({leaderboard:true,entriesPromise:new Promise(resolve=>finishEntries=resolve)});await start(f);f.api.requestRating();await settleRating();f.api.dispose();const disposedCalls=f.calls.length;finishEntries({entries:[]});await settleRating();

@@ -803,7 +803,7 @@ namespace MineLoot
                 totalBlocks = previous.totalBlocks, claimedContracts = previous.claimedContracts,
                 totalProduced = previous.totalProduced, totalOfflineCoins = previous.totalOfflineCoins,
                 earnedCoins=previous.earnedCoins,spentTickets=previous.spentTickets,spentEnchantingExperience=previous.spentEnchantingExperience,
-                ratingTestProfile=previous.ratingTestProfile,ratingHistoryPartial=previous.ratingHistoryPartial,
+                ratingHistoryPartial=previous.ratingHistoryPartial,
                 lastSeenUtc = previous.lastSeenUtc, videoTicketsReadyUtc = previous.videoTicketsReadyUtc, videoTicketClaims = previous.videoTicketClaims
             };
             Sanitize();

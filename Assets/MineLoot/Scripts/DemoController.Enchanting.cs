@@ -207,7 +207,6 @@ namespace MineLoot
             else if (kind == 1) game.Progress.enchantingExperience = Math.Min(MineGame.EnchantingExperienceLimit, game.Progress.enchantingExperience + 10000);
             else if (kind == 2) game.Progress.tickets = Math.Min(1000000, game.Progress.tickets + 10);
             else return;
-            game.Progress.ratingTestProfile=true;
             Persist(); Flush(); Refresh();
         }
     }
