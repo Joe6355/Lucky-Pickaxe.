@@ -119,11 +119,14 @@ namespace MineLoot
         private void RefreshEnchanting()
         {
             if (enchantingArea == null) return;
+            clickPick.material=workshopPick.material=equippedIcon.material=enchantingPick.material=game.IsEnchanted?pickGlint:null;
+            enchantingWorld.SetEnchantment(game.IsEnchanted);
+            if(draftToolsArea.activeInHierarchy)
+                draftToolsState.text = "Монеты: " + ShortAmount(game.Progress.coins) + "\nОпыт на чары: " + ShortAmount(game.Progress.enchantingExperience) + "\nЖетоны: " + game.Progress.tickets;
+            if(!enchantingArea.activeInHierarchy) return;
             enchantingXp.text = "Опыт на чары: " + ShortAmount(game.Progress.enchantingExperience);
             enchantingCurrent.text = "На кирке: " + DescribeEnchantments(game.Progress.enchantments,true) + "\nНовый материал кирки снимет чары.";
             enchantingPick.sprite = art.Get(PickSprites[game.PickTier]);
-            foreach (var image in new[] { clickPick, workshopPick, equippedIcon, enchantingPick }) image.material = game.IsEnchanted ? pickGlint : null;
-            enchantingWorld.SetEnchantment(game.IsEnchanted);
             for (int i = 0; i < 3; i++)
             {
                 enchantDescriptions[i].text = ShortAmount(game.EnchantmentCost(i)) + " опыта";
@@ -131,7 +134,6 @@ namespace MineLoot
                 enchantButtons[i].interactable = !EconomyBusy && !applicationPaused && game.CanEnchant(i);
             }
             enchantingHint.text = "Нажми на стол — описание зачарований";
-            draftToolsState.text = "Монеты: " + ShortAmount(game.Progress.coins) + "\nОпыт на чары: " + ShortAmount(game.Progress.enchantingExperience) + "\nЖетоны: " + game.Progress.tickets;
         }
         public void EnchantEquippedPick(int slot)
         {

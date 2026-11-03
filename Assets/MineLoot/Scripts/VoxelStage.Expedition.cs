@@ -115,6 +115,11 @@ namespace MineLoot
             SetBiome(game.Biome);
             for (int c = 0; c < 5; c++)
             {
+                if(shaftLost[c]!=lost[c])
+                {
+                    particleProperties.Clear();particleProperties.SetColor("_Color",lost[c]?Color.white*.3f:Color.white);
+                    for(int part=0;part<5;part++) chestParts[c,part].SetPropertyBlock(particleProperties);
+                }
                 shaftLost[c] = lost[c]; lostMarks[c].SetActive(lost[c]);
                 for (int r = 0; r < 5; r++)
                 {
@@ -158,13 +163,16 @@ namespace MineLoot
             view.transform.localPosition = new Vector3(2.6f, 4.5f + Mathf.Sin(shaftShake * 20) * shaftShake * .025f, -23);
             for (int c = 0; c < 5; c++)
             {
-                chestOpenness[c] = Mathf.MoveTowards(chestOpenness[c], chestTargets[c] ? 1 : 0, dt * 3.8f);
-                float t = chestOpenness[c], ease = 1 - Mathf.Pow(1 - t, 3);
-                chestLids[c].localEulerAngles = new Vector3(104 * ease, 0, 0);
-                particleProperties.Clear(); particleProperties.SetColor("_Color", shaftLost[c] ? Color.white * .3f : Color.white);
-                for (int part = 0; part < 5; part++) chestParts[c, part].SetPropertyBlock(particleProperties);
+                float target=chestTargets[c]?1:0;
+                if(chestOpenness[c]!=target)
+                {
+                    chestOpenness[c] = Mathf.MoveTowards(chestOpenness[c], target, dt * 3.8f);
+                    float t = chestOpenness[c], ease = 1 - Mathf.Pow(1 - t, 3);
+                    chestLids[c].localEulerAngles = new Vector3(104 * ease, 0, 0);
+                }
                 for (int r = 0; r < 5; r++)
                 {
+                    if(shaftHits[c,r]<=0) continue;
                     shaftHits[c, r] = Mathf.MoveTowards(shaftHits[c, r], 0, dt * 7);
                     float pulse = shaftHits[c, r];
                     shaftBlocks[c, r].localScale = Vector3.one * (1 - pulse * .045f);

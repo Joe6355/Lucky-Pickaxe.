@@ -178,7 +178,7 @@ namespace MineLoot
             platformInput.interactable = !paused;
             platformInput.blocksRaycasts = !paused;
             stage.Paused = enchantingWorld.Paused = paused;
-            shaft.Paused = paused || !roulette;
+            shaft.Paused = paused || !roulette || settingsWindowOpen;
             sounds.SetSuspended(paused || !audioFocused);
             if (!paused)
             {

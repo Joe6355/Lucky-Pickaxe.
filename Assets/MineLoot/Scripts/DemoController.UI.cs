@@ -81,8 +81,8 @@ namespace MineLoot
             Label(shell, "КИРКА УДАЧИ", 78, 19, 320, 42, 32, Hex("faf1cf"), FontStyle.Bold);
             accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,252,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
             var accountCaption=accountButton.GetComponentInChildren<Text>();accountCaption.fontSize=16;accountCaption.resizeTextForBestFit=true;accountCaption.resizeTextMinSize=12;accountCaption.resizeTextMaxSize=16;
-            var sound = ButtonAt(shell, "♪", 411, 25, 45, 45, ToggleSound, Hex("b5b7ae"), Hex("222923"));
-            sound.name = "Toggle sound"; soundLabel = sound.GetComponentInChildren<Text>();
+            var sound = ButtonAt(shell, "♪", 411, 25, 45, 45, ShowSettings, Hex("b5b7ae"), Hex("222923"));
+            sound.name = "Open settings"; soundLabel = sound.GetComponentInChildren<Text>();
             BuildRatingButton(shell);
 
             Card(shell, "Coin wallet", 24, 92, 270, 62, Hex("d9d8cb"));
@@ -347,6 +347,7 @@ namespace MineLoot
 
         private void RefreshWorkshop()
         {
+            if(!workshopPage.activeInHierarchy) return;
             string[] icons = { PickSprites[game.PickTier], "forge", "swap", "pick2", "ticket", "chest", "worker", "drill", "cart", "rails", "warehouse", "upgrade-fortune", "upgrade-haste" };
             ApplyWorkshopSection();
             equipmentTab.image.color = workshopSection != 0 ? Panel : Hex("a4c975"); productionTabButton.image.color = workshopSection == 1 ? Hex("a4c975") : Panel;
@@ -361,6 +362,7 @@ namespace MineLoot
             offlineButton.gameObject.SetActive(false); offlineButton.interactable = !EconomyBusy; // Warehouse is directly accessible from Rewards.
             offlineButtonLabel.text = game.HasOfflineReward ? "СКЛАД: " + ShortAmount(game.Progress.offlineCoins) : "СКЛАД · ДО " + game.OfflineHours + " Ч.";
             offlineButton.image.color = game.HasOfflineReward ? Hex("d9bd80") : Hex("b5c48f");
+            if(workshopSection>=2) {foreach(var card in workshopCards) card.SetActive(false);return;}
             for (int i = 0; i < workshopButtons.Length; i++)
             {
                 workshopCards[i].SetActive(workshopSection < 2);
@@ -695,6 +697,8 @@ namespace MineLoot
         private void CloseModal()
         {
             if (modal == null || RewardedVideoPending) return;
+            if(settingsWindowOpen) sounds.FlushPreferences();
+            settingsWindowOpen = false;shaft.Paused=applicationPaused||!roulette;
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = ratingWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
             dialogShade.SetActive(false); Refresh();
         }

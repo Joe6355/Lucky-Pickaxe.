@@ -34,6 +34,7 @@ namespace MineLoot
 
         private void RefreshEquipmentAside()
         {
+            if(!equipmentAside.activeInHierarchy) return;
             equippedIcon.sprite = art.Get(PickSprites[game.PickTier]);
             equippedTitle.text = PickNames[game.PickTier];
             equippedStats.text = "Урон " + game.MiningDamage + " за удар\n+" + game.ManualClickPower + " монет за удар";
@@ -68,6 +69,7 @@ namespace MineLoot
 
         private void RefreshRewards()
         {
+            if(!rewardsPage.activeInHierarchy) return;
             long wait = game.VideoWaitSeconds(SessionUtc);
             videoTicketsState.text = RewardedVideoPending ? "Ожидаем результат просмотра…" : wait > 0 ? "Следующий подарок через " + Duration(wait) : !rewardedAvailable ? "Видео доступно в Яндекс Играх.\nЕсли рекламы нет, попробуй позже." : game.EconomyLocked ? "Сначала заверши бросок рулетки." : "По желанию · один подарок раз в 3 минуты";
             videoTicketsButton.interactable = !EconomyBusy && !applicationPaused && rewardedAvailable && game.CanClaimVideoTickets(SessionUtc);

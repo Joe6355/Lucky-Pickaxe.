@@ -12,6 +12,8 @@ namespace MineLoot
         private readonly Dictionary<string, Geometry> terrain = new Dictionary<string, Geometry>();
         private readonly List<Mesh> meshes = new List<Mesh>();
         private readonly List<GameObject> pieces = new List<GameObject>();
+        private readonly List<Transform> pieceTransforms = new List<Transform>();
+        private readonly List<MeshRenderer> pieceRenderers = new List<MeshRenderer>();
         private PixelArt art;
         private Camera view;
         private Transform ore;
@@ -26,6 +28,7 @@ namespace MineLoot
         private string desiredOre = "coal";
         private int biome = -1;
         private readonly Transform[] dust = new Transform[12];
+        private readonly MeshRenderer[] dustRenderers = new MeshRenderer[12];
         private readonly float[] dustTime = new float[12];
         private readonly Vector3[] dustOrigin = new Vector3[12];
         private int dustCursor;
@@ -102,10 +105,12 @@ namespace MineLoot
         {
             var material = new Material(Resources.Load<Shader>("VoxelShadow")) { mainTexture = art.Texture("dust") };
             materials.Add("Mining dust", material);
+            var shape = new Geometry(); AddFace(shape, Vector3.zero, Vector3.one, 0, 1);Mesh shared=null;
             for (int i = 0; i < dust.Length; i++)
             {
-                var shape = new Geometry(); AddFace(shape, Vector3.zero, Vector3.one, 0, 1);
-                dust[i] = MakeMesh("Mining dust " + i, shape, material).transform;
+                dust[i] = MakeMesh("Mining dust " + i, shape, material,shared).transform;
+                if(shared==null) shared=dust[i].GetComponent<MeshFilter>().sharedMesh;
+                dustRenderers[i]=dust[i].GetComponent<MeshRenderer>();
                 dust[i].gameObject.SetActive(false);
             }
         }
@@ -124,10 +129,12 @@ namespace MineLoot
 
         private void InitializeChips()
         {
+            var chip = new Geometry(); AddCube(chip, Vector3.zero, Vector3.one * .13f, .16f);Mesh shared=null;
             for (int i = 0; i < particleAge.Length; i++)
             {
-                var chip = new Geometry(); AddCube(chip, Vector3.zero, Vector3.one * .13f, .16f);
-                var item = MakeMesh("Ore chip", chip, GetMaterial("coal")); item.SetActive(false); pieces.Add(item);
+                var item = MakeMesh("Ore chip", chip, GetMaterial("coal"),shared);
+                if(shared==null) shared=item.GetComponent<MeshFilter>().sharedMesh;
+                item.SetActive(false);pieces.Add(item);pieceTransforms.Add(item.transform);pieceRenderers.Add(item.GetComponent<MeshRenderer>());
             }
         }
 
@@ -228,7 +235,7 @@ namespace MineLoot
                 float force = broken ? 3.4f : 1.3f;
                 particleVelocity[p] = new Vector3(Mathf.Cos(angle) * force, 1.7f + i % 4 * .35f, Mathf.Sin(angle) * force);
                 particleProperties.SetTexture("_MainTex", texture);
-                pieces[p].GetComponent<MeshRenderer>().SetPropertyBlock(particleProperties);
+                pieceRenderers[p].SetPropertyBlock(particleProperties);
                 pieces[p].SetActive(true);
             }
         }
@@ -255,7 +262,7 @@ namespace MineLoot
                     dust[i].localPosition = dustOrigin[i] + new Vector3(Mathf.Sin(i * 2.4f) * t * .6f, t * .7f, 0);
                     dust[i].localScale = Vector3.one * (.15f + t * (i % 3 + 1) * .8f);
                     particleProperties.Clear(); particleProperties.SetColor("_Color", new Color(1, 1, 1, (1 - t / .65f) * .45f));
-                    dust[i].GetComponent<MeshRenderer>().SetPropertyBlock(particleProperties);
+                    dustRenderers[i].SetPropertyBlock(particleProperties);
                 }
                 hit = Mathf.MoveTowards(hit, 0, Time.unscaledDeltaTime * 6);
                 flash = Mathf.MoveTowards(flash, 0, Time.unscaledDeltaTime * 10);
@@ -285,9 +292,9 @@ namespace MineLoot
                 if (t >= particleLife[i]) { pieces[i].SetActive(false); continue; }
                 Vector3 point = particleOrigin[i] + particleVelocity[i] * t + Vector3.down * (7 * t * t);
                 if (point.y < .08f) point.y = .08f + Mathf.Abs(point.y - .08f) * .2f;
-                pieces[i].transform.localPosition = point;
-                pieces[i].transform.localEulerAngles = new Vector3(i * 27 + t * 180, i * 19 + t * 230, 0);
-                pieces[i].transform.localScale = Vector3.one * (.45f + (i % 5) * .22f) * (1 - Mathf.Pow(t / particleLife[i], 3));
+                pieceTransforms[i].localPosition = point;
+                pieceTransforms[i].localEulerAngles = new Vector3(i * 27 + t * 180, i * 19 + t * 230, 0);
+                pieceTransforms[i].localScale = Vector3.one * (.45f + (i % 5) * .22f) * (1 - Mathf.Pow(t / particleLife[i], 3));
             }
             if (materials.TryGetValue("torch", out var torch)) torch.color = new Color(1.2f + Mathf.Sin(clock * 7) * .08f, 1.07f, .8f);
         }
@@ -308,9 +315,10 @@ namespace MineLoot
             if(key=="flower" || key=="torch") material.color=new Color(1.15f,1.05f,.8f,1);
             materials.Add(key,material); return material;
         }
-        private GameObject MakeMesh(string name, Geometry data, Material material)
+        private GameObject MakeMesh(string name, Geometry data, Material material,Mesh shared=null)
         {
-            var mesh=new Mesh { name=name }; mesh.SetVertices(data.vertices); mesh.SetNormals(data.normals); mesh.SetUVs(0,data.uv); mesh.SetTriangles(data.indices,0); mesh.RecalculateBounds(); meshes.Add(mesh);
+            var mesh=shared;
+            if(mesh==null) {mesh=new Mesh { name=name }; mesh.SetVertices(data.vertices); mesh.SetNormals(data.normals); mesh.SetUVs(0,data.uv); mesh.SetTriangles(data.indices,0); mesh.RecalculateBounds(); meshes.Add(mesh);}
             var go=new GameObject(name,typeof(MeshFilter),typeof(MeshRenderer)); go.layer=Layer; go.transform.SetParent(transform,false);
             go.GetComponent<MeshFilter>().sharedMesh=mesh; go.GetComponent<MeshRenderer>().sharedMaterial=material; return go;
         }

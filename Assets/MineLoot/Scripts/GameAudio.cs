@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,15 +7,29 @@ namespace MineLoot
     // Short original synthesized effects; no downloaded sound assets.
     public sealed class GameAudio : MonoBehaviour
     {
+        public enum Channel { Effects, Mining, Roulette }
+        public const string PreferencesKey = "MineLoot.Audio.v1";
+        [Serializable] private sealed class Preferences
+        {
+            public int version = 1;
+            public float master = 1, mining = 1, roulette = 1;
+            public bool muted;
+        }
         private readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();
-        private AudioSource source;
-        public bool Muted { get; private set; }
+        private readonly AudioSource[] sources = new AudioSource[3];
+        private Preferences preferences = new Preferences();
+        private string preferencesKey = PreferencesKey;
+        private bool dirty;
+        public bool Muted => preferences.muted;
+        public float MasterVolume => preferences.master;
+        public float MiningVolume => preferences.mining;
+        public float RouletteVolume => preferences.roulette;
         public bool Suspended { get; private set; }
         private void Awake()
         {
-            source = gameObject.AddComponent<AudioSource>(); source.playOnAwake = false; source.volume = .22f;
+            for(int i=0;i<sources.Length;i++) { sources[i]=gameObject.AddComponent<AudioSource>();sources[i].playOnAwake=false; }
             if (FindObjectOfType<AudioListener>() == null && Camera.main != null) Camera.main.gameObject.AddComponent<AudioListener>();
-            Muted = !DemoController.SmokeMode && PlayerPrefs.GetInt("LuckyPickaxe.Muted", 0) == 1;
+            LoadPreferences();
             Create("hit", 130, .055f, false); Create("tick", 440, .035f, false);
             Create("reward", 660, .3f, true); Create("upgrade", 330, .22f, true);
             Create("break", 90, .09f, false);
@@ -42,17 +57,65 @@ namespace MineLoot
         }
         public void Toggle()
         {
-            Muted = !Muted;
-            if (!DemoController.SmokeMode) { PlayerPrefs.SetInt("LuckyPickaxe.Muted", Muted ? 1 : 0); PlayerPrefs.Save(); }
+            preferences.muted=!Muted; Changed();
         }
-        public void Play(string name)
+        public void SetVolumes(float master,float mining,float roulette)
         {
-            if (!Muted && !Suspended && clips.TryGetValue(name, out var clip)) source.PlayOneShot(clip);
+            preferences.master=Volume(master);preferences.mining=Volume(mining);preferences.roulette=Volume(roulette);Changed();
+        }
+        public void ResetVolumes()
+        {
+            preferences=new Preferences();Changed();
+        }
+        private static float Volume(float value) => float.IsNaN(value)||float.IsInfinity(value)?1:Mathf.Clamp01(value);
+        public void Play(string name,Channel channel=Channel.Effects)
+        {
+            var source=sources[(int)channel];
+            if (!Muted && !Suspended && source.volume>0 && clips.TryGetValue(name, out var clip)) source.PlayOneShot(clip);
         }
         public void SetSuspended(bool suspended)
         {
-            Suspended = suspended; source.mute = suspended;
-            if (suspended) source.Stop();
+            Suspended = suspended;ApplyVolumes();
+            if(suspended) FlushPreferences();
+        }
+        private void ApplyVolumes()
+        {
+            for(int i=0;i<sources.Length;i++)
+            {
+                var source=sources[i];source.volume=.22f*MasterVolume*(i==1?MiningVolume:i==2?RouletteVolume:1);
+                source.mute=Suspended||Muted;
+                if(source.mute||source.volume==0) source.Stop();
+            }
+        }
+        private bool CanPersist => !DemoController.SmokeMode || preferencesKey!=PreferencesKey;
+        private void LoadPreferences()
+        {
+            preferences=new Preferences();
+            if(CanPersist)
+            {
+                preferences.muted=preferencesKey==PreferencesKey && PlayerPrefs.GetInt("LuckyPickaxe.Muted",0)==1;
+                string json=BrowserPlatform.ReadProgress(preferencesKey)??PlayerPrefs.GetString(preferencesKey,"");
+                try { var saved=JsonUtility.FromJson<Preferences>(json);if(saved!=null&&saved.version==1) preferences=saved; } catch(ArgumentException) { }
+            }
+            preferences.master=Volume(MasterVolume);preferences.mining=Volume(MiningVolume);preferences.roulette=Volume(RouletteVolume);
+            dirty=false;ApplyVolumes();
+        }
+        private void Changed()
+        {
+            dirty=true;ApplyVolumes();
+            // The browser journal is synchronous; only flush PlayerPrefs when the panel closes or focus changes.
+            if(CanPersist) BrowserPlatform.WriteProgress(preferencesKey,JsonUtility.ToJson(preferences));
+        }
+        public void FlushPreferences()
+        {
+            if(!dirty||!CanPersist) return;
+            string json=JsonUtility.ToJson(preferences);BrowserPlatform.WriteProgress(preferencesKey,json);
+            PlayerPrefs.SetString(preferencesKey,json);PlayerPrefs.Save();dirty=false;
+        }
+        internal void UsePreferencesForSmoke(string key)
+        {
+            if(!DemoController.SmokeMode) return;
+            preferencesKey=key;LoadPreferences();
         }
         private void Create(string name, float frequency, float duration, bool melody)
         {
@@ -68,6 +131,9 @@ namespace MineLoot
             }
             var clip = AudioClip.Create(name, samples.Length, 1, rate, false); clip.SetData(samples, 0); clips.Add(name, clip);
         }
-        private void OnDestroy() { foreach (var clip in clips.Values) Destroy(clip); }
+        private void OnApplicationFocus(bool focused) { if(!focused) FlushPreferences(); }
+        private void OnApplicationPause(bool paused) { if(paused) FlushPreferences(); }
+        private void OnApplicationQuit() => FlushPreferences();
+        private void OnDestroy() { FlushPreferences();foreach (var clip in clips.Values) Destroy(clip); }
     }
 }

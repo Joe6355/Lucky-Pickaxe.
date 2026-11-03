@@ -78,7 +78,7 @@ public static partial class DemoTools
                 plate.color = new Color(.13f, .17f, .12f, .9f);
                 StoreSprite(root, art.Get("pick4"), 28, height - 104, 88, 88);
                 var title = StoreRect(root, "Title", 128, height - 110, width - 148, 102).gameObject.AddComponent<Text>();
-                title.font = Resources.Load<Font>("Fonts/Tiny5-Regular"); title.fontSize = 66;
+                title.font = AssetDatabase.LoadAssetAtPath<Font>("Assets/MineLoot/Editor/Fonts/Tiny5-Regular.ttf"); title.fontSize = 66;
                 title.text = "КИРКА УДАЧИ"; title.alignment = TextAnchor.MiddleCenter; title.color = new Color32(255, 237, 173, 255);
                 title.gameObject.AddComponent<Shadow>().effectDistance = new Vector2(3, -3);
                 title.font.RequestCharactersInTexture(title.text, title.fontSize, FontStyle.Normal);
