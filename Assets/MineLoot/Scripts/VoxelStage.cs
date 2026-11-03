@@ -146,7 +146,7 @@ namespace MineLoot
                 float inset = (x + y * 3) % 4 == 0 ? .18f : 0;
                 Block(new Vector3(x, .5f + y, 4.8f + inset), new Vector3(.98f, .98f, 1), "mine-wall");
             }
-            Block(new Vector3(2, 1.5f, 5.1f), new Vector3(3.1f, 3, .2f), "black");
+            Block(new Vector3(2, 1.5f, 5.1f), new Vector3(3.1f, 3, .2f), "tunnel-dark");
             foreach (float x in new[] { .45f, 3.55f })
             {
                 Block(new Vector3(x, 1.35f, 3.15f), new Vector3(.35f, 2.8f, .4f), "mine-timber");
@@ -165,7 +165,7 @@ namespace MineLoot
             }
             Block(new Vector3(0, 3.3f, 4), new Vector3(10.1f, .35f, .5f), "mine-timber");
             // Tracks lead to the lit mine opening, rather than floating on grass.
-            for (int z = -2; z <= 4; z++)
+            for (int z = -2; z <= 6; z++)
             {
                 Block(new Vector3(2, .035f, z), new Vector3(1.55f, .09f, .2f), "mine-timber");
                 foreach (float x in new[] { 1.47f, 2.53f }) Block(new Vector3(x, .11f, z), new Vector3(.08f, .09f, 1.02f), "mine-steel");
@@ -298,9 +298,10 @@ namespace MineLoot
             if(materials.TryGetValue(key,out var material)) return material;
             material=new Material(Resources.Load<Shader>("VoxelWorld")) { name="Voxel "+key };
             material.SetFloat("_Shade", IsExpedition ? .53f : .68f);
-            string tex = key=="black" ? "stone" : key=="failure" ? "metal-dark" : key=="flower" ? "gold" : key=="cloud" || key=="smoke" ? "stone" : key=="torch" ? "gold" : key;
+            string tex = key=="black" || key=="tunnel-dark" ? "stone" : key=="failure" ? "metal-dark" : key=="flower" ? "gold" : key=="cloud" || key=="smoke" ? "stone" : key=="torch" ? "gold" : key;
             material.mainTexture=art.Texture("tex-"+tex);
             if(key=="black") material.color=ColorOf("20262d");
+            if(key=="tunnel-dark") material.color=ColorOf("020609");
             if(key=="failure") material.color=ColorOf("e86b61");
             if(key=="cloud") material.color=new Color(1.35f,1.35f,1.35f,1);
             if(key=="smoke") material.color=ColorOf("bcc0ba");

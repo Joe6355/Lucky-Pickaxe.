@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace MineLoot
 {
@@ -16,6 +17,53 @@ namespace MineLoot
         public string InterfaceLanguage { get; private set; } = "ru";
         public bool IsPaused => applicationPaused;
         public bool RewardedVideoPending => !string.IsNullOrEmpty(rewardedRequest);
+        private Button accountButton,accountLoginButton;
+        private Text accountStatusLabel;
+        private bool accountAvailable,accountPending;
+        private string accountStatus="unavailable",accountName="";
+        private System.Func<bool> authorizationForSmoke;
+        [System.Serializable] private sealed class AccountPayload { public bool available; public string status,name; }
+        public void OnBrowserAccount(string json)
+        {
+            AccountPayload data;try { data=JsonUtility.FromJson<AccountPayload>(json); } catch { return; }
+            if(data==null || string.IsNullOrEmpty(data.status)) return;
+            bool returning=accountPending && data.status!="pending";
+            accountAvailable=data.available;accountStatus=data.status;accountPending=data.status=="pending";
+            accountName=(data.name??"").Replace("<","").Replace(">","").Trim();if(accountName.Length>40) accountName=accountName.Substring(0,40);
+            if(returning) { game.RecordSession(SessionUtc);Persist();Flush(true); }
+            RefreshAccount();ApplyPlatformPause();
+        }
+        private void ShowYandexAccount()
+        {
+            if(applicationPaused || modal!=null) return;holding=false;
+            modal=CreateModal("Yandex account modal");Card(modal.transform,"Yandex account card",24,148,432,644,Panel);
+            Label(modal.transform,"АККАУНТ ЯНДЕКСА",44,168,392,40,26,Ink,FontStyle.Bold);
+            accountStatusLabel=Label(modal.transform,"",44,238,392,96,22,Ink,FontStyle.Bold);
+            Label(modal.transform,"Подключи профиль Яндекса: имя аккаунта появится в игре.\n\nСохранение хранится на этом устройстве.",44,356,392,128,19,Muted);
+            accountLoginButton=ButtonAt(modal.transform,"ВОЙТИ ЧЕРЕЗ ЯНДЕКС",44,560,392,48,BeginYandexLogin,Hex("dfc285"),Ink);accountLoginButton.name="Authorize Yandex";
+            ButtonAt(modal.transform,"Продолжить игру",44,704,392,44,CloseModal,Panel,Ink).name="Close Yandex account";
+            RefreshAccount();
+        }
+        private void BeginYandexLogin()
+        {
+            if(applicationPaused || accountPending || !accountAvailable || accountStatus=="authorized") return;
+            Flush(true);accountPending=true;accountStatus="pending";RefreshAccount();ApplyPlatformPause();
+            bool accepted=SmokeMode && authorizationForSmoke!=null?authorizationForSmoke():BrowserPlatform.Authorize();
+            if(!accepted) OnBrowserAccount(JsonUtility.ToJson(new AccountPayload{available=accountAvailable,status="guest",name=""}));
+        }
+        private void RefreshAccount()
+        {
+            if(accountButton==null) return;
+            accountButton.GetComponentInChildren<Text>().text=accountStatus=="authorized"?"ЯНДЕКС · "+(accountName.Length>0?accountName:"АККАУНТ ПОДКЛЮЧЁН"):accountPending?"ЯНДЕКС · ВХОД…":"ВОЙТИ В ЯНДЕКС";
+            if(modal==null || modal.name!="Yandex account modal") return;
+            accountStatusLabel.text=accountStatus=="authorized"?"Вход выполнен\n"+(accountName.Length>0?accountName:"Игрок Яндекса"):accountPending?"Открывается вход через Яндекс…":!accountAvailable?"Вход доступен в браузерной версии на Яндекс Играх.":accountStatus=="checking"?"Проверяем аккаунт…":"Вы играете как гость.\nМожно войти кнопкой ниже.";
+            accountLoginButton.gameObject.SetActive(accountStatus!="authorized");accountLoginButton.interactable=accountAvailable&&!accountPending&&accountStatus!="checking";
+        }
+        internal void ConfigureAuthorizationForSmoke(System.Func<bool> authorize)
+        {
+            if(!SmokeMode) return;authorizationForSmoke=authorize;
+            OnBrowserAccount(JsonUtility.ToJson(new AccountPayload{available=authorize!=null,status=authorize!=null?"guest":"unavailable",name=""}));
+        }
         private float PlayDelta => applicationPaused ? 0 : Time.unscaledDeltaTime;
 
         private IEnumerator Start()
@@ -121,7 +169,7 @@ namespace MineLoot
 
         private void ApplyPlatformPause()
         {
-            bool paused = enginePaused || browserPaused || RewardedVideoPending;
+            bool paused = enginePaused || browserPaused || RewardedVideoPending || accountPending;
             if (paused == applicationPaused) { BrowserPlatform.Gameplay(!paused); return; }
             if (paused) { holding = false; Flush(true); }
             applicationPaused = paused; skipEconomyFrame = true;

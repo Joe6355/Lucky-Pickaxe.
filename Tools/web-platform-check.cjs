@@ -32,6 +32,11 @@ function fixture(settings = {}) {
     if (settings.adThrows) throw new Error("Video unavailable");
     if (settings.adSynchronous) { callbacks.onRewarded(); callbacks.onClose(); }
   } };
+  const authRequests=[];let playerAuthorized=!!settings.authorized,playerCalls=0;
+  if(settings.auth) {
+    sdk.getPlayer=()=>{playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));return Promise.resolve({isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр"});};
+    sdk.auth={openAuthDialog(){if(settings.authThrows) throw new Error("Dialog unavailable");return new Promise((resolve,reject)=>authRequests.push({resolve(){playerAuthorized=true;resolve();},reject}));}};
+  }
   Object.assign(root, {
     document: doc, location: { hostname: settings.host || "games.example", search: settings.search || "" },
     console: { warn() {}, error() {} },
@@ -51,7 +56,7 @@ function fixture(settings = {}) {
     if (method === "OnBrowserPause" && !settings.manualGameplay) api.setGameplay(value === "0");
     if (settings.onMessage) settings.onMessage(method, value, api);
   } };
-  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, emitSDK(event) { sdkEvents.get(event)?.(); }, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
+  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
 function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
@@ -247,6 +252,25 @@ async function run() {
   check(JSON.stringify(f.gameplayCalls) === '["start","stop"]' && f.api.status().paused && !f.api.status().gameplayReported, "A synchronous SDK pause during GameplayAPI.start produces one stop without recursive start signals");
   f.emitSDK("game_api_resume");
   check(JSON.stringify(f.gameplayCalls) === '["start","stop","start"]' && !f.api.status().paused, "Resume after a synchronous SDK event restores one active gameplay phase");
+
+  async function settleAccount(){for(let i=0;i<12;i++) await Promise.resolve();}
+  f=fixture({auth:true});await start(f);await settleAccount();
+  check(f.api.status().accountStatus==="guest" && f.authRequests.length===0,"Reading a guest profile never opens authentication automatically");
+  check(f.api.authorize() && f.api.status().authorizationPending && f.api.status().paused,"Explicit login opens the SDK dialog and pauses gameplay");
+  check(!f.api.authorize() && !f.api.showRewarded("during-auth") && f.authRequests.length===1,"Authentication cannot overlap another dialog or video");
+  f.root.emit("blur");f.authRequests[0].resolve();await settleAccount();
+  check(f.api.status().accountStatus==="authorized" && !f.api.status().authorizationPending && f.api.status().paused,"SDK authorization keeps an independent browser pause intact");
+  f.root.emit("focus");check(!f.api.status().paused && !f.api.authorize() && f.playerCalls===2,"Successful login refreshes the SDK player once and removes the authorization offer");
+  f=fixture({auth:true});await start(f);await settleAccount();f.api.authorize();f.authRequests[0].reject(new Error("Cancelled"));await settleAccount();
+  check(f.api.status().accountStatus==="guest" && !f.api.status().paused && !f.api.status().failed,"Cancelling login resumes the existing guest game without an SDK failure");
+  f=fixture({auth:true,authThrows:true});await start(f);await settleAccount();
+  check(!f.api.authorize() && !f.api.status().paused && !f.api.status().authorizationPending,"A synchronous dialog error cannot leave gameplay paused");
+  f=fixture({auth:true,playerFails:true});await start(f);await settleAccount();
+  check(f.api.status().accountStatus==="guest" && !f.api.status().failed,"Unavailable profile data does not block game readiness");
+  f=fixture({auth:true});await start(f);await settleAccount();f.api.authorize();f.api.dispose();const callsAfterAuthDispose=f.calls.length;
+  f.authRequests[0].resolve();await settleAccount();
+  check(f.calls.length===callsAfterAuthDispose && f.playerCalls===1 && f.api.status().disposed,"A late login result cannot restart a disposed game or fetch another player");
+  f=fixture();await start(f);check(!f.api.authorize() && f.api.status().accountStatus==="unavailable","A missing SDK auth provider is reported without a fake login");
 
   fs.mkdirSync(path.join(__dirname, "../Logs"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));

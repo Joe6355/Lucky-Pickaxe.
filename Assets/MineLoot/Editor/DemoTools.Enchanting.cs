@@ -7,19 +7,21 @@ public static partial class DemoTools
     private static void VerifyEnchantingAndBatches(Action<bool,string> check)
     {
         var game = new MineGame(ProgressStore.Decode("{\"version\":12,\"coins\":745,\"tickets\":400,\"hits\":7,\"pressLevel\":2,\"experience\":700,\"upgradeLevel\":20,\"oreDamage\":12}"));
-        check(game.Progress.version == 14 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
+        check(game.Progress.version == 15 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
         game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         check(game.Progress.hits == 35 && game.Progress.enchantingExperience == 700, "v13 reload neither multiplies the counter nor grants old XP again");
         game = new MineGame(new MineProgress { enchantingExperience = 10000, coins = 100000, experience = 700 });
-        string before = JsonUtility.ToJson(game.Progress); int offer = game.EnchantmentOffer(2); long cost = game.EnchantmentCost(2);
-        check(game.EnchantmentOffer(2) == offer && JsonUtility.ToJson(game.Progress) == before, "Offer preview never changes progress or rerolls its result");
-        try { game.Enchant(2, () => double.NaN); } catch (ArgumentOutOfRangeException) { }
-        check(JsonUtility.ToJson(game.Progress) == before, "An invalid enchantment RNG is atomic");
-        check(game.Enchant(2, () => .6) && game.Progress.enchantments == offer && game.Progress.enchantingExperience == 10000-cost && game.Progress.experience == 700, "Enchanting pays its displayed XP and applies exactly the preview without reducing miner level");
-        long nextCost = game.EnchantmentCost(2); before=JsonUtility.ToJson(game.Progress);
-        check(nextCost > cost && new MineGame(ProgressStore.Decode(before)).EnchantmentOffer(2) == game.EnchantmentOffer(2), "Rerolls cost more and their next offers survive reload");
-        int oldSet=game.Progress.enchantments;
-        game.Progress.upgradeLevel=1; check(game.Upgrade() && game.PickTier==1 && game.Progress.enchantments==oldSet, "Material improvements retain the actual pick's enchantments");
+        string before=JsonUtility.ToJson(game.Progress);long cost=game.EnchantmentCost(2);
+        check(JsonUtility.ToJson(game.Progress)==before,"Reading hidden grade and cost never spends or draws enchantments");
+        try { game.Enchant(2,()=>double.NaN); } catch(ArgumentOutOfRangeException) { }
+        check(JsonUtility.ToJson(game.Progress)==before,"An invalid enchantment RNG is atomic");
+        check(game.Enchant(2,()=>.6) && game.Progress.enchantments!=0 && game.Progress.enchantingExperience==10000-cost && game.Progress.experience==700,"A paid hidden roll applies random enchantments without lowering mine level");
+        long nextCost=game.EnchantmentCost(2);before=JsonUtility.ToJson(game.Progress);
+        var restored=new MineGame(ProgressStore.Decode(before));
+        check(nextCost>cost && restored.EnchantmentCost(2)==nextCost && restored.Progress.enchantments==game.Progress.enchantments,"Paid effects and the increased reroll cost survive reload");
+        int oldSet=game.Progress.enchantments;game.Progress.upgradeLevel=0;
+        check(game.Upgrade() && game.PickTier==0 && game.Progress.enchantments==oldSet,"An upgrade within the same material retains its enchantments");
+        check(game.Upgrade() && game.PickTier==1 && game.Progress.enchantments==0 && game.Progress.enchantCount==0 && game.Progress.pickWear==0,"A new pick material removes its old enchantments and resets wear and reroll pricing");
         game=new MineGame(new MineProgress { enchantments=3<<4 });
         for(int i=0;i<40;i++) game.Mine();
         check(game.Progress.pickWear==10, "Unbreaking III consumes durability once per four actual mining hits");
@@ -76,6 +78,46 @@ public static partial class DemoTools
         check(!game.ClaimVideoTickets(1800000000) && game.Progress.videoTicketClaims==0,"Ten-ticket gift refuses an overflowing wallet without consuming the cooldown");
         game=new MineGame(new MineProgress {tickets=999990});
         check(game.ClaimVideoTickets(1800000000) && game.Progress.tickets==1000000,"Ten-ticket gift fits exactly at the ticket limit");
+    }
+
+    private static void VerifyMetaExpansion(Action<bool,string> check)
+    {
+        int total=0;for(int i=0;i<MineGame.PrestigeUpgradeCount;i++) total+=MineGame.PrestigeUpgradeAt(i).cost;
+        var game=new MineGame(new MineProgress{prestigeCount=1,crystals=total,totalCrystals=total});
+        for(int i=0;i<MineGame.PrestigeUpgradeCount;i++)
+        {
+            int coins=game.Progress.crystals;check(game.BuyPrestigeUpgrade(i) && game.Progress.crystals==coins-MineGame.PrestigeUpgradeAt(i).cost && !game.BuyPrestigeUpgrade(i),"Permanent bonus pays its price once: "+i);
+            game=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
+        }
+        check(game.Progress.crystals==0 && game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All eighteen permanent flags survive reload without free crystals");
+        check(game.EnchantmentCost(0)==52 && game.EnchantmentDiscountPercent==25 && game.PickLifetime==480 && game.RareOreChance==30 && game.PrestigeExperiencePercent==140,"Tool and mining bonuses change actual prices, lifetime, rare chance and XP");
+        game.Progress.pickWear=480;check(game.RepairCost==40,"Permanent workshop cuts a fully worn stone pick repair from eighty to forty coins");
+        game.Progress.experience=MineGame.ExperienceForLevel(50);check(game.Prestige(()=>.6) && game.Progress.tickets==12 && game.Progress.enchantingExperience==300 && game.PickLifetime==480,"A reset grants the owned ticket and XP starter bonuses with the durable stone pick");
+        var legacy=new MineGame(new MineProgress{version=14,prestigeCount=1,prestigeUpgrades=511,coins=745,tickets=4,enchantments=3,enchantCount=2,enchantingExperience=700});
+        check(legacy.Progress.version==15 && legacy.Progress.prestigeUpgrades==511 && legacy.Progress.coins==745 && legacy.Progress.tickets==4 && legacy.Progress.enchantments==3 && legacy.Progress.enchantingExperience==700,"v14 migration keeps owned perks, money and current enchantments until an actual material replacement");
+        var normal=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50)});
+        var lucky=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50),prestigeCount=1,prestigeUpgrades=(1<<12)|(1<<13)});
+        int normalRare=0,luckyRare=0;
+        for(int block=0;block<800;block++)
+        {
+            normal.Progress.oreDamage=normal.OreHealth-1;lucky.Progress.oreDamage=lucky.OreHealth-1;normal.Mine();lucky.Mine();
+            if(normal.Progress.oreKind==3||normal.Progress.oreKind==4||normal.Progress.oreKind==8) normalRare++;
+            if(lucky.Progress.oreKind==3||lucky.Progress.oreKind==4||lucky.Progress.oreKind==8) luckyRare++;
+            if(lucky.IsMiningStone!=normal.IsMiningStone) throw new Exception("Rare boost changed the XP-only stone cadence");
+        }
+        check(luckyRare>normalRare+40,"Permanent ore luck increases real rare finds while preserving stone cadence");
+        var low=new MineGame(new MineProgress{prestigeCount=1,prestigeUpgrades=1<<12});
+        for(int block=0;block<30;block++) {low.Progress.oreDamage=low.OreHealth-1;low.Mine();check(low.IsOreUnlocked(low.Progress.oreKind),"Rare bonus cannot grant locked resource "+block);}
+        var signatures=new System.Collections.Generic.HashSet<int>();bool withoutEfficiency=false;
+        for(int seed=1;seed<=160;seed++)
+        {
+            var roll=new MineGame(new MineProgress{enchantingExperience=10000});roll.Enchant(2,()=>seed/200d);
+            signatures.Add(roll.Progress.enchantments);withoutEfficiency|=roll.EnchantmentLevel(EnchantKind.Efficiency)==0;
+            foreach(EnchantKind kind in Enum.GetValues(typeof(EnchantKind))) if(roll.EnchantmentLevel(kind)>MineGame.EnchantmentMax(kind)) throw new Exception("Invalid rolled enchantment level");
+        }
+        check(signatures.Count>45 && withoutEfficiency,"Hidden enchanting rolls vary effects and levels instead of guaranteeing Efficiency");
+        game=new MineGame(new MineProgress{coins=100000,upgradeLevel=1,enchantments=5,enchantingExperience=300});game.BuyUpgrade(UpgradeKind.Pickaxe,5);
+        check(game.PickTier==2 && !game.IsEnchanted && game.Progress.enchantingExperience==300,"Bulk material replacements clear enchantments once without spending the XP wallet");
     }
 
 }

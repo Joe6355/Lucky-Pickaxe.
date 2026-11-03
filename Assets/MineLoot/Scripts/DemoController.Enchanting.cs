@@ -16,6 +16,7 @@ namespace MineLoot
         private RawImage enchantingDisplay;
         private VoxelStage enchantingWorld;
         private Image enchantingPick;
+        private Button enchantingTableHelp;
         private Text enchantingXp, enchantingCurrent, enchantingHint, draftToolsState;
         private readonly Image[] enchantCards = new Image[3];
         private readonly Text[] enchantDescriptions = new Text[3];
@@ -35,6 +36,8 @@ namespace MineLoot
             var world = new GameObject("Voxel enchanting room"); world.transform.SetParent(transform, false);
             enchantingWorld = world.AddComponent<VoxelStage>(); enchantingWorld.Initialize(art, false, true);
             enchantingDisplay.texture = enchantingWorld.Target;
+            enchantingTableHelp=ButtonAt(window.transform,"",86,84,260,110,ShowEnchantmentGuide,Color.clear,Ink);
+            enchantingTableHelp.name="Enchanting table help";enchantingTableHelp.image.sprite=null;enchantingTableHelp.image.color=new Color(1,1,1,.001f);
             var slot = Card(window.transform, "Equipped enchanting slot", 334, 12, 84, 94, Hex("ddd2e5"));
             enchantingPick = Icon(slot.transform, PickSprites[0], 16, 4, 52, 52);
             Label(slot.transform, "Кирка", 4, 62, 76, 24, 16, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
@@ -44,7 +47,7 @@ namespace MineLoot
             {
                 int slotIndex = i;
                 enchantCards[i] = Card(enchantingArea.transform, "Enchantment offer " + i, 24, 458 + i * 80, 432, 72, Hex("e1d7e8"));
-                Label(enchantCards[i].transform, new[] { "ЧАРЫ I", "ЧАРЫ II", "ЧАРЫ III" }[i], 12, 4, 250, 25, 19, Ink, FontStyle.Bold);
+                Label(enchantCards[i].transform, new[] { "СТЕПЕНЬ I", "СТЕПЕНЬ II", "СТЕПЕНЬ III" }[i], 12, 4, 250, 25, 19, Ink, FontStyle.Bold);
                 enchantDescriptions[i] = Label(enchantCards[i].transform, "", 12, 30, 258, 38, 16, Ink);
                 enchantButtons[i] = ButtonAt(enchantCards[i].transform, "", 282, 12, 138, 48, () => EnchantEquippedPick(slotIndex), Hex("c4acd8"), Ink);
                 enchantButtons[i].name = "Enchant offer " + i; enchantButtons[i].GetComponentInChildren<Text>().fontSize = 17;
@@ -59,6 +62,7 @@ namespace MineLoot
             float left = (width - 80) * .52f, right = width - left - 72;
             Frame(enchantingArea.GetComponent<RectTransform>(), 0, 0, width, 740);
             Frame(enchantingWindow, 24, 130, left, 440);
+            ButtonFrame(enchantingTableHelp,left*.2f,198,left*.6f,220);
             Frame(enchantingWindow, "Equipped enchanting slot", left - 100, 14, 84, 94);
             Frame(enchantingXp.rectTransform, 24, 582, left, 38); FontSize(enchantingXp, 25);
             Frame(enchantingCurrent.rectTransform, 24, 630, left, 76); FontSize(enchantingCurrent, 20);
@@ -116,25 +120,69 @@ namespace MineLoot
         {
             if (enchantingArea == null) return;
             enchantingXp.text = "Опыт на чары: " + ShortAmount(game.Progress.enchantingExperience);
-            enchantingCurrent.text = "На кирке: " + DescribeEnchantments(game.Progress.enchantments) + "\nПрочность " + game.PickCondition + "/" + game.PickLifetime;
+            enchantingCurrent.text = "На кирке: " + DescribeEnchantments(game.Progress.enchantments,true) + "\nНовый материал кирки снимет чары.";
             enchantingPick.sprite = art.Get(PickSprites[game.PickTier]);
             foreach (var image in new[] { clickPick, workshopPick, equippedIcon, enchantingPick }) image.material = game.IsEnchanted ? pickGlint : null;
             enchantingWorld.SetEnchantment(game.IsEnchanted);
             for (int i = 0; i < 3; i++)
             {
-                enchantDescriptions[i].text = DescribeEnchantments(game.EnchantmentOffer(i), true);
-                enchantButtons[i].GetComponentInChildren<Text>().text = (game.IsEnchanted ? (wideLayout ? "Заменить · " : "Заменить\n") : (wideLayout ? "Зачаровать · " : "Зачаровать\n")) + ShortAmount(game.EnchantmentCost(i)) + " опыта";
+                enchantDescriptions[i].text = ShortAmount(game.EnchantmentCost(i)) + " опыта";
+                enchantButtons[i].GetComponentInChildren<Text>().text = game.IsEnchanted ? "ЗАМЕНИТЬ" : "ЗАЧАРОВАТЬ";
                 enchantButtons[i].interactable = !EconomyBusy && !applicationPaused && game.CanEnchant(i);
             }
-            enchantingHint.text = "Перезачарование заменяет чары и стоит дороже.";
+            enchantingHint.text = "Нажми на стол — описание зачарований";
             draftToolsState.text = "Монеты: " + ShortAmount(game.Progress.coins) + "\nОпыт на чары: " + ShortAmount(game.Progress.enchantingExperience) + "\nЖетоны: " + game.Progress.tickets;
         }
         public void EnchantEquippedPick(int slot)
         {
-            if (applicationPaused || EconomyBusy || modal != null || !game.Enchant(slot, () => random.NextDouble())) return;
-            Persist(); Flush(); enchantingWorld.PlayEnchantment(); sounds.Play("rare"); Refresh();
+            if(applicationPaused || EconomyBusy || modal!=null) return;
+            long cost=game.EnchantmentCost(slot);
+            if(!game.Enchant(slot,()=>random.NextDouble())) return;
+            Persist();Flush();enchantingWorld.PlayEnchantment();sounds.Play("rare");Refresh();ShowEnchantmentResult(cost);
             Notice("КИРКА ЗАЧАРОВАНА", DescribeEnchantments(game.Progress.enchantments, true));
         }
+        private static string EnchantmentEffect(EnchantKind kind,int level)
+        {
+            switch(kind)
+            {
+                case EnchantKind.Efficiency:return "+"+(level*25)+"% к урону по камню и руде";
+                case EnchantKind.Unbreaking:return "Тратит прочность раз в "+(level+1)+" удара";
+                case EnchantKind.Fortune:return "+"+(level*20)+"% монет за разбитую руду";
+                default:return "1 опыт чинит 2 ед. прочности кирки";
+            }
+        }
+        private void ShowEnchantmentResult(long paid)
+        {
+            modal=CreateModal("Enchantment result modal");Card(modal.transform,"Enchantment result card",24,104,432,752,Panel);
+            Label(modal.transform,"ЧАРЫ ОТКРЫТЫ",44,120,392,38,27,Ink,FontStyle.Bold,TextAnchor.MiddleCenter);
+            var pick=Icon(modal.transform,PickSprites[game.PickTier],192,166,96,96);pick.material=pickGlint;
+            int row=0;
+            foreach(EnchantKind kind in Enum.GetValues(typeof(EnchantKind)))
+            {
+                int level=game.EnchantmentLevel(kind);if(level==0) continue;
+                var card=Card(modal.transform,"Enchantment revealed "+kind,44,284+row++*82,392,74,Hex("ded3eb"));
+                Label(card.transform,MineGame.EnchantmentName(kind)+" "+new[]{"","I","II","III","IV","V"}[level],12,6,368,27,21,Ink,FontStyle.Bold);
+                Label(card.transform,EnchantmentEffect(kind,level),12,35,368,32,17,Ink);
+            }
+            Label(modal.transform,"Списано: "+paid+" опыта · осталось: "+ShortAmount(game.Progress.enchantingExperience),44,636,392,44,18,Muted,FontStyle.Normal,TextAnchor.MiddleCenter);
+            ButtonAt(modal.transform,"ОСТАВИТЬ ЧАРЫ",44,748,392,48,CloseModal,Hex("bad5ca"),Ink).name="Close enchantment result";
+        }
+        private void ShowEnchantmentGuide()
+        {
+            if(applicationPaused || modal!=null) return;
+            modal=CreateModal("Enchantment guide modal");Card(modal.transform,"Enchantment guide card",24,105,432,750,Panel);
+            Label(modal.transform,"КАК РАБОТАЮТ ЧАРЫ",44,120,392,40,24,Ink,FontStyle.Bold);
+            string[] rules={"Каждый уровень добавляет 25% к урону главной кирки. Максимум V. Быстрее ломает камень и руду.","Уровень I расходует прочность раз в 2 удара, II — раз в 3, III — раз в 4. Урон не меняется.","Каждый уровень добавляет 20% монет за разрушенный блок руды. Максимум III. Камень даёт только опыт.","Часть полученного опыта ремонтирует кирку: 1 опыт восстанавливает 2 прочности. Этот опыт не копится на новые чары."};
+            for(int i=0;i<4;i++)
+            {
+                var card=Card(modal.transform,"Enchantment rule "+i,44,176+i*136,392,126,Hex("ded3eb"));
+                Label(card.transform,MineGame.EnchantmentName((EnchantKind)i),12,6,368,28,21,Ink,FontStyle.Bold);
+                Label(card.transform,rules[i],12,40,368,78,18,Ink);
+            }
+            Label(modal.transform,"Новый материал кирки снимает все чары.",44,730,392,28,17,Muted);
+            ButtonAt(modal.transform,"Понятно",44,790,392,40,CloseModal,Hex("bad5ca"),Ink).name="Close enchantment guide";
+        }
+
         public void RepairEquippedPick()
         {
             if (applicationPaused || EconomyBusy || modal != null || !game.RepairPick()) return;

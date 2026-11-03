@@ -10,7 +10,12 @@ namespace MineLoot
         private readonly float[] mineBuildTime = new float[4], forgeBuildTime = new float[4];
         private readonly Transform[] cartWheels = new Transform[4], forgeSmoke = new Transform[6];
         private Transform cart, hoistWheel, hoistBucket, hoistRope;
-        private MeshRenderer cartBody, cartCargo;
+        private MeshRenderer cartBody;
+        private readonly MeshRenderer[] cartCargo=new MeshRenderer[7];
+        private MeshRenderer[] cartRenderers; private MaterialPropertyBlock cartProperties;
+        private float cartClock;private bool cartInTunnel;
+        public float CartLoadFraction {get;private set;}
+        public string CartPhase {get;private set;}="loading";
         private Vector3 smokeOrigin;
         private readonly Transform[] workers = new Transform[3], workerTools = new Transform[3], veinSparks = new Transform[6];
         private Transform drillRig, drillSpindle;
@@ -22,7 +27,7 @@ namespace MineLoot
         public int DevelopmentTier { get; private set; } = -1;
         public int ForgeStage { get; private set; }
         public int OwnedMeshCount => meshes.Count;
-        public bool CartVisible => cart != null && cart.gameObject.activeSelf;
+        public bool CartVisible => cart != null && cart.gameObject.activeSelf && !cartInTunnel;
         public Vector3 CartPosition => cart == null ? Vector3.zero : cart.localPosition;
         public int VisibleMineStructures
         {
@@ -64,12 +69,13 @@ namespace MineLoot
             }
             cart = mineStructures[0] = DevelopmentGroup("Working ore cart", batch, new Vector3(2, 0, 1.5f));
             foreach (var renderer in cart.GetComponentsInChildren<MeshRenderer>(true)) if (renderer.sharedMaterial == GetMaterial("planks")) cartBody = renderer;
-            var load = new Geometry();
-            AddCube(load, new Vector3(-.2f, .86f, -.25f), new Vector3(.45f, .42f, .45f), 1);
-            AddCube(load, new Vector3(.23f, .91f, .15f), new Vector3(.42f, .46f, .48f), 1);
-            AddCube(load, new Vector3(-.15f, .85f, .4f), Vector3.one * .36f, 1);
-            cartCargo = MakeMesh("Cart ore load", load, GetMaterial("coal")).GetComponent<MeshRenderer>();
-            cartCargo.transform.SetParent(cart, false);
+            for(int i=0;i<cartCargo.Length;i++)
+            {
+                var load=new Geometry();AddCube(load,Vector3.zero,Vector3.one*(i<4?.3f:.34f),1);
+                cartCargo[i]=MakeMesh("Cart ore chunk "+i,load,GetMaterial("mine-coal")).GetComponent<MeshRenderer>();
+                cartCargo[i].transform.SetParent(cart,false);
+                cartCargo[i].transform.localPosition=i<4?new Vector3(i%2==0?-.18f:.18f,.69f,i<2?-.24f:.24f):new Vector3(i==4?-.19f:i==5?.18f:0,.93f,i==4?-.2f:i==5?.21f:.02f);
+            }
             for (int i = 0; i < cartWheels.Length; i++)
             {
                 var wheel = new Geometry();
@@ -79,6 +85,8 @@ namespace MineLoot
                 cartWheels[i].SetParent(cart, false);
                 cartWheels[i].localPosition = new Vector3(i % 2 == 0 ? -.56f : .56f, .28f, i < 2 ? -.4f : .4f);
             }
+
+            cartRenderers=cart.GetComponentsInChildren<MeshRenderer>(true);cartProperties=new MaterialPropertyBlock();
 
             batch = new Dictionary<string, Geometry>();
             foreach (float x in new[] { .45f, 3.55f })
@@ -90,26 +98,27 @@ namespace MineLoot
             foreach (float x in new[] { .7f, 3.3f }) Block(new Vector3(x, 2.44f, 2.8f), Vector3.one * .15f, "metal-gold", batch: batch);
             mineStructures[1] = DevelopmentGroup("Reinforced mine entrance", batch, Vector3.zero, new Vector3(2, 0, 3.05f));
 
-            batch = new Dictionary<string, Geometry>();
-            foreach (float x in new[] { -.58f, .58f }) Block(new Vector3(x, 1.25f, 0), new Vector3(.2f, 2.5f, .28f), "beam", batch: batch);
-            Block(new Vector3(-.3f, 2.5f, 0), new Vector3(2.1f, .27f, .32f), "planks", batch: batch);
-            Block(new Vector3(0, .36f, 0), new Vector3(1.4f, .32f, .92f), "stone", batch: batch);
-            mineStructures[2] = DevelopmentGroup("Timber winding hoist", batch, new Vector3(4, 0, 1.1f));
-            var spool = new Geometry();
-            AddCube(spool, Vector3.zero, new Vector3(.74f, .16f, .19f), 1);
-            AddCube(spool, Vector3.zero, new Vector3(.16f, .74f, .19f), 1);
-            AddCube(spool, Vector3.zero, Vector3.one * .29f, 1);
-            hoistWheel = MakeMesh("Hoist hand wheel", spool, GetMaterial("metal-gold")).transform;
-            hoistWheel.SetParent(mineStructures[2], false); hoistWheel.localPosition = new Vector3(.2f, 1, -.3f);
-            var bucket = new Geometry();
-            AddCube(bucket, Vector3.zero, new Vector3(.43f, .23f, .43f), 1);
-            foreach (float x in new[] { -.16f, .16f }) AddCube(bucket, new Vector3(x, .2f, 0), new Vector3(.06f, .3f, .06f), 1);
-            AddCube(bucket, new Vector3(0, .35f, 0), new Vector3(.38f, .06f, .06f), 1);
-            hoistBucket = MakeMesh("Hoist ore bucket", bucket, GetMaterial("metal-gold")).transform;
-            hoistBucket.SetParent(mineStructures[2], false);
-            var rope = new Geometry(); AddCube(rope, Vector3.zero, new Vector3(.06f, 1, .06f), 1);
-            hoistRope = MakeMesh("Hoist cable", rope, GetMaterial("metal-dark")).transform;
-            hoistRope.SetParent(mineStructures[2], false);
+            batch=new Dictionary<string,Geometry>();
+            Block(new Vector3(0,.12f,0),new Vector3(1.5f,.24f,1.25f),"mine-wall",batch:batch);
+            foreach(float x in new[]{-.59f,.59f}) Block(new Vector3(x,.94f,.1f),new Vector3(.2f,1.4f,.8f),"mine-timber",batch:batch);
+            Block(new Vector3(0,1.65f,.1f),new Vector3(1.5f,.2f,.95f),"mine-timber",batch:batch);
+            foreach(float x in new[]{-.6f,.6f}) Block(new Vector3(x,.92f,-.32f),new Vector3(.24f,.18f,.08f),"mine-steel",batch:batch);
+            mineStructures[2]=DevelopmentGroup("Mining cable winch",batch,new Vector3(3.4f,0,1.7f));
+            var winchShape=new Geometry();AddWheel(winchShape,.32f,.12f);
+            hoistWheel=MakeMesh("Winch crank wheel",winchShape,GetMaterial("metal-gold")).transform;
+            hoistWheel.SetParent(mineStructures[2],false);hoistWheel.localPosition=new Vector3(.73f,1.12f,.1f);
+            var drum=new Geometry();AddWheel(drum,.3f,.92f);
+            var drumObject=MakeMesh("Winch cable drum",drum,GetMaterial("mine-steel")).transform;drumObject.SetParent(hoistWheel,false);drumObject.localPosition=new Vector3(-.73f,0,0);
+            var bucket=new Geometry();AddCube(bucket,new Vector3(0,.04f,0),new Vector3(.46f,.08f,.46f),1);
+            foreach(float x in new[]{-.2f,.2f}) AddCube(bucket,new Vector3(x,.21f,0),new Vector3(.06f,.32f,.46f),1);
+            foreach(float z in new[]{-.2f,.2f}) AddCube(bucket,new Vector3(0,.21f,z),new Vector3(.34f,.32f,.06f),1);
+            foreach(float x in new[]{-.18f,.18f}) AddCube(bucket,new Vector3(x,.46f,0),new Vector3(.035f,.28f,.035f),1);
+            AddCube(bucket,new Vector3(0,.6f,0),new Vector3(.38f,.035f,.035f),1);
+            hoistBucket=MakeMesh("Winch ore bucket",bucket,GetMaterial("mine-steel")).transform;hoistBucket.SetParent(mineStructures[2],false);
+            var bucketOre=new Geometry();AddCube(bucketOre,new Vector3(0,.2f,0),Vector3.one*.29f,1);
+            MakeMesh("Winch bucket ore",bucketOre,GetMaterial("mine-copper")).transform.SetParent(hoistBucket,false);
+            var rope=new Geometry();AddCube(rope,Vector3.zero,new Vector3(.045f,1,.045f),1);
+            hoistRope=MakeMesh("Winch lifting cable",rope,GetMaterial("metal-dark")).transform;hoistRope.SetParent(mineStructures[2],false);
 
             batch = new Dictionary<string, Geometry>();
             foreach (float x in new[] { .45f, 3.55f })
@@ -131,37 +140,37 @@ namespace MineLoot
             var emblem=MakeMesh("Mounted mineral emblem",crest,GetMaterial("emblem-cyan")).transform;
             emblem.SetParent(mineStructures[3],false); emblem.localPosition=new Vector3(0,.34f,-.275f);
 
-            var forgeOrigin = new Vector3(-2.85f, 0, .7f);
-            batch = new Dictionary<string, Geometry>();
-            Block(new Vector3(0, .1f, 0), new Vector3(2.2f, .2f, 1.65f), "stone", batch: batch);
-            Block(new Vector3(-.45f, .65f, .15f), new Vector3(.95f, 1.1f, 1), "brick", batch: batch);
-            Block(new Vector3(-.45f, 1.27f, .15f), new Vector3(1.1f, .18f, 1.1f), "stone", batch: batch);
-            Block(new Vector3(-.45f, .67f, -.365f), new Vector3(.61f, .53f, .04f), "black", batch: batch);
-            Block(new Vector3(-.45f, .55f, -.4f), new Vector3(.43f, .23f, .04f), "fire", batch: batch);
-            Block(new Vector3(.64f, .45f, -.1f), new Vector3(.52f, .65f, .55f), "wood", batch: batch);
-            Block(new Vector3(.64f, .87f, -.1f), new Vector3(.26f, .24f, .36f), "metal-dark", batch: batch);
-            Block(new Vector3(.64f, 1.05f, -.1f), new Vector3(.85f, .17f, .43f), "metal-dark", batch: batch);
-            forgeStructures[0] = DevelopmentGroup("Furnace and anvil", batch, forgeOrigin);
-
-            batch = new Dictionary<string, Geometry>();
-            Block(new Vector3(-.45f, 2, .35f), new Vector3(.54f, 1.7f, .58f), "brick", batch: batch);
-            Block(new Vector3(-.45f, 2.92f, .35f), new Vector3(.75f, .2f, .8f), "stone", batch: batch);
-            Block(new Vector3(-.45f, 3.04f, .35f), new Vector3(.4f, .04f, .46f), "black", batch: batch);
-            Block(new Vector3(.61f, .8f, .59f), new Vector3(.9f, .18f, .35f), "planks", batch: batch);
-            Block(new Vector3(.61f, 1.1f, .59f), new Vector3(.16f, .6f, .16f), "metal-dark", batch: batch);
-            forgeStructures[1] = DevelopmentGroup("Forge chimney and tool rack", batch, forgeOrigin);
-
-            batch = new Dictionary<string, Geometry>();
-            foreach (float x in new[] { -1.04f, 1.05f }) Block(new Vector3(x, 1.15f, .65f), new Vector3(.17f, 2.3f, .2f), "beam", batch: batch);
-            Block(new Vector3(0, 2.3f, .65f), new Vector3(2.45f, .18f, .23f), "planks", batch: batch);
-            for (int step = 0; step < 3; step++) Block(new Vector3(0, 2.38f + step * .13f, .25f + step * .27f), new Vector3(2.5f, .14f, 1.45f - step * .4f), "roof", batch: batch);
-            forgeStructures[2] = DevelopmentGroup("Forge timber canopy", batch, forgeOrigin);
-
-            batch = new Dictionary<string, Geometry>();
-            Block(new Vector3(0, 2.32f, -.5f), new Vector3(2.5f, .13f, .12f), "metal-gold", batch: batch);
-            for (int i = 0; i < 3; i++) Block(new Vector3(.6f + i % 2 * .28f, .3f + i / 2 * .15f, -.55f), new Vector3(.27f, .14f, .37f), "metal-gold", batch: batch);
-            Block(new Vector3(.64f, 1.18f, -.1f), new Vector3(.38f, .12f, .2f), "gold", batch: batch);
-            forgeStructures[3] = DevelopmentGroup("Master forge fittings", batch, forgeOrigin);
+            var forgeOrigin=new Vector3(-2.85f,0,.7f);batch=new Dictionary<string,Geometry>();
+            Block(new Vector3(0,.12f,0),new Vector3(2.25f,.24f,1.8f),"mine-wall",batch:batch);
+            Block(new Vector3(-.42f,.8f,.12f),new Vector3(1.2f,1.32f,1.2f),"slate","stone",batch:batch);
+            Block(new Vector3(-.42f,1.5f,.12f),new Vector3(1.3f,.14f,1.3f),"mine-steel",batch:batch);
+            Block(new Vector3(-.42f,.64f,-.492f),new Vector3(.76f,.58f,.025f),"black",batch:batch);
+            Block(new Vector3(-.42f,.53f,-.513f),new Vector3(.6f,.34f,.025f),"fire",batch:batch);
+            foreach(float x in new[]{-.65f,-.42f,-.19f}) Block(new Vector3(x,.63f,-.536f),new Vector3(.04f,.38f,.025f),"mine-steel",batch:batch);
+            Block(new Vector3(-.42f,1.18f,-.495f),new Vector3(.72f,.23f,.03f),"black",batch:batch);
+            foreach(float x in new[]{-.63f,-.42f,-.21f}) Block(new Vector3(x,1.18f,-.52f),new Vector3(.035f,.2f,.025f),"mine-steel",batch:batch);
+            Block(new Vector3(.66f,.46f,-.05f),new Vector3(.62f,.58f,.68f),"mine-timber",batch:batch);
+            Block(new Vector3(.66f,.8f,-.05f),new Vector3(.64f,.12f,.52f),"mine-steel",batch:batch);
+            Block(new Vector3(.66f,.98f,-.05f),new Vector3(.25f,.28f,.3f),"metal-dark",batch:batch);
+            Block(new Vector3(.66f,1.2f,-.05f),new Vector3(.9f,.2f,.45f),"mine-steel",batch:batch);
+            Block(new Vector3(1.16f,1.18f,-.05f),new Vector3(.2f,.12f,.28f),"mine-steel",batch:batch);
+            forgeStructures[0]=DevelopmentGroup("Furnace and anvil",batch,forgeOrigin);
+            batch=new Dictionary<string,Geometry>();
+            for(int brick=0;brick<4;brick++) Block(new Vector3(-.42f,1.78f+brick*.4f,.24f),new Vector3(.55f,.39f,.55f),"slate",batch:batch);
+            Block(new Vector3(-.42f,3.2f,.24f),new Vector3(.72f,.12f,.72f),"mine-steel",batch:batch);
+            Block(new Vector3(-.42f,3.27f,.24f),new Vector3(.4f,.025f,.4f),"black",batch:batch);
+            forgeStructures[1]=DevelopmentGroup("Forge chimney",batch,forgeOrigin);
+            batch=new Dictionary<string,Geometry>();
+            Block(new Vector3(-1.23f,.48f,.22f),new Vector3(.36f,.7f,.95f),"mine-timber",batch:batch);
+            for(int log=0;log<3;log++) Block(new Vector3(-1.24f,.35f+log*.2f,-.28f),new Vector3(.4f,.16f,.45f),"beam",batch:batch);
+            Block(new Vector3(.7f,1.8f,.68f),new Vector3(1,.15f,.18f),"mine-timber",batch:batch);
+            foreach(float x in new[]{.35f,.7f,1.05f}) Block(new Vector3(x,1.56f,.64f),new Vector3(.055f,.4f,.08f),"mine-steel",batch:batch);
+            forgeStructures[2]=DevelopmentGroup("Forge supplies and tools",batch,forgeOrigin);
+            batch=new Dictionary<string,Geometry>();
+            Block(new Vector3(.75f,.45f,.78f),new Vector3(.64f,.64f,.55f),"mine-steel",batch:batch);
+            Block(new Vector3(.75f,.79f,.78f),new Vector3(.52f,.035f,.43f),"water",batch:batch);
+            Block(new Vector3(1.22f,1.7f,.61f),new Vector3(.15f,.25f,.15f),"mine-lamp",batch:batch);
+            forgeStructures[3]=DevelopmentGroup("Master forge fittings",batch,forgeOrigin);
 
             smokeOrigin = forgeOrigin + new Vector3(-.45f, 3.2f, .35f);
             for (int i = 0; i < forgeSmoke.Length; i++)
@@ -183,7 +192,7 @@ namespace MineLoot
             Block(new Vector3(0,1.65f,-.236f),new Vector3(.58f,.16f,.025f),"metal-dark",batch:rig);
             foreach(float x in new[]{-.43f,.43f}) Block(new Vector3(x,1.65f,-.24f),Vector3.one*.07f,"metal-gold",batch:rig);
             Block(new Vector3(.12f,1.68f,-.255f),new Vector3(.09f,.06f,.025f),"mine-lamp",batch:rig);
-            drillRig = DevelopmentGroup("Automatic mine drill", rig, new Vector3(3.8f, 0, 1.45f));
+            drillRig = DevelopmentGroup("Automatic mine drill", rig, new Vector3(4.5f, 0, .15f));
             var spindle = new Geometry();
             for (int i = 0; i < 4; i++) AddCube(spindle, new Vector3(0, -.22f * i, 0), Vector3.one * (.4f - i * .07f), 1);
             drillSpindle = MakeMesh("Turning drill spindle", spindle, GetMaterial("metal-dark")).transform;
@@ -196,7 +205,7 @@ namespace MineLoot
             }
         }
 
-        public void SetProduction(int workerCount, int drillCount, int carts, bool richVein)
+        public void SetProduction(int workerCount, int drillCount, int carts, bool richVein,int finishedMines=0)
         {
             if (IsExpedition) return;
             for (int i = 0; i < workers.Length; i++)
@@ -204,6 +213,7 @@ namespace MineLoot
                 bool visible = workerCount >= (i == 0 ? 1 : i == 1 ? 5 : 10);
                 workers[i].gameObject.SetActive(visible); workerRocks[i].gameObject.SetActive(visible);
             }
+            SetWorkerOreTier(finishedMines);
             drillRig.gameObject.SetActive(drillCount > 0);
             if (carts > 0 && !cart.gameObject.activeSelf) { cart.gameObject.SetActive(true); mineBuildTime[0] = 1; cart.localScale = Vector3.one; }
             for (int i = 0; i < veinSparks.Length; i++) veinSparks[i].gameObject.SetActive(richVein);
@@ -216,6 +226,7 @@ namespace MineLoot
             int forgeStage = 0; foreach (int level in ForgeMilestones) if (forgeLevel >= level) forgeStage++;
             if (DevelopmentTier == pickTier && ForgeStage == forgeStage && animate) return;
             bool first = DevelopmentTier < 0 || !animate;
+            if(!animate) { cartClock=0;cartInTunnel=false;CartPhase="loading";CartLoadFraction=0;UpdateWorkingCart(0); }
             for (int i = 0; i < 4; i++)
             {
                 bool mine = i < pickTier, forge = i < forgeStage;
@@ -229,7 +240,7 @@ namespace MineLoot
             }
             DevelopmentTier = pickTier; ForgeStage = forgeStage;
             cartBody.sharedMaterial = GetMaterial(pickTier >= 2 ? "metal-dark" : "planks");
-            cartCargo.sharedMaterial = GetMaterial(pickTier == 5 ? "mine-ancient" : pickTier >= 4 ? "diamond" : pickTier == 3 ? "gold" : pickTier == 2 ? "iron" : "coal");
+            foreach(var cargo in cartCargo) cargo.sharedMaterial=GetMaterial(pickTier==5?"mine-ancient":pickTier>=4?"mine-diamond":pickTier==3?"mine-gold":pickTier==2?"mine-iron":"mine-coal");
             foreach (var puff in forgeSmoke) puff.gameObject.SetActive(forgeStage >= 2);
         }
 
@@ -261,6 +272,25 @@ namespace MineLoot
             return Mathf.Max(.001f, 1 + 2.70158f * t * t * t + 1.70158f * t * t);
         }
 
+        private void UpdateWorkingCart(float dt)
+        {
+            cartClock=(cartClock+dt)%18;float t=cartClock,z;
+            if(t<6) { CartPhase="loading";CartLoadFraction=t/6;z=.35f; }
+            else if(t<9.5f) { CartPhase="outbound";CartLoadFraction=1;z=Mathf.Lerp(.35f,5.7f,Mathf.SmoothStep(0,1,(t-6)/3.5f)); }
+            else if(t<12.5f) { CartPhase="tunnel";CartLoadFraction=t<10.5f?1:0;z=5.7f; }
+            else if(t<16) { CartPhase="return";CartLoadFraction=0;z=Mathf.Lerp(5.7f,.35f,Mathf.SmoothStep(0,1,(t-12.5f)/3.5f)); }
+            else { CartPhase="waiting";CartLoadFraction=0;z=.35f; }
+            float movement=z-cart.localPosition.z;cartInTunnel=CartPhase=="tunnel";
+            cart.localPosition=new Vector3(2,Mathf.Abs(movement)>.0001f?Mathf.Sin(z*26)*.012f:0,z);
+            foreach(var wheel in cartWheels) wheel.Rotate(Vector3.right,movement*240,Space.Self);
+            float light=Mathf.Lerp(1,.025f,Mathf.InverseLerp(3.6f,5.55f,z));cartProperties.SetColor("_Color",new Color(light,light,light,1));
+            foreach(var renderer in cartRenderers) { renderer.enabled=!cartInTunnel;renderer.SetPropertyBlock(cartProperties); }
+            for(int i=0;i<cartCargo.Length;i++)
+            {
+                float fill=Mathf.Clamp01(CartLoadFraction*cartCargo.Length-i);cartCargo[i].enabled=!cartInTunnel&&fill>.01f;cartCargo[i].transform.localScale=Vector3.one*fill;
+            }
+        }
+
         private void UpdateDevelopment(float dt)
         {
             if (DevelopmentTier < 0) return;
@@ -285,20 +315,14 @@ namespace MineLoot
                     forgeStructures[i].localScale = Vector3.one * BuildScale(forgeBuildTime[i]);
                 }
             }
-            if (CartVisible)
+            if(cart.gameObject.activeSelf) UpdateWorkingCart(dt);
+            if(mineStructures[2].gameObject.activeSelf)
             {
-                float cycle = (clock * .08f) % 1, travel = (1 - Mathf.Cos(cycle * Mathf.PI * 2)) * .5f;
-                cart.localPosition = new Vector3(2, Mathf.Sin(travel * 32) * .015f, .25f + travel * 2.75f);
-                foreach (var wheel in cartWheels) wheel.localEulerAngles = new Vector3(travel * 720, 0, 0);
-            }
-            if (mineStructures[2].gameObject.activeSelf)
-            {
-                float lift = Mathf.Sin(clock * .9f), bucketHeight = 1.2f + lift * .3f;
-                hoistWheel.localEulerAngles = new Vector3(0, 0, lift * 110);
-                hoistBucket.localPosition = new Vector3(-1, bucketHeight, 0);
-                float ropeBottom = bucketHeight + .38f, ropeLength = 2.4f - ropeBottom;
-                hoistRope.localPosition = new Vector3(-1, ropeBottom + ropeLength * .5f, 0);
-                hoistRope.localScale = new Vector3(1, ropeLength, 1);
+                float lift=Mathf.Sin(clock*.9f),height=.44f+lift*.12f;
+                hoistWheel.localEulerAngles=new Vector3(lift*110,0,0);
+                hoistBucket.localPosition=new Vector3(-.2f,height,-.32f);
+                float bottom=height+.63f,length=1.55f-bottom;
+                hoistRope.localPosition=new Vector3(-.2f,bottom+length*.5f,-.32f);hoistRope.localScale=new Vector3(1,length,1);
             }
             if (ForgeStage >= 1) GetMaterial("fire").color = new Color(1.15f + Mathf.Sin(clock * 11) * .15f, 1.03f, .85f);
             if (ForgeStage >= 2) for (int i = 0; i < forgeSmoke.Length; i++)

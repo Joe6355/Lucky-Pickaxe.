@@ -11,6 +11,9 @@ namespace MineLoot
         private readonly Vector3[] workerHomes = new Vector3[3];
         private readonly Transform[,] workerLimbs = new Transform[3,6];
         private static readonly Vector3 WorkerGrip = new Vector3(.42f,.9f,.3f), WorkerTip = new Vector3(0,.46f,.5f);
+        private static readonly string[][] WorkerOres={new[]{"coal","copper","iron"},new[]{"iron","gold","copper"},new[]{"gold","lapis","redstone"},new[]{"diamond","emerald","gold"},new[]{"ancient","diamond","emerald"}};
+        private int workerOreTier=-1;
+        public int WorkerOreTier=>Mathf.Max(0,workerOreTier);
         public int WorkerStrikeCount => workerImpacts[0] + workerImpacts[1] + workerImpacts[2];
 
         private void BuildMiningWorkers()
@@ -101,6 +104,15 @@ namespace MineLoot
             limb.localRotation=Quaternion.FromToRotation(Vector3.up,end-start);
             limb.localScale=new Vector3(width,(end-start).magnitude,width);
         }
+        private string WorkerOre(int worker)
+        {
+            return WorkerOres[Mathf.Clamp(workerOreTier,0,4)][(worker+workerImpacts[worker]/6)%3];
+        }
+        private void SetWorkerOreTier(int finishedMines)
+        {
+            int tier=Mathf.Clamp(finishedMines,0,4);if(tier==workerOreTier) return;workerOreTier=tier;
+            for(int i=0;i<workerOreRenderers.Length;i++) { workerOreRenderers[i].sharedMaterial=GetMaterial("mine-"+WorkerOre(i));workerCracks[i].enabled=false; }
+        }
         private void UpdateMiningWorkers()
         {
             for(int i=0;i<workers.Length;i++)
@@ -119,9 +131,9 @@ namespace MineLoot
                 {
                     workerLastCycle[i]=cycle; workerImpacts[i]++;
                     bool broken=workerImpacts[i]%6==0;
-                    string key=new[]{"iron","copper","coal"}[(workerImpacts[i]/6+i)%3];
+                    string key=WorkerOre(i);
                     Vector3 contact=transform.InverseTransformPoint(workers[i].TransformPoint(WorkerGrip+Quaternion.Euler(40,0,0)*WorkerTip));
-                    EmitChips(contact,art.Texture("tex-mine-"+key),broken?14:3,broken);
+                    EmitChips(contact,workerOreRenderers[i].sharedMaterial.mainTexture,broken?14:3,broken);
                     workerCracks[i].enabled=!broken;
                     workerCracks[i].sharedMaterial.mainTexture=art.Texture("crack"+(1+workerImpacts[i]%6));
                     if(broken) workerOreRenderers[i].sharedMaterial=GetMaterial("mine-"+key);

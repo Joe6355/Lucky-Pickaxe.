@@ -8,7 +8,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 14;
+        public int version = 15;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -72,7 +72,7 @@ namespace MineLoot
         public const long CoinLimit = 1000000000000L;
         public const int VeinOreTarget = 24, VeinOfferSeconds = 20, VeinBoostSeconds = 12, VeinMultiplier = 3;
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
-        public const int PrestigeUpgradeCount = 9, MaxPrestiges = 1000000, MaxCrystals = 10000000;
+        public const int PrestigeUpgradeCount = 18, MaxPrestiges = 1000000, MaxCrystals = 10000000;
         public const int GuideStepCount = 5;
         public const int OreCount = 10, StoneKind = 9, VideoTickets = 10, VideoCooldownSeconds = 180, OfflineVideoMultiplier = 3;
         private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 14875000;
@@ -85,7 +85,16 @@ namespace MineLoot
             new PrestigeUpgrade("Своя бригада", "Один шахтёр\nна старте", "worker", 5),
             new PrestigeUpgrade("Чутьё", "Жила через\n20 блоков", "tile-gold", 2),
             new PrestigeUpgrade("Долгая жила", "Усиление\nна 16 секунд", "ticket", 3),
-            new PrestigeUpgrade("Сила жилы", "Жила даёт\n×4 монеты", "tile-diamond", 5)
+            new PrestigeUpgrade("Сила жилы", "Жила даёт\n×4 монеты", "tile-diamond", 5),
+            new PrestigeUpgrade("Мастер чар", "Чары дешевле\nна 25% опыта", "upgrade-haste", 3),
+            new PrestigeUpgrade("Запас прочности", "Прочность кирки\nвыше на 50%", "pick2", 4),
+            new PrestigeUpgrade("Выгодный ремонт", "Ремонт дешевле\nна 50% монет", "forge", 6),
+            new PrestigeUpgrade("Рудная удача", "15% шанс замены\nна редкую руду", "tile-diamond", 3),
+            new PrestigeUpgrade("Богатый забой", "30% шанс замены\nна редкую руду", "tile-emerald", 4),
+            new PrestigeUpgrade("Запас жетонов", "+10 жетонов\nв новой шахте", "ticket", 6),
+            new PrestigeUpgrade("Поток опыта", "+25% опыта\nпри добыче", "medal", 3),
+            new PrestigeUpgrade("Запас знаний", "+300 опыта чар\nв новой шахте", "upgrade-fortune", 4),
+            new PrestigeUpgrade("Древние чары", "+1 эффект\nпри зачаровании", "crystal", 6)
         };
         public static PrestigeUpgrade PrestigeUpgradeAt(int index) => PrestigeUpgrades[index];
         // IDs 0..8 belong to existing saves; stone is appended. Display order is independent of the ID.
@@ -161,7 +170,11 @@ namespace MineLoot
         public int PrestigeStartCoins => HasPrestigeUpgrade(3) ? 1080 : 80;
         public int PrestigeStartPick => HasPrestigeUpgrade(4) ? 2 : 0;
         public int PrestigeStartWorkers => HasPrestigeUpgrade(5) ? 1 : 0;
-        public int PrestigeExperiencePercent => 100 + Math.Min(5, Progress.prestigeCount) * 15;
+        public int PrestigeExperiencePercent => 100 + Math.Min(5, Progress.prestigeCount) * 15 + (HasPrestigeUpgrade(15) ? 25 : 0);
+        public int EnchantmentDiscountPercent => HasPrestigeUpgrade(9) ? 25 : 0;
+        public int RareOreChance => HasPrestigeUpgrade(13) ? 30 : HasPrestigeUpgrade(12) ? 15 : 0;
+        public int PrestigeStartTickets => HasPrestigeUpgrade(14) ? 12 : 2;
+        public int PrestigeStartEnchantingExperience => HasPrestigeUpgrade(16) ? 300 : 0;
         public int RichVeinTarget => HasPrestigeUpgrade(6) ? 20 : VeinOreTarget;
         public int RichVeinDuration => HasPrestigeUpgrade(7) ? 16 : VeinBoostSeconds;
         public int RichVeinMultiplier => HasPrestigeUpgrade(8) ? 4 : VeinMultiplier;
@@ -224,7 +237,8 @@ namespace MineLoot
             bool legacyGuide = Progress.version < 11;
             bool legacyMining = Progress.version < 12;
             bool legacyEnchanting = Progress.version < 13;
-            Progress.version = 14;
+            bool legacyPermanent = Progress.version < 15;
+            Progress.version = 15;
             Progress.fortuneLevel = Math.Max(0, Math.Min(10, Progress.fortuneLevel));
             Progress.hasteLevel = Math.Max(0, Math.Min(10, Progress.hasteLevel));
             Progress.videoTicketsReadyUtc = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.videoTicketsReadyUtc));
@@ -235,7 +249,7 @@ namespace MineLoot
             Progress.experienceCarry = Math.Max(0, Math.Min(99, Progress.experienceCarry));
             Progress.totalCrystals = Math.Max(0, Math.Min(MaxCrystals, Progress.totalCrystals));
             Progress.crystals = Math.Max(0, Math.Min(Progress.totalCrystals, Progress.crystals));
-            Progress.prestigeUpgrades = Math.Max(0, Progress.prestigeUpgrades) & ((1 << PrestigeUpgradeCount) - 1);
+            Progress.prestigeUpgrades = Math.Max(0, Progress.prestigeUpgrades) & ((1 << (legacyPermanent?9:PrestigeUpgradeCount)) - 1);
             for (int i = 0; i < PrestigeUpgradeCount; i++)
                 if (i % 3 > 0 && HasPrestigeUpgrade(i) && !HasPrestigeUpgrade(i - 1)) throw new FormatException("Invalid prestige upgrade branch");
             if (Progress.milestoneBest == null || Progress.milestoneBest.Length != MilestoneCount)
@@ -403,7 +417,7 @@ namespace MineLoot
             hit.coins += GainExperience(hit.experience, out hit.tickets, out hit.experience, !stone);
             hit.levels = MinerLevel - previousLevel;
             if (hit.broken)
-                Progress.oreKind = Progress.miningBlocks % 4 == 3 ? StoneKind : UnlockedOres > previousUnlocks ? UnlockedOreAt(UnlockedOres - 1) : UnlockedOreAt(1 + OreCycle[Progress.miningBlocks % OreCycle.Length] % (UnlockedOres - 1));
+                Progress.oreKind = NextMiningResource(previousUnlocks);
             AddCoins(hit.coins);
             Progress.totalClicks = Math.Min(CoinLimit, Progress.totalClicks + 1);
             if (!stone) Progress.hits++;
@@ -414,6 +428,21 @@ namespace MineLoot
         }
 
         public long VideoWaitSeconds(long utc) => Math.Max(0, Progress.videoTicketsReadyUtc - Math.Max(0, Math.Min(MaxUtcSeconds, utc)));
+        private int NextMiningResource(int previousUnlocks)
+        {
+            if(Progress.miningBlocks%4==3) return StoneKind;
+            if(UnlockedOres>previousUnlocks) return UnlockedOreAt(UnlockedOres-1);
+            int regular=UnlockedOreAt(1+OreCycle[Progress.miningBlocks%OreCycle.Length]%(UnlockedOres-1));
+            uint state=unchecked((uint)Progress.miningBlocks*0x9e3779b9u^(uint)Progress.prestigeCount*0x85ebca6bu^(uint)Progress.boardSeed);
+            state^=state>>16;state*=0x7feb352du;state^=state>>15;
+            if(RareOreChance==0 || state%100>=RareOreChance) return regular;
+            int[] rare={3,4,8}; int count=0;foreach(int kind in rare) if(IsOreUnlocked(kind)) count++;
+            if(count==0) return regular;
+            int target=(int)((state>>8)%(uint)count);
+            foreach(int kind in rare) if(IsOreUnlocked(kind) && target--==0) return kind;
+            return regular;
+        }
+
         public bool CanClaimVideoTickets(long utc) => utc > 0 && utc <= MaxUtcSeconds && VideoWaitSeconds(utc) == 0 && !EconomyLocked && Progress.tickets <= 1000000 - VideoTickets && Progress.videoTicketClaims < 1000000;
         // The controller calls this only after the matching SDK onRewarded callback.
         public bool ClaimVideoTickets(long utc)
@@ -646,7 +675,7 @@ namespace MineLoot
             {
                 case UpgradeKind.Pickaxe:
                     int oldTier = PickTier; Progress.upgradeLevel++;
-                    if (PickTier != oldTier) { Progress.pickWear = 0; Progress.wearCarry = 0; }
+                    ReplacePickMaterial(oldTier);
                     break;
                 case UpgradeKind.Forge: Progress.forgeLevel++; break;
                 case UpgradeKind.Swap: Progress.swapLevel++; break;
@@ -731,7 +760,7 @@ namespace MineLoot
         public bool HasPrestigeUpgrade(int index) => index >= 0 && index < PrestigeUpgradeCount && (Progress.prestigeUpgrades & (1 << index)) != 0;
         public bool PrestigePrerequisiteMet(int index) => index >= 0 && index < PrestigeUpgradeCount && (index % 3 == 0 || HasPrestigeUpgrade(index - 1));
         public bool CanBuyPrestigeUpgrade(int index) => index >= 0 && index < PrestigeUpgradeCount && Progress.prestigeCount > 0 && !ActionsLocked && !HasPrestigeUpgrade(index) && PrestigePrerequisiteMet(index) && Progress.crystals >= PrestigeUpgrades[index].cost;
-        public int PrestigeReward => Math.Min(MaxCrystals - Progress.totalCrystals, 3 + Math.Min(7, (Progress.stratum - 1) / 10));
+        public int PrestigeReward => Math.Min(MaxCrystals - Progress.totalCrystals, 8 + Math.Min(12, (Progress.stratum - 1) / 10 * 2));
         public bool CanPrestige => MinerLevel == MaxMinerLevel && !ActionsLocked && !HasOfflineReward && Progress.prestigeCount < MaxPrestiges && PrestigeReward > 0;
 
         public bool BuyPrestigeUpgrade(int index)
@@ -741,12 +770,14 @@ namespace MineLoot
             Progress.prestigeUpgrades |= 1 << index;
             // Starter purchases help immediately once, and are granted again by each later reset.
             if (index == 3) AddCoins(1000);
-            if (index == 4) Progress.upgradeLevel = Math.Max(2, Progress.upgradeLevel);
+            if (index == 4) { int oldTier=PickTier; Progress.upgradeLevel = Math.Max(2, Progress.upgradeLevel); ReplacePickMaterial(oldTier); }
             if (index == 5) Progress.workerCount = Math.Max(1, Progress.workerCount);
             if (index == 6 && !VeinOffered && !VeinActive && Progress.veinCharge >= RichVeinTarget)
             {
                 Progress.veinCharge = 0; Progress.veinOfferLeft = VeinOfferSeconds;
             }
+            if(index==14) Progress.tickets=Math.Min(1000000,Progress.tickets+10);
+            if(index==16) Progress.enchantingExperience=Math.Min(EnchantingExperienceLimit,Progress.enchantingExperience+300);
             ObserveMilestones();
             return true;
         }
@@ -758,7 +789,7 @@ namespace MineLoot
             int reward = PrestigeReward; ObserveMilestones();
             var previous = Progress;
             Progress = new MineProgress {
-                boardSeed = seed, coins = PrestigeStartCoins,
+                boardSeed = seed, coins = PrestigeStartCoins, tickets=PrestigeStartTickets, enchantingExperience=PrestigeStartEnchantingExperience,
                 upgradeLevel = PrestigeStartPick, workerCount = PrestigeStartWorkers,
                 prestigeCount = previous.prestigeCount + 1, crystals = previous.crystals + reward,
                 totalCrystals = previous.totalCrystals + reward, prestigeUpgrades = previous.prestigeUpgrades,

@@ -12,8 +12,8 @@ namespace MineLoot
         private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд", "Медь", "Лазурит", "Редстоун", "Древние обломки", "Камень" };
         private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная", "Незеритовая" };
         private static readonly string[] PickSprites = { "pick-wood", "pick-stone", "pick2", "pick-gold", "pick4", "pick-netherite" };
-        private static readonly string[] CampNames = { "ПЕРВАЯ ШТОЛЬНЯ", "КАМЕННЫЙ ЗАБОЙ", "ЖЕЛЕЗНЫЙ РУДНИК", "ЗОЛОТОЙ ПРИИСК", "АЛМАЗНАЯ ШАХТА", "ДРЕВНИЕ ГЛУБИНЫ" };
-        private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления штольни", "Подъёмник", "Алмазные фонари", "Незеритовая кирка" };
+        private static readonly string[] CampNames = { "ПЕРВАЯ ШАХТА", "КАМЕННЫЙ ЗАБОЙ", "ЖЕЛЕЗНЫЙ РУДНИК", "ЗОЛОТОЙ ПРИИСК", "АЛМАЗНАЯ ШАХТА", "ДРЕВНИЕ ГЛУБИНЫ" };
+        private static readonly string[] CampFeatures = { "", "Вагонетка", "Крепления шахты", "Подъёмник", "Алмазные фонари", "Незеритовая кирка" };
         private static readonly string[] ForgeFeatures = { "", "Печь и наковальня", "Дымоход и стойка", "Навес мастерской", "Оснащение мастера" };
         private static readonly string[] UpgradeNames = { "Кирка", "Кузница", "Перестановка", "Закалка", "Пресс жетонов", "Искатель кладов", "Шахтёры", "Буры", "Вагонетки", "Рельсы", "Склад", "Оценка руды", "Техника удара" };
         private readonly PixelArt art = new PixelArt();
@@ -260,11 +260,11 @@ namespace MineLoot
         public void Upgrade()
         {
             if (applicationPaused || EconomyBusy || modal != null) return;
-            int tier = game.PickTier;
+            int tier = game.PickTier;bool hadEnchantments=game.IsEnchanted;
             if (!game.Upgrade()) return;
             mineStatus.text = "Кирка улучшена! +" + game.ClickPower + " за удар";
             upgradePulse = 1;
-            if (game.PickTier != tier) Notice(CampNames[game.PickTier], CampFeatures[game.PickTier] + "\n" + PickNames[game.PickTier] + " кирка · урон " + game.MiningDamage);
+            if (game.PickTier != tier) Notice(CampNames[game.PickTier], hadEnchantments?"Новый материал — прежние чары сняты.\nЗачаруй новую кирку у стола.":CampFeatures[game.PickTier]+"\n"+PickNames[game.PickTier]+" кирка · урон "+game.MiningDamage);
             sounds.Play("upgrade");
             Persist(); Flush(); Refresh();
         }
@@ -299,11 +299,13 @@ namespace MineLoot
             if (purchaseAmount == 1 && kind == UpgradeKind.Pickaxe) { Upgrade(); return; }
             if (purchaseAmount == 1 && kind == UpgradeKind.Forge) { Forge(); return; }
             if (applicationPaused || EconomyBusy || modal != null) return;
+            int beforeTier=game.PickTier;bool hadEnchantments=game.IsEnchanted;
             int count = game.BuyUpgrade(kind, purchaseAmount);
             if (count == 0) return;
             if (kind == UpgradeKind.Pickaxe) upgradePulse = 1;
             sounds.Play("upgrade");
             Notice(UpgradeNames[(int)kind].ToUpperInvariant(), (count > 1 ? "+" + count + " · " : "") + "Уровень " + game.UpgradeLevel(kind) + "\n" + UpgradeEffect(kind, false).Replace("\n", " · "));
+            if(kind==UpgradeKind.Pickaxe && game.PickTier!=beforeTier && hadEnchantments) Notice("НОВЫЙ МАТЕРИАЛ КИРКИ","Прежние чары сняты.\nЗачаруй новую кирку у стола.");
             Persist(); Flush(); Refresh();
         }
 
@@ -837,12 +839,12 @@ namespace MineLoot
                 rollGain.text = game.Progress.swapLevel == 0 ? "ОБМЕН В ПРОКАЧКЕ" : "ПЕРЕСТАНОВКА · УР. " + game.Progress.swapLevel;
                 rollStatus.text = game.Progress.swapLevel == 0 ? "Открой в мастерской с уровня 3" : "До " + game.Progress.swapLevel + " обменов кирок перед ударом";
             }
-            string biome = new[] { "Мшистые штольни", "Кристальный грот", "Угольные недра" }[game.Biome];
+            string biome = new[] { "Мшистые шахты", "Кристальный грот", "Угольные недра" }[game.Biome];
             stratumLabel.text = "Пласт " + game.Progress.stratum.ToString("00") + " · " + biome;
             floorHint.text = "Прочность " + game.Hardness;
             stage.SetBiome(game.Biome);
             stage.SetDevelopment(game.PickTier, game.Progress.forgeLevel);
-            stage.SetProduction(game.Progress.workerCount, game.Progress.drillCount, game.Progress.cartCount, game.VeinOffered || game.VeinActive);
+            stage.SetProduction(game.Progress.workerCount, game.Progress.drillCount, game.Progress.cartCount, game.VeinOffered || game.VeinActive, game.Progress.prestigeCount);
             stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
             clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
             RefreshGuide();

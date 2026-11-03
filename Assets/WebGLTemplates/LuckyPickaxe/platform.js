@@ -6,6 +6,7 @@
   let warnedStorage = false, rewardRequest, sentRewardedAvailable;
   let requestedLanguage, language, sentLanguage = false, languageApplied = false;
   let disposed = false, engineActive = false, gameplayReported = false, gameplayUnavailable = false;
+  let account = { available: false, status: "unavailable", name: "" }, authPending = false, sentAccount, accountGeneration=0;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
@@ -30,9 +31,11 @@
       send("OnRewardedAvailable", available ? "1" : "0");
     }
     if (options.onPause) options.onPause(ready && paused);
+    const accountJson=JSON.stringify(account);
+    if(unity && receiver && (force || accountJson!==sentAccount)) { sentAccount=accountJson;send("OnBrowserAccount",accountJson); }
     syncGameplay();
   }
-  function isPaused() { return disposed || sdkPaused || hidden || blurred || !!rewardRequest || !ready; }
+  function isPaused() { return disposed || sdkPaused || hidden || blurred || !!rewardRequest || authPending || !ready; }
   function syncGameplay() {
     if (!sdk || local || gameplayUnavailable) return;
     const active = engineActive && !isPaused();
@@ -71,6 +74,24 @@
         onError() { finish("error"); }
       } });
     } catch (error) { finish("error"); }
+    return true;
+  }
+  function accountFrom(player) {
+    const authorized=!!(player && typeof player.isAuthorized==="function" && player.isAuthorized());
+    return {available:true,status:authorized?"authorized":"guest",name:authorized&&typeof player.getName==="function"?String(player.getName()||"").slice(0,40):""};
+  }
+  function readAccount() {
+    if(!sdk || typeof sdk.getPlayer!=="function" || typeof sdk.auth?.openAuthDialog!=="function") return;
+    const generation=++accountGeneration;account={available:true,status:"checking",name:""};notify();
+    Promise.resolve().then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration){account=accountFrom(player);notify();}}).catch(()=>{if(!disposed && generation===accountGeneration){account={available:true,status:"guest",name:""};notify();}});
+  }
+  function authorize() {
+    if(disposed || !ready || local || isPaused() || !account.available || authPending || account.status==="authorized") return false;
+    const generation=++accountGeneration;authPending=true;account={available:true,status:"pending",name:""};notify();
+    let dialog;
+    try { dialog=sdk.auth.openAuthDialog(); }
+    catch(error) { authPending=false;account={available:true,status:"guest",name:""};notify();return false; }
+    Promise.resolve(dialog).then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration) account=accountFrom(player);}).catch(()=>{if(!disposed && generation===accountGeneration) account={available:true,status:"guest",name:""};}).finally(()=>{if(!disposed && generation===accountGeneration){authPending=false;notify();}});
     return true;
   }
   function fail(error) {
@@ -129,6 +150,7 @@
       sdk.on("game_api_pause", pause); sdk.on("game_api_resume", resume);
       removers.push(() => { sdk.off("game_api_pause", pause); sdk.off("game_api_resume", resume); });
       selectLanguage(sdk.environment?.i18n?.lang);
+      readAccount();
       finishReady();
     }).catch(error => { if (!disposed) { fail(error); throw error; } });
     return initialization;
@@ -142,7 +164,7 @@
     if (disposed) return;
     disposed = true; ready = false; engineActive = false;
     if (sentPause !== true) { sentPause = true; send("OnBrowserPause", "1"); }
-    syncGameplay(); rewardRequest = null;
+    syncGameplay(); rewardRequest = null;authPending=false;
     while (removers.length) {
       try { removers.pop()(); }
       catch (error) { root.console.warn("Lucky Pickaxe: platform listener cleanup failed", error); }
@@ -162,6 +184,7 @@
     },
     setGameplay(active) { if (!disposed) { engineActive = active === true; syncGameplay(); } },
     showRewarded,
+    authorize,
     readProgress(key) {
       try { return root.localStorage.getItem(journalKey(key)); }
       catch (error) { storageWarning(error); return null; }
@@ -172,6 +195,6 @@
       catch (error) { storageWarning(error); return false; }
     },
     dispose,
-    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed }; }
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending }; }
   };
 })(window);

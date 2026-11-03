@@ -8,9 +8,9 @@ namespace MineLoot
     {
         public const long EnchantingExperienceLimit = 1000000000;
         private static readonly int[] PickLifetimes = { 160, 320, 640, 320, 1280, 1920 };
-        public int PickLifetime => PickLifetimes[PickTier];
+        public int PickLifetime => PickLifetimes[PickTier] * (HasPrestigeUpgrade(10)?150:100)/100;
         public int PickCondition => Math.Max(0, PickLifetime - Progress.pickWear);
-        public long RepairCost => Math.Max(1, (30L + PickTier * 50) * Progress.pickWear / PickLifetime);
+        public long RepairCost => Math.Max(1, (30L + PickTier * 50) * Progress.pickWear / PickLifetime * (HasPrestigeUpgrade(11)?50:100)/100);
         public bool CanRepair => !EconomyLocked && Progress.pickWear > 0 && Progress.coins >= RepairCost;
         public bool IsEnchanted => Progress.enchantments != 0;
         public int EnchantmentLevel(EnchantKind kind) => EnchantmentLevel(Progress.enchantments, kind);
@@ -31,18 +31,29 @@ namespace MineLoot
             Progress.wearCarry = Math.Max(0, Math.Min(EnchantmentLevel(EnchantKind.Unbreaking), Progress.wearCarry));
         }
 
-        // Offers depend only on saved state; reopening the table cannot reroll them for free.
-        public int EnchantmentOffer(int slot)
+        private int RollEnchantments(int slot,int seed)
         {
-            if (slot < 0 || slot > 2) throw new ArgumentOutOfRangeException(nameof(slot));
-            uint state = unchecked((uint)Progress.enchantSeed ^ (uint)(slot + 1) * 0x9e3779b9u ^ (uint)Progress.enchantCount * 0x85ebca6bu);
-            uint Next() { state ^= state << 13; state ^= state >> 17; state ^= state << 5; return state; }
-            int efficiency = 1 + (int)(Next() % (uint)(slot + 2));
-            int set = Math.Min(5, efficiency + (PickTier >= 4 && slot == 2 ? 1 : 0));
-            if (slot >= 1) set |= (1 + (int)(Next() % 3)) << 4;
-            if (slot == 2 || Next() % 3 == 0) set |= (1 + (int)(Next() % (uint)(slot + 1))) << 8;
-            if (slot == 2 && Next() % 4 == 0) set |= 1 << 12;
+            uint state=unchecked((uint)seed^(uint)Progress.enchantSeed^(uint)(slot+1)*0x9e3779b9u^(uint)(Progress.enchantCount+1)*0x85ebca6bu);
+            if(state==0) state=6355;
+            uint Next() { state^=state<<13;state^=state>>17;state^=state<<5;return state; }
+            int count=slot==0?1:slot==1?2:2+(int)(Next()%2);
+            if(Next()%100<20) count++;
+            if(HasPrestigeUpgrade(17)) count++;
+            int[] kinds=slot==2?new[]{0,1,2,3}:new[]{0,1,2};
+            count=Math.Min(count,kinds.Length); int set=0;
+            for(int i=0;i<count;i++)
+            {
+                int chosen=i+(int)(Next()%(uint)(kinds.Length-i));int kind=kinds[chosen];kinds[chosen]=kinds[i];kinds[i]=kind;
+                int max=EnchantmentMax((EnchantKind)kind),low=slot==2&&max>1?2:1;
+                int high=Math.Min(max,slot==0?2:slot==1?3:5);
+                int level=low+(int)(Next()%(uint)(high-low+1));set|=level<<(kind*4);
+            }
             return set;
+        }
+        private void ReplacePickMaterial(int oldTier)
+        {
+            if(PickTier==oldTier) return;
+            Progress.pickWear=Progress.wearCarry=Progress.enchantments=Progress.enchantCount=0;
         }
 
         public long EnchantmentCost(int slot)
@@ -50,13 +61,13 @@ namespace MineLoot
             if (slot < 0 || slot > 2) throw new ArgumentOutOfRangeException(nameof(slot));
             long baseCost = 40 + PickTier * 30L;
             // Bounded growth keeps rerolls available in long sessions and avoids overflow.
-            return Math.Min(100000, baseCost + Progress.enchantCount * (20L + PickTier * 5)) * (slot + 1);
+            return Math.Max(1,Math.Min(100000, baseCost + Progress.enchantCount * (20L + PickTier * 5)) * (slot + 1) * (100-EnchantmentDiscountPercent)/100);
         }
         public bool CanEnchant(int slot) => slot >= 0 && slot < 3 && !EconomyLocked && Progress.enchantCount < 1000000 && Progress.enchantingExperience >= EnchantmentCost(slot);
         public bool Enchant(int slot, Func<double> random)
         {
             if (!CanEnchant(slot)) return false;
-            int seed = DrawSeed(random), set = EnchantmentOffer(slot);
+            int seed = DrawSeed(random), set = RollEnchantments(slot,seed);
             Progress.enchantingExperience -= EnchantmentCost(slot);
             Progress.enchantments = set; Progress.enchantCount++; Progress.enchantSeed = seed; Progress.wearCarry = 0;
             return true;

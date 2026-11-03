@@ -56,8 +56,10 @@ namespace MineLoot
         private Text prestigeSummary, prestigeState, prestigeReward, prestigeLosses, prestigeStart;
         private GameObject prestigeTree, prestigeConfirmation;
         private bool prestigeWindowOpen;
-        private readonly Image[] prestigeNodes = new Image[9], prestigeLinks = new Image[9];
-        private readonly Button[] prestigeBuyButtons = new Button[9];
+        private readonly Image[] prestigeNodes = new Image[MineGame.PrestigeUpgradeCount];
+        private readonly Text[] prestigeRequirements = new Text[MineGame.PrestigeUpgradeCount];
+        private int prestigePage; private Text prestigePageLabel,prestigeFooter; private Button prestigePrevious,prestigeNext;
+        private readonly Button[] prestigeBuyButtons = new Button[MineGame.PrestigeUpgradeCount];
 
         private void BuildInterface()
         {
@@ -77,7 +79,8 @@ namespace MineLoot
             Card(shell, "Inventory base", 12, 164, 456, 712, Hex("e0e5e2"));
             Icon(shell, "pick-wood", 23, 21, 44, 44);
             Label(shell, "КИРКА УДАЧИ", 78, 19, 320, 42, 32, Hex("faf1cf"), FontStyle.Bold);
-            Label(shell, "ТВОЙ МАЛЕНЬКИЙ РУДНИК", 80, 61, 326, 24, 17, Hex("a8c7c7"));
+            accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,320,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
+            var accountCaption=accountButton.GetComponentInChildren<Text>();accountCaption.fontSize=16;accountCaption.resizeTextForBestFit=true;accountCaption.resizeTextMinSize=12;accountCaption.resizeTextMaxSize=16;
             var sound = ButtonAt(shell, "♪", 411, 25, 45, 45, ToggleSound, Hex("b5b7ae"), Hex("222923"));
             sound.name = "Toggle sound"; soundLabel = sound.GetComponentInChildren<Text>();
 
@@ -398,7 +401,7 @@ namespace MineLoot
         {
             switch(kind)
             {
-                case UpgradeKind.Pickaxe: return "Главная кирка для ручной добычи. Повышает доход за удар; новый материал увеличивает урон блоку. Зачарования остаются на кирке.";
+                case UpgradeKind.Pickaxe: return "Главная кирка для ручной добычи. Повышает доход за удар; новый материал увеличивает урон блоку. При смене материала зачарования снимаются.";
                 case UpgradeKind.Efficiency: return "Усиливает каждый удар по камню и руде в шахте. Показан полный урон с учётом материала кирки и её зачарований. На кирки рулетки не влияет.";
                 case UpgradeKind.Fortune: return "Каждый уровень добавляет 25% монет за разрушенный блок руды. Не увеличивает монеты за отдельный удар. Камень по-прежнему даёт только опыт.";
                 case UpgradeKind.Haste: return "Каждый уровень повышает частоту ударов при удержании блока на 8%. Урон одного удара остаётся прежним. Работает в шахте.";
@@ -423,73 +426,80 @@ namespace MineLoot
 
         public void ShowPrestige()
         {
-            if (applicationPaused || EconomyBusy || modal != null) return;
-            holding = false; prestigeWindowOpen = true;
-            modal = CreateModal("Prestige modal");
-            Card(modal.transform, "Prestige card", 24, 103, 432, 752, Panel);
-            Icon(modal.transform, "crystal", 40, 119, 30, 30);
-            Label(modal.transform, "НОВАЯ ШАХТА", 83, 116, 350, 34, 28, Ink, FontStyle.Bold);
-            prestigeSummary = Label(modal.transform, "", 40, 156, 400, 25, 18, Ink);
-            prestigeState = Label(modal.transform, "", 40, 184, 400, 22, 16, Muted);
-            prestigeReward = Label(modal.transform, "", 40, 211, 400, 24, 18, Ink);
-            prestigeTree = MakeRect(modal.transform, "Prestige tree", 0, 0, 480, 850).gameObject;
-            for (int column = 0; column < 3; column++)
+            if(applicationPaused || EconomyBusy || modal!=null) return;
+            holding=false;prestigeWindowOpen=true;prestigePage=0;
+            modal=CreateModal("Prestige modal");Card(modal.transform,"Prestige card",24,56,432,844,Panel);
+            Icon(modal.transform,"crystal",40,76,30,30);
+            Label(modal.transform,"НОВАЯ ШАХТА",83,68,350,42,28,Ink,FontStyle.Bold);
+            prestigeSummary=Label(modal.transform,"",40,116,400,25,18,Ink);
+            prestigeState=Label(modal.transform,"",40,148,400,42,17,Muted);
+            prestigeReward=Label(modal.transform,"",40,192,400,24,18,Ink);
+            prestigeTree=MakeRect(modal.transform,"Prestige tree",0,0,480,960).gameObject;
+            prestigeResetButton=ButtonAt(prestigeTree.transform,"",40,226,400,42,AskPrestige,Hex("dfc285"),Ink);prestigeResetButton.name="Prepare prestige";
+            Label(prestigeTree.transform,"Новая шахта сбросит монеты, кирку и уровень.\nКристаллы и купленные бонусы останутся.",40,275,400,40,16,Muted);
+            prestigePrevious=ButtonAt(prestigeTree.transform,"<",40,324,36,30,()=>ChangePrestigePage(-1),Panel,Ink);prestigePrevious.name="Prestige previous";
+            prestigePageLabel=Label(prestigeTree.transform,"",82,324,316,30,17,Ink,FontStyle.Bold,TextAnchor.MiddleCenter);
+            prestigeNext=ButtonAt(prestigeTree.transform,">",404,324,36,30,()=>ChangePrestigePage(1),Panel,Ink);prestigeNext.name="Prestige next";
+            for(int i=0;i<MineGame.PrestigeUpgradeCount;i++)
             {
-                int x = 40 + column * 136;
-                Label(prestigeTree.transform, new[] { "ДОХОД", "СТАРТ", "ЖИЛЫ" }[column], x, 241, 128, 22, 18, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
-                for (int row = 0; row < 3; row++)
-                {
-                    int index = column * 3 + row, y = 268 + row * 132;
-                    var upgrade = MineGame.PrestigeUpgradeAt(index);
-                    if (row > 0) prestigeLinks[index] = PanelAt(prestigeTree.transform, "Prestige link " + index, Hex("59654e"), x + 62, y - 6, 4, 6);
-                    prestigeNodes[index] = Card(prestigeTree.transform, "Prestige node " + index, x, y, 128, 126, Hex("aeb6a2"));
-                    Icon(prestigeTree.transform, upgrade.icon, x + 7, y + 9, 23, 23);
-                    Label(prestigeTree.transform, upgrade.title, x + 36, y + 4, 86, 38, 16, Ink, FontStyle.Bold);
-                    Label(prestigeTree.transform, upgrade.detail, x + 7, y + 47, 114, 44, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
-                    prestigeBuyButtons[index] = ButtonAt(prestigeTree.transform, "", x + 7, y + 98, 114, 23, () => BuyPrestigeUpgrade(index), Hex("d4bc83"), Ink);
-                    prestigeBuyButtons[index].name = "Buy prestige " + index; prestigeBuyButtons[index].GetComponentInChildren<Text>().fontSize = 16;
-                }
+                int index=i,x=40+(i%6/3)*206,y=364+i%3*140;var upgrade=MineGame.PrestigeUpgradeAt(i);
+                var card=Card(prestigeTree.transform,"Prestige node "+i,x,y,194,132,Hex("bfc9b2"));prestigeNodes[i]=card;
+                Icon(card.transform,upgrade.icon,8,10,26,26);
+                Label(card.transform,upgrade.title,42,5,144,38,17,Ink,FontStyle.Bold);
+                Label(card.transform,upgrade.detail,8,46,178,40,16,Ink);
+                prestigeRequirements[i]=Label(card.transform,"",8,87,178,20,16,Muted);
+                prestigeBuyButtons[i]=ButtonAt(card.transform,"",8,109,178,22,()=>BuyPrestigeUpgrade(index),Hex("d4bc83"),Ink);
+                prestigeBuyButtons[i].name="Buy prestige "+i;prestigeBuyButtons[i].GetComponentInChildren<Text>().fontSize=16;
             }
-            Label(prestigeTree.transform, "Сброс: монеты, кирка и уровень.\nОпыт: +" + (game.PrestigeExperiencePercent - 100) + "% · новая шахта +15%, до +75%", 40, 660, 400, 40, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
-            prestigeResetButton = ButtonAt(prestigeTree.transform, "", 40, 703, 400, 44, AskPrestige, Hex("dfc285"), Ink);
-            prestigeResetButton.name = "Prepare prestige";
-            ButtonAt(prestigeTree.transform, "Вернуться в игру", 40, 771, 400, 38, CloseModal, Panel, Ink).name = "Close prestige";
-            prestigeConfirmation = MakeRect(modal.transform, "Prestige confirmation", 40, 243, 400, 540).gameObject;
-            Label(prestigeConfirmation.transform, "НАЧАТЬ ШАХТУ ЗАНОВО", 0, 0, 400, 32, 22, Ink, FontStyle.Bold);
-            prestigeLosses = Label(prestigeConfirmation.transform, "", 0, 44, 400, 146, 18, Ink);
-            Label(prestigeConfirmation.transform, "Сохранятся:\nДостижения и их прогресс\nКристаллы и постоянные улучшения\nОбщая статистика и контракты", 0, 205, 400, 92, 18, Ink);
-            prestigeStart = Label(prestigeConfirmation.transform, "", 0, 318, 400, 66, 16, Muted);
-            prestigeConfirmButton = ButtonAt(prestigeConfirmation.transform, "", 0, 409, 400, 48, ConfirmPrestige, Hex("dfb277"), Ink);
-            prestigeConfirmButton.name = "Confirm prestige";
-            ButtonAt(prestigeConfirmation.transform, "Отмена", 0, 480, 400, 40, () => { prestigeConfirmation.SetActive(false); prestigeTree.SetActive(true); RefreshPrestigeWindow(); }, Panel, Ink).name = "Cancel prestige";
-            prestigeConfirmation.SetActive(false); RefreshPrestigeWindow();
+            prestigeFooter=Label(prestigeTree.transform,"",40,786,400,42,16,Muted,FontStyle.Normal,TextAnchor.MiddleCenter);
+            ButtonAt(prestigeTree.transform,"Вернуться в игру",40,850,400,38,CloseModal,Panel,Ink).name="Close prestige";
+            prestigeConfirmation=MakeRect(modal.transform,"Prestige confirmation",40,226,400,610).gameObject;
+            Label(prestigeConfirmation.transform,"НАЧАТЬ ШАХТУ ЗАНОВО",0,0,400,32,22,Ink,FontStyle.Bold);
+            prestigeLosses=Label(prestigeConfirmation.transform,"",0,45,400,166,18,Ink);
+            Label(prestigeConfirmation.transform,"Сохранятся:\nДостижения и их прогресс\nКристаллы и постоянные бонусы\nОбщая статистика и контракты",0,222,400,96,18,Ink);
+            prestigeStart=Label(prestigeConfirmation.transform,"",0,338,400,100,17,Muted);
+            prestigeConfirmButton=ButtonAt(prestigeConfirmation.transform,"",0,457,400,48,ConfirmPrestige,Hex("dfb277"),Ink);prestigeConfirmButton.name="Confirm prestige";
+            ButtonAt(prestigeConfirmation.transform,"Отмена",0,531,400,40,()=>{prestigeConfirmation.SetActive(false);prestigeTree.SetActive(true);RefreshPrestigeWindow();},Panel,Ink).name="Cancel prestige";
+            prestigeConfirmation.SetActive(false);RefreshPrestigeWindow();
         }
-
+        private void ChangePrestigePage(int delta)
+        {
+            if(applicationPaused) return;prestigePage=Mathf.Clamp(prestigePage+delta,0,(MineGame.PrestigeUpgradeCount-1)/6);RefreshPrestigeWindow();
+        }
         private void AskPrestige()
         {
-            if (!prestigeWindowOpen || !game.CanPrestige) return;
-            prestigeTree.SetActive(false); prestigeConfirmation.SetActive(true); RefreshPrestigeWindow();
+            if(!prestigeWindowOpen || applicationPaused) return;
+            if(game.MinerLevel<MineGame.MaxMinerLevel) { CloseModal();ShowPage(false);return; }
+            if(game.HasOfflineReward) { CloseModal();ShowOfflineReward();return; }
+            if(game.ActionsLocked) { CloseModal();ShowPage(true);return; }
+            if(!game.CanPrestige) return;
+            prestigeTree.SetActive(false);prestigeConfirmation.SetActive(true);RefreshPrestigeWindow();
         }
-
         private void RefreshPrestigeWindow()
         {
-            if (!prestigeWindowOpen || modal == null) return;
-            prestigeSummary.text = "Кристаллы: " + ShortAmount(game.Progress.crystals) + " · Шахт завершено: " + ShortAmount(game.Progress.prestigeCount);
-            string reason = game.MinerLevel < MineGame.MaxMinerLevel ? "Нужна шахта ур. 50 · сейчас " + game.MinerLevel : game.HasOfflineReward ? "Сначала забери награду со склада" : game.HasPendingRoll ? "Сначала заверши оплаченный бросок" : game.PrestigeReward == 0 || game.Progress.prestigeCount == MineGame.MaxPrestiges ? "Достигнут предел новых шахт" : "Шахта ур. 50 · можно начать новую шахту";
-            prestigeState.text = reason; prestigeReward.text = "Новая шахта: +" + game.PrestigeReward + " кристаллов";
-            for (int i = 0; i < MineGame.PrestigeUpgradeCount; i++)
+            if(!prestigeWindowOpen || modal==null) return;
+            prestigeSummary.text="Кристаллы: "+ShortAmount(game.Progress.crystals)+" · Шахт завершено: "+ShortAmount(game.Progress.prestigeCount);
+            prestigeState.text=game.MinerLevel<MineGame.MaxMinerLevel?"Нужен уровень шахты 50. Сейчас: "+game.MinerLevel+".\nПродолжай добычу, чтобы открыть новую шахту.":game.HasOfflineReward?"На складе "+ShortAmount(game.Progress.offlineCoins)+" монет.\nЗабери их перед сбросом — награда не пропадёт.":game.ActionsLocked?"Сначала заверши текущую рулетку.\nОплаченные кирки и очередь сохраняются.":game.CanPrestige?"Можно начать заново и купить постоянные бонусы.":"Достигнут предел наград за новые шахты.";
+            prestigeReward.text="За новую шахту: +"+game.PrestigeReward+" кристаллов";
+            prestigeResetButton.interactable=!EconomyBusy && (game.CanPrestige || game.MinerLevel<MineGame.MaxMinerLevel || game.HasOfflineReward || game.ActionsLocked);
+            prestigeResetButton.GetComponentInChildren<Text>().text=game.MinerLevel<MineGame.MaxMinerLevel?"ПРОДОЛЖИТЬ ДОБЫЧУ":game.HasOfflineReward?"ОТКРЫТЬ СКЛАД":game.ActionsLocked?"ВЕРНУТЬСЯ К РУЛЕТКЕ":game.CanPrestige?"НОВАЯ ШАХТА · +"+game.PrestigeReward+" КР.":"НАГРАДЫ ПОЛУЧЕНЫ";
+            string[] pages={"1/3 · ДОХОД / СТАРТ","2/3 · ЖИЛЫ / КИРКА","3/3 · НАХОДКИ / ЗНАНИЯ"};prestigePageLabel.text=pages[prestigePage];
+            prestigePrevious.interactable=prestigePage>0;prestigeNext.interactable=prestigePage<2;
+            for(int i=0;i<MineGame.PrestigeUpgradeCount;i++)
             {
-                bool owned = game.HasPrestigeUpgrade(i), prerequisite = game.PrestigePrerequisiteMet(i);
-                prestigeNodes[i].color = owned ? Hex("c5d99e") : prerequisite ? Hex("bbc5a9") : Hex("9ca695");
-                if (prestigeLinks[i] != null) prestigeLinks[i].color = prerequisite ? Hex("b2d573") : Hex("59654e");
-                prestigeBuyButtons[i].interactable = !EconomyBusy && game.CanBuyPrestigeUpgrade(i);
-                prestigeBuyButtons[i].GetComponentInChildren<Text>().text = owned ? "Куплено" : !prerequisite ? "Купи выше" : game.Progress.prestigeCount == 0 ? "Закрыто" : MineGame.PrestigeUpgradeAt(i).cost + " кр.";
+                prestigeNodes[i].gameObject.SetActive(i/6==prestigePage);
+                bool owned=game.HasPrestigeUpgrade(i),prerequisite=game.PrestigePrerequisiteMet(i);int cost=MineGame.PrestigeUpgradeAt(i).cost;
+                prestigeNodes[i].color=owned?Hex("c5d99e"):Hex("d9dfd0");
+                prestigeRequirements[i].text=owned?"Активно навсегда":game.Progress.prestigeCount==0?"После 1 новой шахты":!prerequisite?"Нужен: "+MineGame.PrestigeUpgradeAt(i-1).title:game.ActionsLocked?"Заверши рулетку":game.Progress.crystals<cost?"Не хватает: "+(cost-game.Progress.crystals)+" кр.":"Можно купить";
+                prestigeRequirements[i].resizeTextForBestFit=true;prestigeRequirements[i].resizeTextMinSize=12;prestigeRequirements[i].resizeTextMaxSize=16;
+                prestigeBuyButtons[i].interactable=!EconomyBusy&&game.CanBuyPrestigeUpgrade(i);
+                prestigeBuyButtons[i].GetComponentInChildren<Text>().text=owned?"Куплено":"Купить · "+cost+" кр.";
             }
-            prestigeResetButton.interactable = prestigeConfirmButton.interactable = !EconomyBusy && game.CanPrestige;
-            prestigeResetButton.GetComponentInChildren<Text>().text = game.CanPrestige ? "НОВАЯ ШАХТА · +" + game.PrestigeReward + " КР." : game.MinerLevel < MineGame.MaxMinerLevel ? "ДОСТУПНО С УРОВНЯ 50" : "СЕЙЧАС НЕДОСТУПНО";
-            prestigeConfirmButton.GetComponentInChildren<Text>().text = "ПОДТВЕРДИТЬ · +" + game.PrestigeReward + " КР.";
-            prestigeLosses.text = "Будут сброшены:\nМонеты: " + ShortAmount(game.Progress.coins) + " · жетоны: " + game.Progress.tickets + "\nУровень шахтёра и глубина\nКирка, кузница и покупки этой шахты\nПовреждения, реликвии и богатая жила";
-            prestigeStart.text = "Новый старт: " + game.PrestigeStartCoins + " монет · 2 жетона\nКирка ур. " + game.PrestigeStartPick + " · шахтёров: " + game.PrestigeStartWorkers + "\nОпыт в новой шахте: +" + (Mathf.Min(5, game.Progress.prestigeCount + 1) * 15) + "%";
+            prestigeFooter.text="Редкая руда: только уже открытые виды.\nОпыт: +"+(game.PrestigeExperiencePercent-100)+"% · от новых шахт до +75%";
+            prestigeConfirmButton.interactable=!EconomyBusy&&game.CanPrestige;
+            prestigeConfirmButton.GetComponentInChildren<Text>().text="ПОДТВЕРДИТЬ · +"+game.PrestigeReward+" КР.";
+            prestigeLosses.text="Будут сброшены:\nМонеты и обычные жетоны\nКирка, её чары и опыт на зачарование\nУровень шахты и открытые руды\nОбычные улучшения, техника и склад";
+            prestigeStart.text="Старт: "+game.PrestigeStartCoins+" монет · "+game.PrestigeStartTickets+" жетонов\nКирка ур. "+game.PrestigeStartPick+" · Шахтёров: "+game.PrestigeStartWorkers+"\nОпыт на чары: "+game.PrestigeStartEnchantingExperience+" · постоянные бонусы сохранятся";
         }
 
         public void ShowOfflineReward()

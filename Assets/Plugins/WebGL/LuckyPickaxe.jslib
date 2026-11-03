@@ -1,5 +1,6 @@
 mergeInto(LibraryManager.library, {
   LP_Attach: function (receiver) { window.LuckyPickaxe.attachReceiver(UTF8ToString(receiver)); },
+  LP_Authorize: function () { return window.LuckyPickaxe.authorize() ? 1 : 0; },
   LP_Ready: function () { window.LuckyPickaxe.markReady(); },
   LP_LanguageReady: function (language) { window.LuckyPickaxe.confirmLanguage(UTF8ToString(language)); },
   LP_Gameplay: function (active) { window.LuckyPickaxe.setGameplay(active === 1); },

@@ -45,7 +45,7 @@ async function open(profile) {
   });
   await page.goto(url, { waitUntil: "domcontentloaded" }); await waitReady();
 }
-// This fixture controls video callbacks and optional SDK language inside this isolated test profile.
+// This fixture controls video, account callbacks and SDK language in this isolated test profile.
 // It never ships in WebGL or represents a real advertising/monetization check.
 function rewardedFixture() {
   const initialize = window.YaGames.init.bind(window.YaGames);
@@ -53,6 +53,20 @@ function rewardedFixture() {
     const sdk = await initialize(...args);
     const fixtureLanguage = sessionStorage.getItem("test-sdk-language");
     const fixture = window.rewardedFixture = { requests: 0, callbacks: null };
+    let authorized = false;
+    const account = window.accountFixture = { requests: 0, resolve: null, reject: null };
+    const player = { isAuthorized: () => authorized, getName: () => authorized ? "Тестовый шахтёр" : "" };
+    const auth = new Proxy(sdk.auth || {}, { get(target, property) {
+      if (property === "openAuthDialog") return () => {
+        account.requests++;
+        return new Promise((resolve, reject) => {
+          account.resolve = () => { authorized = true; resolve(); };
+          account.reject = reject;
+        });
+      };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    } });
     const adv = new Proxy(sdk.adv || {}, { get(target, property) {
       if (property === "showRewardedVideo") return ({ callbacks }) => { fixture.requests++; fixture.callbacks = callbacks; callbacks.onOpen(); };
       const value = Reflect.get(target, property, target);
@@ -60,6 +74,8 @@ function rewardedFixture() {
     } });
     return new Proxy(sdk, { get(target, property) {
       if (property === "adv") return adv;
+      if (property === "auth") return auth;
+      if (property === "getPlayer") return async () => player;
       if (property === "environment" && fixtureLanguage) return { ...target.environment, i18n: { lang: fixtureLanguage } };
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
@@ -93,11 +109,11 @@ async function run() {
   check(saved.upgradeLevel === 1 && saved.coins === 56 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
 
   await seed({ ...fresh, coins: 345, tickets: 8, hits: 59, experience: 39, oreKind: 9, oreDamage: 31, veinCharge: 23, veinBoostLeft: 12, guideStep: 5 });
-  await shot("webgl-stone-v026"); await tap(215, 380); saved=await read();
+  await shot("webgl-stone-v027"); await tap(215, 380); saved=await read();
   check(saved.coins===345 && saved.tickets===8 && saved.hits===59 && saved.experience===57 && saved.enchantingExperience===18 && saved.miningBlocks===1 && saved.oresMined===0 && saved.veinCharge===23,
     "Real stone break pays XP only, including its level-up, without ticket or vein progress: "+JSON.stringify(saved));
   await page.reload(); await waitReady(); saved=await read();
-  check(saved.version===14 && saved.coins===345 && saved.tickets===8 && saved.miningBlocks===1 && saved.enchantingExperience===18 && saved.oreKind!==9,"Reload preserves the XP-only stone break and advances to a valuable resource");
+  check(saved.version===15 && saved.coins===345 && saved.tickets===8 && saved.miningBlocks===1 && saved.enchantingExperience===18 && saved.oreKind!==9,"Reload preserves the XP-only stone break and advances to a valuable resource");
 
   await seed({ ...fresh, coins: 100000, tickets: 20, experience: 25480, swapLevel: 1, guideStep: 5, lastSeenUtc: Math.floor(Date.now()/1000) });
   await tap(292,916); await tap(240,740); await tap(82,916);
@@ -105,7 +121,7 @@ async function run() {
   check(frozen.rollPending && frozen.totalRolls===1 && frozen.tickets===19 && JSON.stringify(frozen.pendingTypes)===JSON.stringify(tabPaused.pendingTypes),"Switching to Mine pauses the paid reels instead of disabling navigation");
   await tap(215,380); saved=await read();
   check(saved.totalClicks===tabPaused.totalClicks+1 && saved.coins>tabPaused.coins && saved.tickets===19 && saved.rollPending,"Real mining remains playable while the exact roulette choice is paused");
-  await shot("webgl-v026-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
+  await shot("webgl-v027-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
   await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
   saved=await read(); check(saved.totalRolls===1 && saved.tickets===19,"Returning to Roulette resumes its original paid draw without spending another ticket");
   await seed({...fresh,tickets:20,experience:25480,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
@@ -171,6 +187,28 @@ async function run() {
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()) + "\n(" + rewardedFixture.toString() + ")();\n" });
   });
+  await seed({ ...fresh, coins: 6543, enchantingExperience: 777, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest");
+  check(await page.evaluate(() => accountFixture.requests === 0), "Loading a guest account never opens the Yandex authorization dialog automatically");
+  await tap(240, 73); await shot("webgl-v027-account-guest");
+  await tap(240, 584);
+  await page.waitForFunction(() => LuckyPickaxe.status().authorizationPending && accountFixture.requests === 1);
+  const loginPending = await read();
+  await tap(240, 584); await tap(215, 380); await page.waitForTimeout(700);
+  check(JSON.stringify(await read()) === JSON.stringify(loginPending) && await page.evaluate(() => accountFixture.requests === 1 && !LuckyPickaxe.status().engineActive), "The visible sign-in button crosses the WebGL bridge once and freezes input and production during authorization");
+  await page.evaluate(() => accountFixture.resolve());
+  await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "authorized" && !LuckyPickaxe.status().paused && LuckyPickaxe.status().engineActive);
+  saved = await read();
+  check(saved.coins === 6543 && saved.enchantingExperience === 777 && saved.totalClicks === 0, "Successful account authorization resumes the game without replacing the local save or granting resources");
+  await shot("webgl-v027-account-connected"); await tap(240, 726);
+  await seed({ ...fresh, coins: 6543, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest");
+  await tap(240, 73); await tap(240, 584);
+  await page.waitForFunction(() => LuckyPickaxe.status().authorizationPending);
+  await page.evaluate(() => accountFixture.reject(new Error("Cancelled by test player")));
+  await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest" && !LuckyPickaxe.status().paused);
+  check((await read()).coins === 6543 && await page.evaluate(() => LuckyPickaxe.status().engineActive), "Cancelling sign-in returns to a playable guest session with the same wallet");
+  await tap(240, 726);
   await seed({ ...fresh, coins: 80, workerCount: 1, guideStep: 5, offlineRateMilli: 2000, offlineCapacitySeconds: 14400, lastSeenUtc: Math.floor(Date.now() / 1000) - 600 });
   await shot("webgl-rewarded-offer");
   await tap(240, 684);
@@ -255,23 +293,27 @@ async function run() {
   await tap(480, 92); await tap(466,248); const helpWallet=await read();
   await tap(932,381); saved=await read();
   check(saved.coins===helpWallet.coins && saved.hasteLevel===0,"Upgrade question opens a modal that blocks purchases behind its shade");
-  await shot("webgl-v026-upgrade-info"); await tap(640,526);
+  await shot("webgl-v027-upgrade-info"); await tap(640,526);
   await tap(640,381); await tap(932,381); saved=await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Direct enchantments tab buys real Fortune and Haste ranks with their displayed prices");
   await shot("webgl-enchantments"); await page.reload(); await waitReady(); saved = await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Reload retains both new enchantments");
   await seed({ ...fresh, coins: 10000, experience: 700, enchantingExperience: 10000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(480, 92); await tap(749, 197); await shot("webgl-v026-enchanting-room");
+  await tap(480, 92); await tap(749, 197); await shot("webgl-v027-enchanting-room");
   await tap(867, 569); saved = await read();
   check(saved.enchantCount === 1 && saved.enchantments > 0 && saved.enchantingExperience === 9880 && saved.experience === 700, "The dedicated enchanting room spends 120 available XP and applies a real pick enchantment without reducing miner level");
-  const enchanted = saved.enchantments;
+  await tap(867, 317);
+  check((await read()).enchantCount === 1 && (await read()).enchantingExperience === 9880, "The paid result modal blocks re-enchanting behind it before the player closes the reveal");
+  await shot("webgl-v027-enchantment-reveal"); await tap(640, 579);
   await tap(867, 317); saved = await read();
-  check(saved.enchantCount === 2 && saved.enchantingExperience === 9820 && saved.enchantments !== enchanted, "Re-enchanting replaces the previous set and its first-tier price grows from 40 to 60 XP");
+  check(saved.enchantCount === 2 && saved.enchantingExperience === 9820 && saved.enchantments > 0, "Re-enchanting draws a paid random set and its first-tier price grows from 40 to 60 XP");
+  const rerolled = saved.enchantments;
+  await tap(640, 579);
   await page.reload(); await waitReady(); saved = await read();
-  check(saved.enchantCount === 2 && saved.enchantments > 0 && saved.enchantingExperience === 9820 && saved.experience === 700, "Reload retains the exact paid enchantments, reroll counter and unspent XP");
+  check(saved.enchantCount === 2 && saved.enchantments === rerolled && saved.enchantingExperience === 9820 && saved.experience === 700, "Reload retains the exact paid enchantments, reroll counter and unspent XP");
   await tap(480, 92); await tap(967, 197); await tap(640, 351); await tap(640, 411); await tap(640, 470); saved = await read();
   check(saved.coins === 100010000 && saved.enchantingExperience === 19820 && saved.tickets === 12, "Temporary draft tools expose explicit buttons for 100 million coins, enchanting XP and a ten-roll test budget");
-  await shot("webgl-v026-draft-tools");
+  await shot("webgl-v027-draft-tools");
   await seed({ ...fresh, coins: 1000, pickWear: 160, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(1147, 490); saved = await read();
   check(saved.pickWear === 0 && saved.coins === 970, "The mine's direct repair button restores the existing worn pick for its displayed thirty coins");
@@ -283,9 +325,11 @@ async function run() {
   await tap(480, 92); await tap(320, 632); await tap(320, 632); await tap(531, 197); await tap(348, 381); saved = await read();
   check(saved.workerCount === 2 && saved.coins >= 346 && saved.coins <= 350, "Maximum purchase remains selected across sections and hires exactly two affordable workers");
   await page.setViewportSize({ width: 480, height: 960 });
-  await seed({ ...fresh, coins: 264, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(120, 734); await tap(120, 734); saved = await read();
-  check(saved.upgradeLevel === 2 && saved.coins === 0, "Two ordinary tool purchases reach stone at the exact wallet boundary");
+  await seed({ ...fresh, coins: 264, enchantments: 1, enchantCount: 2, enchantingExperience: 77, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
+  await tap(120, 734); saved = await read();
+  check(saved.upgradeLevel === 1 && saved.enchantments === 1 && saved.enchantCount === 2, "A rank upgrade within the wooden material preserves its paid enchantments");
+  await tap(120, 734); saved = await read();
+  check(saved.upgradeLevel === 2 && saved.coins === 0 && saved.enchantments === 0 && saved.enchantCount === 0 && saved.enchantingExperience === 77, "Upgrading wood to stone clears the old enchantments and reroll count while preserving the XP bank");
   await seed({ ...fresh, tickets: 12, experience: 25480, swapLevel: 3, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(376, 740);
   await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).batchActive, key);
@@ -295,7 +339,7 @@ async function run() {
   await page.waitForFunction(key => { const d=JSON.parse(localStorage.getItem(key)); return d.batchCompleted===10 && !d.batchActive && !d.rollPending; }, key, { timeout: 60000 });
   saved=await read();
   check(saved.totalRolls === 10 && saved.coins === 80 + saved.batchReward && saved.tickets >= 2, "Reload resumes the paid series, commits exactly ten rewards and never starts an eleventh draw");
-  await page.waitForTimeout(1000); await shot("webgl-v026-ten-roll-result");
+  await page.waitForTimeout(1000); await shot("webgl-v027-ten-roll-result");
   await seed({ ...fresh, tickets: 10, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(376, 740); await tap(376, 740);
   const stopped = await read();
