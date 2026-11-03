@@ -81,8 +81,9 @@ namespace MineLoot
             Label(shell, "КИРКА УДАЧИ", 78, 19, 320, 42, 32, Hex("faf1cf"), FontStyle.Bold);
             accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,252,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
             var accountCaption=accountButton.GetComponentInChildren<Text>();accountCaption.fontSize=16;accountCaption.resizeTextForBestFit=true;accountCaption.resizeTextMinSize=12;accountCaption.resizeTextMaxSize=16;
-            var sound = ButtonAt(shell, "♪", 411, 25, 45, 45, ShowSettings, Hex("b5b7ae"), Hex("222923"));
-            sound.name = "Open settings"; soundLabel = sound.GetComponentInChildren<Text>();
+            soundButton = ButtonAt(shell, "", 411, 8, 45, 45, ShowSettings, Hex("b5b7ae"), Hex("222923"));
+            soundButton.name = "Open settings";
+            soundIcon = Icon(soundButton.transform,"sound-on",6,6,32,32);soundIcon.name="Sound icon";
             BuildRatingButton(shell);
 
             Card(shell, "Coin wallet", 24, 92, 270, 62, Hex("d9d8cb"));

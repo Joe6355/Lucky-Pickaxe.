@@ -54,7 +54,7 @@ namespace MineLoot
         }
         private void RefreshSettings()
         {
-            soundLabel.text=sounds.Muted||sounds.MasterVolume==0?"♪×":"♪";
+            soundIcon.sprite=art.Get(sounds.Muted||sounds.MasterVolume==0?"sound-off":"sound-on");
             if(!settingsWindowOpen) return;
             settingsMute.GetComponentInChildren<Text>().text=sounds.Muted?"ЗВУК ВЫКЛЮЧЕН · ВКЛЮЧИТЬ":"ЗВУК ВКЛЮЧЁН · ВЫКЛЮЧИТЬ";
             for(int i=0;i<3;i++)

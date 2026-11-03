@@ -131,7 +131,7 @@ namespace MineLoot
             Frame(headerLayout, "Header shadow", 0, 0, width, 164);
             Frame(coinLayout, width - 525, 29, 270, 62);
             Frame(ticketWalletLayout, width - 243, 29, 150, 62);
-            ButtonFrame(soundLabel.GetComponentInParent<Button>(), width - 70, 37, 45, 45);
+            ButtonFrame(soundButton, width - 70, 37, 45, 45);
             float navWidth = width - 48;
             Frame(navigationLayout, 24, 96, navWidth, 58);
             Frame(navigationLayout, "Navigation", 0, 0, navWidth, 58);

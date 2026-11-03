@@ -170,6 +170,18 @@ namespace MineLoot
                 for (int y = 4; y < 30; y += 8) R(2, y, 28, 4, "#967049");
                 R(7, 1, 4, 30, "#596971"); R(8, 1, 2, 30, "#b6c7c5"); R(21, 1, 4, 30, "#596971"); R(22, 1, 2, 30, "#b6c7c5");
             }
+            else if (name == "sound-on" || name == "sound-off")
+            {
+                // A sprite instead of a font glyph: visible with every UI font.
+                R(3,12,6,8,"#243b40");R(8,10,3,12,"#243b40");
+                R(11,7,3,18,"#243b40");R(14,4,3,24,"#243b40");
+                if(name=="sound-on")
+                {
+                    R(20,10,2,3,"#243b40");R(22,13,2,6,"#243b40");R(20,19,2,3,"#243b40");
+                    R(24,5,2,3,"#243b40");R(26,8,2,4,"#243b40");R(28,12,2,8,"#243b40");R(26,20,2,4,"#243b40");R(24,24,2,3,"#243b40");
+                }
+                else for(int i=0;i<8;i++) {R(20+i,11+i,2,2,"#a0443c");R(27-i,11+i,2,2,"#a0443c");}
+            }
             else if (name.StartsWith("rank-medal-"))
             {
                 int.TryParse(name.Substring(11),out int rank);rank=Mathf.Clamp(rank,0,11);

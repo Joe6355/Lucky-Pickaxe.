@@ -36,9 +36,9 @@ namespace MineLoot
         private Rect lastSafe;
         private GameAudio sounds;
         private Image mineBackdrop, rollBackdrop, boardFill;
-        private Image clickPick;
-        private Text forgeLabel, contractLabel, soundLabel, veinLabel, floorHint;
-        private Button forgeButton, contractButton;
+        private Image clickPick, soundIcon;
+        private Text forgeLabel, contractLabel, veinLabel, floorHint;
+        private Button forgeButton, contractButton, soundButton;
         private bool dirty, holding, holdRepeated;
         private float nextHold, lastMineTime = -1, nextSave;
         private Text miningGain;
