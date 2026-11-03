@@ -13,6 +13,7 @@ function emitter(target = {}) {
 }
 function fixture(settings = {}) {
   const calls = [], data = new Map(), root = emitter();
+  let clock=Date.now();const FixtureDate=class extends Date {static now(){return clock;}};
   const doc = emitter({ hidden: false, createElement: () => ({}) });
   let initCalls = 0, readyCalls = 0, writes = 0, languageReads = 0;
   const ads = [], gameplayCalls = [];
@@ -37,6 +38,15 @@ function fixture(settings = {}) {
     sdk.getPlayer=()=>{playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));return Promise.resolve({isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр"});};
     sdk.auth={openAuthDialog(){if(settings.authThrows) throw new Error("Dialog unavailable");return new Promise((resolve,reject)=>authRequests.push({resolve(){playerAuthorized=true;resolve();},reject}));}};
   }
+  const ranking={writes:[],reads:[],playerReads:0,availability:[]};let remoteScore=settings.remoteScore;
+  if(settings.leaderboard) {
+    sdk.isAvailableMethod=async name=>{ranking.availability.push(name);return !settings.ratingUnavailable;};
+    sdk.leaderboards={
+      getEntries(name,options){ranking.reads.push({name,options});if(settings.ratingReadFails) return Promise.reject(new Error("404"));return settings.entriesPromise||Promise.resolve(settings.entries||{entries:[],userRank:0});},
+      async getPlayerEntry(name){ranking.playerReads++;if(settings.ratingPlayerFails) throw new Error("Network unavailable");if(remoteScore===undefined) throw {code:"LEADERBOARD_PLAYER_NOT_PRESENT"};return {score:remoteScore};},
+      async setScore(name,score,extra){if(settings.ratingWriteFails) throw new Error("Write unavailable");ranking.writes.push({name,score,extra});remoteScore=score;}
+    };
+  }
   Object.assign(root, {
     document: doc, location: { hostname: settings.host || "games.example", search: settings.search || "" },
     console: { warn() {}, error() {} },
@@ -48,7 +58,7 @@ function fixture(settings = {}) {
   });
   doc.head = { appendChild(script) { calls.push(script.src); queueMicrotask(() => script.onerror()); } };
   if (settings.missingScript) delete root.YaGames;
-  const context = vm.createContext({ window: root, URLSearchParams, Promise }); vm.runInContext(source, context);
+  const context = vm.createContext({ window: root, URLSearchParams, Promise, Date:FixtureDate }); vm.runInContext(source, context);
   const api = root.LuckyPickaxe;
   const unity = { SendMessage(receiver, method, value) {
     calls.push({ receiver, method, value });
@@ -56,7 +66,7 @@ function fixture(settings = {}) {
     if (method === "OnBrowserPause" && !settings.manualGameplay) api.setGameplay(value === "0");
     if (settings.onMessage) settings.onMessage(method, value, api);
   } };
-  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
+  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, ranking, advanceClock(ms){clock+=ms;}, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
 function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
@@ -271,6 +281,43 @@ async function run() {
   f.authRequests[0].resolve();await settleAccount();
   check(f.calls.length===callsAfterAuthDispose && f.playerCalls===1 && f.api.status().disposed,"A late login result cannot restart a disposed game or fetch another player");
   f=fixture();await start(f);check(!f.api.authorize() && f.api.status().accountStatus==="unavailable","A missing SDK auth provider is reported without a fake login");
+
+  const submission=JSON.stringify({version:1,score:12,blocks:100,coins:100000,tickets:20,xp:1000,resets:2,test:false});
+  const rankingEvent=(f,method="OnBrowserRating")=>JSON.parse(f.calls.filter(e=>e.method===method).at(-1)?.value||"{}");
+  async function settleRating(){for(let i=0;i<30;i++) await Promise.resolve();}
+  f=fixture({leaderboard:true});await start(f);
+  check(f.api.requestRating(),"A guest can explicitly load the public leaderboard");await settleRating();
+  check(f.ranking.reads.length===1 && f.ranking.reads[0].name==="mmr" && !f.ranking.reads[0].options.includeUser && rankingEvent(f).status==="ready","An empty real leaderboard remains empty and never invents players");
+  check(!f.api.submitRating(submission) && f.ranking.writes.length===0,"A guest cannot submit an online rating");
+  f.api.requestRating();await settleRating();check(f.ranking.reads.length===1,"Repeated leaderboard clicks reuse the thirty-second cache");
+  f.advanceClock(30001);f.api.requestRating();await settleRating();check(f.ranking.reads.length===2,"The table may reload after its SDK request cooldown");
+  f=fixture({auth:true,authorized:true,leaderboard:true,entries:{userRank:7,entries:[{rank:7,score:12,player:{publicName:"Player"},extraData:submission},{rank:1,score:20000,player:{publicName:"Leader"},extraData:"bad JSON"},{rank:1,score:20000,player:{publicName:"Duplicate"}},{rank:0,score:-1}]}});await start(f);await settleRating();
+  f.api.requestRating();await settleRating();const table=rankingEvent(f);
+  check(table.entries.length===2 && table.entries[0].rank===1 && table.entries[1].me && table.entries[1].hasStats && table.entries[1].blocks===100,"Entries are sorted, deduplicated, validated and mark the current player with real summary data");
+  check(!table.entries[0].hasStats && f.ranking.reads[0].options.includeUser,"Missing summary JSON does not hide a valid score or invent statistics");
+  check(f.api.submitRating(submission) && !f.api.submitRating(submission),"A paid progress snapshot starts only one in-flight ranking submission");await settleRating();
+  check(f.ranking.writes.length===1 && f.ranking.playerReads===1 && f.ranking.writes[0].score===12 && rankingEvent(f,"OnBrowserRatingSaved").status==="saved","A missing player record writes the real score and summary once");
+  check(f.ranking.availability.includes("leaderboards.setScore") && f.ranking.availability.includes("leaderboards.getPlayerEntry"),"Ranking checks both SDK methods before submitting");
+  check(!f.api.submitRating(submission),"Repeated score posts obey the thirty-second submission cooldown");
+  f.advanceClock(30001);f.api.submitRating(submission);await settleRating();check(f.ranking.writes.length===1,"An equal saved score is acknowledged without rewriting the leaderboard");
+  f=fixture({auth:true,authorized:true,leaderboard:true,remoteScore:100});await start(f);await settleRating();f.api.submitRating(submission);await settleRating();
+  check(f.ranking.writes.length===0 && rankingEvent(f,"OnBrowserRatingSaved").score===100,"A lower local save cannot overwrite a higher Yandex record");
+  f=fixture({auth:true,authorized:true,leaderboard:true,ratingPlayerFails:true});await start(f);await settleRating();f.api.submitRating(submission);await settleRating();
+  check(f.ranking.writes.length===0 && rankingEvent(f,"OnBrowserRatingSaved").status==="error" && !f.api.status().ratingSendPending,"A network failure reading the previous record never writes a potentially lower score");
+  f=fixture({auth:true,authorized:true,leaderboard:true,ratingWriteFails:true});await start(f);await settleRating();f.api.submitRating(submission);await settleRating();
+  check(rankingEvent(f,"OnBrowserRatingSaved").status==="error" && !f.api.status().paused,"A failed ranking write cannot pause gameplay or report success");
+  f=fixture({auth:true,authorized:true,leaderboard:true,ratingUnavailable:true});await start(f);await settleRating();f.api.submitRating(submission);await settleRating();
+  check(f.ranking.playerReads===0 && f.ranking.writes.length===0 && rankingEvent(f,"OnBrowserRatingSaved").status==="error","Unavailable leaderboard methods are a recoverable error");
+  f=fixture({auth:true,authorized:true,leaderboard:true});await start(f);await settleRating();
+  for(const data of [{test:true},{score:-1},{score:2.5},{score:2147483648},{xp:-1},{version:2}]) check(!f.api.submitRating(JSON.stringify({...JSON.parse(submission),...data})),"Invalid or test-only ranking snapshots never reach the platform: "+JSON.stringify(data));
+  check(f.ranking.writes.length===0,"Temporary resource tests cannot create an online record");
+  f=fixture({leaderboard:true,ratingReadFails:true});await start(f);f.api.requestRating();await settleRating();check(rankingEvent(f).status==="error" && !f.api.status().failed && !f.api.status().paused,"An unavailable table preserves the active game and exposes a retry state");
+  let finishEntries;
+  f=fixture({leaderboard:true,entriesPromise:new Promise(resolve=>finishEntries=resolve)});await start(f);f.api.requestRating();await settleRating();f.api.dispose();const disposedCalls=f.calls.length;finishEntries({entries:[]});await settleRating();
+  check(f.calls.length===disposedCalls,"A late leaderboard response cannot update a disposed Unity instance");
+  f=fixture({auth:true,leaderboard:true});await start(f);await settleRating();f.api.requestRating();await settleRating();f.api.authorize();f.authRequests[0].resolve();await settleRating();f.api.requestRating();await settleRating();
+  check(f.ranking.reads.length===2 && f.ranking.reads[1].options.includeUser,"Signing in invalidates the guest cache and includes the real current-player row");
+  f=fixture();await start(f);check(!f.api.requestRating() && !f.api.submitRating(submission),"A missing leaderboard provider is not replaced by a fake online table");
 
   fs.mkdirSync(path.join(__dirname, "../Logs"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));

@@ -77,12 +77,13 @@ namespace MineLoot
             surface.color = Hex("e0e5e2");
             PanelAt(shell, "Header shadow", Hex("1e3440"), 0, 0, 480, 164);
             Card(shell, "Inventory base", 12, 164, 456, 712, Hex("e0e5e2"));
-            Icon(shell, "pick-wood", 23, 21, 44, 44);
+            Icon(shell, "pick-wood", 23, 28, 44, 44).name="Header pickaxe";
             Label(shell, "КИРКА УДАЧИ", 78, 19, 320, 42, 32, Hex("faf1cf"), FontStyle.Bold);
-            accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,320,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
+            accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,252,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
             var accountCaption=accountButton.GetComponentInChildren<Text>();accountCaption.fontSize=16;accountCaption.resizeTextForBestFit=true;accountCaption.resizeTextMinSize=12;accountCaption.resizeTextMaxSize=16;
             var sound = ButtonAt(shell, "♪", 411, 25, 45, 45, ToggleSound, Hex("b5b7ae"), Hex("222923"));
             sound.name = "Toggle sound"; soundLabel = sound.GetComponentInChildren<Text>();
+            BuildRatingButton(shell);
 
             Card(shell, "Coin wallet", 24, 92, 270, 62, Hex("d9d8cb"));
             Icon(shell, "coin", 36, 103, 41, 41);
@@ -694,7 +695,7 @@ namespace MineLoot
         private void CloseModal()
         {
             if (modal == null || RewardedVideoPending) return;
-            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
+            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = ratingWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
             dialogShade.SetActive(false); Refresh();
         }
 

@@ -32,6 +32,8 @@ namespace MineLoot
             accountName=(data.name??"").Replace("<","").Replace(">","").Trim();if(accountName.Length>40) accountName=accountName.Substring(0,40);
             if(returning) { game.RecordSession(SessionUtc);Persist();Flush(true); }
             RefreshAccount();ApplyPlatformPause();
+            nextRatingSend=0;submittedRating=-1;
+            if(returning) nextRatingLoad=0;
         }
         private void ShowYandexAccount()
         {
@@ -39,7 +41,7 @@ namespace MineLoot
             modal=CreateModal("Yandex account modal");Card(modal.transform,"Yandex account card",24,148,432,644,Panel);
             Label(modal.transform,"АККАУНТ ЯНДЕКСА",44,168,392,40,26,Ink,FontStyle.Bold);
             accountStatusLabel=Label(modal.transform,"",44,238,392,96,22,Ink,FontStyle.Bold);
-            Label(modal.transform,"Подключи профиль Яндекса: имя аккаунта появится в игре.\n\nСохранение хранится на этом устройстве.",44,356,392,128,19,Muted);
+            Label(modal.transform,"Подключи профиль Яндекса для участия в рейтинге шахтёров.\n\nСохранение хранится на этом устройстве.",44,356,392,128,19,Muted);
             accountLoginButton=ButtonAt(modal.transform,"ВОЙТИ ЧЕРЕЗ ЯНДЕКС",44,560,392,48,BeginYandexLogin,Hex("dfc285"),Ink);accountLoginButton.name="Authorize Yandex";
             ButtonAt(modal.transform,"Продолжить игру",44,704,392,44,CloseModal,Panel,Ink).name="Close Yandex account";
             RefreshAccount();

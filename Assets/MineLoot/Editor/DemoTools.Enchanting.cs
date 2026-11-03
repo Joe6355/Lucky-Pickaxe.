@@ -7,7 +7,7 @@ public static partial class DemoTools
     private static void VerifyEnchantingAndBatches(Action<bool,string> check)
     {
         var game = new MineGame(ProgressStore.Decode("{\"version\":12,\"coins\":745,\"tickets\":400,\"hits\":7,\"pressLevel\":2,\"experience\":700,\"upgradeLevel\":20,\"oreDamage\":12}"));
-        check(game.Progress.version == 15 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
+        check(game.Progress.version == 16 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
         game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         check(game.Progress.hits == 35 && game.Progress.enchantingExperience == 700, "v13 reload neither multiplies the counter nor grants old XP again");
         game = new MineGame(new MineProgress { enchantingExperience = 10000, coins = 100000, experience = 700 });
@@ -94,7 +94,7 @@ public static partial class DemoTools
         game.Progress.pickWear=480;check(game.RepairCost==40,"Permanent workshop cuts a fully worn stone pick repair from eighty to forty coins");
         game.Progress.experience=MineGame.ExperienceForLevel(50);check(game.Prestige(()=>.6) && game.Progress.tickets==12 && game.Progress.enchantingExperience==300 && game.PickLifetime==480,"A reset grants the owned ticket and XP starter bonuses with the durable stone pick");
         var legacy=new MineGame(new MineProgress{version=14,prestigeCount=1,prestigeUpgrades=511,coins=745,tickets=4,enchantments=3,enchantCount=2,enchantingExperience=700});
-        check(legacy.Progress.version==15 && legacy.Progress.prestigeUpgrades==511 && legacy.Progress.coins==745 && legacy.Progress.tickets==4 && legacy.Progress.enchantments==3 && legacy.Progress.enchantingExperience==700,"v14 migration keeps owned perks, money and current enchantments until an actual material replacement");
+        check(legacy.Progress.version==16 && legacy.Progress.prestigeUpgrades==511 && legacy.Progress.coins==745 && legacy.Progress.tickets==4 && legacy.Progress.enchantments==3 && legacy.Progress.enchantingExperience==700,"v14 migration keeps owned perks, money and current enchantments until an actual material replacement");
         var normal=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50)});
         var lucky=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50),prestigeCount=1,prestigeUpgrades=(1<<12)|(1<<13)});
         int normalRare=0,luckyRare=0;

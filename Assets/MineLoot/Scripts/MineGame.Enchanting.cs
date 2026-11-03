@@ -68,7 +68,9 @@ namespace MineLoot
         {
             if (!CanEnchant(slot)) return false;
             int seed = DrawSeed(random), set = RollEnchantments(slot,seed);
-            Progress.enchantingExperience -= EnchantmentCost(slot);
+            long paid=EnchantmentCost(slot);
+            Progress.enchantingExperience -= paid;
+            Progress.spentEnchantingExperience=Math.Min(CoinLimit,Progress.spentEnchantingExperience+paid);
             Progress.enchantments = set; Progress.enchantCount++; Progress.enchantSeed = seed; Progress.wearCarry = 0;
             return true;
         }

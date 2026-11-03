@@ -170,6 +170,26 @@ namespace MineLoot
                 for (int y = 4; y < 30; y += 8) R(2, y, 28, 4, "#967049");
                 R(7, 1, 4, 30, "#596971"); R(8, 1, 2, 30, "#b6c7c5"); R(21, 1, 4, 30, "#596971"); R(22, 1, 2, 30, "#b6c7c5");
             }
+            else if (name.StartsWith("rank-medal-"))
+            {
+                int.TryParse(name.Substring(11),out int rank);rank=Mathf.Clamp(rank,0,11);
+                bool enchanted=(rank&1)==1;
+                R(7,0,6,12,enchanted?"#8656b6":"#356879");R(19,0,6,12,enchanted?"#8656b6":"#356879");
+                R(9,0,2,9,enchanted?"#d7b8ff":"#93d6ce");R(21,0,2,9,enchanted?"#d7b8ff":"#93d6ce");
+                R(7,7,18,24,"#74522d");R(4,10,24,18,"#74522d");
+                R(7,8,18,22,enchanted?"#bc96dc":"#dfbe72");R(5,11,22,16,enchanted?"#bc96dc":"#dfbe72");
+                R(8,10,16,18,enchanted?"#4c3c63":"#384c50");R(7,12,18,14,enchanted?"#4c3c63":"#384c50");
+                string[] picks={"pick-wood","pick-stone","pick2","pick-gold","pick4","pick-netherite"};
+                var pick=Get(picks[rank/2]).texture;
+                for(int y=0;y<20;y++)for(int x=0;x<20;x++)
+                {
+                    Color pixel=pick.GetPixel(x*pick.width/20,y*pick.height/20);if(pixel.a<.1f) continue;
+                    if(enchanted && (x+y)%9<3) pixel=Color.Lerp(pixel,new Color(.82f,.58f,1),.65f);
+                    t.SetPixel(6+x,3+y,pixel);
+                }
+                R(8,9,16,1,enchanted?"#ecd8ff":"#fff0b9");
+                if(enchanted) {R(24,6,1,5,"#fff0ff");R(22,8,5,1,"#fff0ff");R(5,26,3,1,"#d7b8ff");}
+            }
             else if (name == "medal")
             {
                 R(7, 3, 7, 13, "#386c75"); R(18, 3, 7, 13, "#386c75");

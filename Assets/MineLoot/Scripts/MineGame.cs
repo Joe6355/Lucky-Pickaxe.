@@ -8,7 +8,7 @@ namespace MineLoot
     [Serializable]
     public sealed class MineProgress
     {
-        public int version = 15;
+        public int version = 16;
         public long coins = 80;
         public int tickets = 2;
         public int hits;
@@ -58,6 +58,8 @@ namespace MineLoot
         public bool batchActive, pendingBatch;
         public int batchRemaining, batchCompleted;
         public long batchReward;
+        public long earnedCoins, spentTickets, spentEnchantingExperience;
+        public bool ratingTestProfile, ratingHistoryPartial;
     }
 
     // Pure rules: no scene dependencies, animation or platform SDK calls.
@@ -238,7 +240,8 @@ namespace MineLoot
             bool legacyMining = Progress.version < 12;
             bool legacyEnchanting = Progress.version < 13;
             bool legacyPermanent = Progress.version < 15;
-            Progress.version = 15;
+            bool legacyRating = Progress.version < 16;
+            Progress.version = 16;
             Progress.fortuneLevel = Math.Max(0, Math.Min(10, Progress.fortuneLevel));
             Progress.hasteLevel = Math.Max(0, Math.Min(10, Progress.hasteLevel));
             Progress.videoTicketsReadyUtc = Math.Max(0, Math.Min(MaxUtcSeconds, Progress.videoTicketsReadyUtc));
@@ -282,6 +285,7 @@ namespace MineLoot
             Progress.railLevel = Math.Max(0, Math.Min(10, Progress.railLevel));
             Progress.productionCarry = FiniteClamp(Progress.productionCarry, 0, .999999999);
             Progress.totalProduced = Math.Max(0, Math.Min(CoinLimit, Progress.totalProduced));
+            SanitizeRating(legacyRating);
             Progress.veinCharge = Math.Max(0, Math.Min(RichVeinTarget - 1, Progress.veinCharge));
             Progress.veinOfferLeft = FiniteClamp(Progress.veinOfferLeft, 0, VeinOfferSeconds);
             Progress.veinBoostLeft = FiniteClamp(Progress.veinBoostLeft, 0, RichVeinDuration);
@@ -798,6 +802,8 @@ namespace MineLoot
                 totalClicks = previous.totalClicks, oresMined = previous.oresMined, miningBlocks = previous.miningBlocks, totalRolls = previous.totalRolls,
                 totalBlocks = previous.totalBlocks, claimedContracts = previous.claimedContracts,
                 totalProduced = previous.totalProduced, totalOfflineCoins = previous.totalOfflineCoins,
+                earnedCoins=previous.earnedCoins,spentTickets=previous.spentTickets,spentEnchantingExperience=previous.spentEnchantingExperience,
+                ratingTestProfile=previous.ratingTestProfile,ratingHistoryPartial=previous.ratingHistoryPartial,
                 lastSeenUtc = previous.lastSeenUtc, videoTicketsReadyUtc = previous.videoTicketsReadyUtc, videoTicketClaims = previous.videoTicketClaims
             };
             Sanitize();
@@ -848,6 +854,7 @@ namespace MineLoot
             if (!CanAbandon) return false;
             int seed = DrawSeed(random);
             Progress.tickets--;
+            Progress.spentTickets=Math.Min(CoinLimit,Progress.spentTickets+1);
             NextFloor(seed, false);
             return true;
         }
@@ -866,6 +873,7 @@ namespace MineLoot
             int seed = nextFloor ? DrawSeed(random) : Progress.boardSeed;
             if (nextFloor) NextFloor(seed);
             Progress.tickets--;
+            Progress.spentTickets=Math.Min(CoinLimit,Progress.spentTickets+1);
             Progress.totalRolls = Math.Min(10000000, Progress.totalRolls + 1);
             for (int c = 0; c < Columns; c++) if (!IsActiveColumn(c)) types[c] = 0;
             Progress.pendingTypes = types;
@@ -960,7 +968,12 @@ namespace MineLoot
         // Automatic resolution remains available for rule checks and the no-exchange simulation.
         public RollResult Roll(Func<double> random) => BeginRoll(random) ? ResolveRoll() : null;
 
-        private void AddCoins(long value) => Progress.coins = Math.Min(CoinLimit, Progress.coins + value);
+        private void AddCoins(long value)
+        {
+            long credit=Math.Max(0,Math.Min(value,CoinLimit-Progress.coins));
+            Progress.coins+=credit;
+            Progress.earnedCoins=Math.Min(CoinLimit,Progress.earnedCoins+credit);
+        }
     }
 
     public readonly struct PrestigeUpgrade

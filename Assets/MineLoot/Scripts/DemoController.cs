@@ -114,6 +114,7 @@ namespace MineLoot
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
             if (applicationPaused) return;
+            PumpRating();
             float dt = PlayDelta;
             if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !EconomyBusy && modal == null && Application.isFocused);
             skipEconomyFrame = false;
@@ -369,6 +370,7 @@ namespace MineLoot
             stage.gameObject.SetActive(mining); shaft.gameObject.SetActive(roulette);
             RefreshEnchantmentVisibility();
             RefreshGuide();
+            RefreshRating();
         }
 
         public void Spin()
@@ -848,6 +850,7 @@ namespace MineLoot
             stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
             clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
             RefreshGuide();
+            RefreshRating();
         }
 
         public static bool SmokeMode => Array.IndexOf(Environment.GetCommandLineArgs(), "-demoSmokeTest") >= 0;

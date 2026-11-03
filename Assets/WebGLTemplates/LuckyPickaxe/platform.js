@@ -7,6 +7,8 @@
   let requestedLanguage, language, sentLanguage = false, languageApplied = false;
   let disposed = false, engineActive = false, gameplayReported = false, gameplayUnavailable = false;
   let account = { available: false, status: "unavailable", name: "" }, authPending = false, sentAccount, accountGeneration=0;
+  const ratingName="mmr";
+  let ratingCache, ratingLoadPending=false, ratingSendPending=false, ratingLoadAfter=0, ratingSendAfter=0, ratingLoadGeneration=-1;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
@@ -87,7 +89,7 @@
   }
   function authorize() {
     if(disposed || !ready || local || isPaused() || !account.available || authPending || account.status==="authorized") return false;
-    const generation=++accountGeneration;authPending=true;account={available:true,status:"pending",name:""};notify();
+    const generation=++accountGeneration;ratingCache=null;ratingLoadAfter=0;authPending=true;account={available:true,status:"pending",name:""};notify();
     let dialog;
     try { dialog=sdk.auth.openAuthDialog(); }
     catch(error) { authPending=false;account={available:true,status:"guest",name:""};notify();return false; }
@@ -99,6 +101,46 @@
     failed = true; ready = false; notify();
     root.console.error("Lucky Pickaxe: browser initialization failed", error);
     if (options.onError) options.onError(error);
+  }
+  function ratingFailure(error) {
+    return error?.code==="LEADERBOARD_PLAYER_NOT_PRESENT";
+  }
+  function requestRating() {
+    if(disposed || !ready || local || !sdk?.leaderboards || typeof sdk.leaderboards.getEntries!=="function") return false;
+    if(ratingLoadPending && ratingLoadGeneration===accountGeneration) return true;
+    if(Date.now()<ratingLoadAfter) {if(ratingCache) send("OnBrowserRating",JSON.stringify(ratingCache));return true;}
+    const generation=accountGeneration;ratingLoadGeneration=generation;ratingLoadPending=true;ratingLoadAfter=Date.now()+30000;
+    send("OnBrowserRating",JSON.stringify({status:"loading",entries:[]}));
+    Promise.resolve().then(()=>sdk.leaderboards.getEntries(ratingName,{quantityTop:5,includeUser:account.status==="authorized",quantityAround:2})).then(data=>{
+      if(disposed || generation!==accountGeneration) return;
+      const userRank=Number.isSafeInteger(data?.userRank)&&data.userRank>0?data.userRank:0;
+      const ranks=new Set();
+      const entries=(Array.isArray(data?.entries)?data.entries:[]).slice(0,20).filter(e=>e && Number.isSafeInteger(e.rank)&&e.rank>0&&Number.isSafeInteger(e.score)&&e.score>=0&&e.score<=2147483647&&!ranks.has(e.rank)&&ranks.add(e.rank)).map(e=>{
+        let extra;try {if(typeof e.extraData==="string" && e.extraData.length<=512) extra=JSON.parse(e.extraData);} catch {}
+        const hasStats=extra?.version===1&&Number.isSafeInteger(extra.blocks)&&extra.blocks>=0&&extra.blocks<=1e12&&Number.isSafeInteger(extra.resets)&&extra.resets>=0&&extra.resets<=1e6;
+        return {rank:e.rank,score:e.score,name:String(e.player?.publicName||"Игрок").slice(0,40),me:userRank>0&&e.rank===userRank,hasStats,blocks:hasStats?extra.blocks:0,resets:hasStats?extra.resets:0};
+      }).sort((a,b)=>a.rank-b.rank);
+      ratingCache={status:"ready",userRank,entries};send("OnBrowserRating",JSON.stringify(ratingCache));
+    }).catch(()=>{if(!disposed && generation===accountGeneration) {ratingCache={status:"error",entries:[]};send("OnBrowserRating",JSON.stringify(ratingCache));}}).finally(()=>{if(generation===ratingLoadGeneration) ratingLoadPending=false;});
+    return true;
+  }
+  function submitRating(json) {
+    if(disposed || !ready || local || account.status!=="authorized" || authPending || ratingSendPending || Date.now()<ratingSendAfter || !sdk?.leaderboards || typeof sdk.leaderboards.setScore!=="function" || typeof sdk.leaderboards.getPlayerEntry!=="function" || typeof sdk.isAvailableMethod!=="function" || typeof json!=="string" || json.length>512) return false;
+    let data;try {data=JSON.parse(json);} catch {return false;}
+    if(data?.version!==1 || data.test!==false || !Number.isSafeInteger(data.score) || data.score<=0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
+    const generation=accountGeneration;ratingSendPending=true;ratingSendAfter=Date.now()+30000;
+    Promise.resolve().then(async()=>{
+      if(!await sdk.isAvailableMethod("leaderboards.setScore") || !await sdk.isAvailableMethod("leaderboards.getPlayerEntry")) throw new Error("Rating unavailable");
+      let previous=0;
+      try {const entry=await sdk.leaderboards.getPlayerEntry(ratingName);if(Number.isSafeInteger(entry?.score)&&entry.score>0) previous=entry.score;}
+      catch(error) {if(!ratingFailure(error)) throw error;}
+      if(disposed || generation!==accountGeneration) return;
+      if(data.score>previous) await sdk.leaderboards.setScore(ratingName,data.score,JSON.stringify(data));
+      if(disposed || generation!==accountGeneration) return;
+      ratingCache=null;ratingLoadAfter=0;
+      send("OnBrowserRatingSaved",JSON.stringify({status:"saved",score:Math.max(data.score,previous)}));
+    }).catch(()=>{if(!disposed && generation===accountGeneration) send("OnBrowserRatingSaved",JSON.stringify({status:"error"}));}).finally(()=>{ratingSendPending=false;});
+    return true;
   }
   function finishReady() {
     if (disposed || ready || failed || !gameReady || !unity || !languageApplied || (!sdk && !local)) return;
@@ -185,6 +227,8 @@
     setGameplay(active) { if (!disposed) { engineActive = active === true; syncGameplay(); } },
     showRewarded,
     authorize,
+    requestRating,
+    submitRating,
     readProgress(key) {
       try { return root.localStorage.getItem(journalKey(key)); }
       catch (error) { storageWarning(error); return null; }
@@ -195,6 +239,6 @@
       catch (error) { storageWarning(error); return false; }
     },
     dispose,
-    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending }; }
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending, ratingLoadPending, ratingSendPending }; }
   };
 })(window);

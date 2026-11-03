@@ -55,6 +55,18 @@ function rewardedFixture() {
     const fixture = window.rewardedFixture = { requests: 0, callbacks: null };
     let authorized = false;
     const account = window.accountFixture = { requests: 0, resolve: null, reject: null };
+    const ranking = window.rankingFixture = { reads: [], writes: [], playerReads: 0 };
+    let remoteScore;
+    const leaderboards = {
+      async getEntries(name,options) {
+        ranking.reads.push({name,options});
+        const entries=[20000,10000,5000,2500,1200].map((score,index)=>({rank:index+1,score,player:{publicName:"Шахтёр "+(index+1)},extraData:JSON.stringify({version:1,blocks:10000-index*1000,resets:4})}));
+        if(options.includeUser) entries.push({rank:7,score:remoteScore||0,player:{publicName:"Тестовый шахтёр"},extraData:JSON.stringify({version:1,blocks:1000,resets:2})});
+        return {userRank:options.includeUser?7:0,entries};
+      },
+      async getPlayerEntry(){ranking.playerReads++;if(remoteScore===undefined) throw {code:"LEADERBOARD_PLAYER_NOT_PRESENT"};return {score:remoteScore};},
+      async setScore(name,score,extra){ranking.writes.push({name,score,extra});remoteScore=score;}
+    };
     const player = { isAuthorized: () => authorized, getName: () => authorized ? "Тестовый шахтёр" : "" };
     const auth = new Proxy(sdk.auth || {}, { get(target, property) {
       if (property === "openAuthDialog") return () => {
@@ -76,6 +88,8 @@ function rewardedFixture() {
       if (property === "adv") return adv;
       if (property === "auth") return auth;
       if (property === "getPlayer") return async () => player;
+      if (property === "leaderboards") return leaderboards;
+      if (property === "isAvailableMethod") return async () => true;
       if (property === "environment" && fixtureLanguage) return { ...target.environment, i18n: { lang: fixtureLanguage } };
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
@@ -109,11 +123,11 @@ async function run() {
   check(saved.upgradeLevel === 1 && saved.coins === 56 && saved.totalClicks === 12, "Page reload restores the paid upgrade and mining progress");
 
   await seed({ ...fresh, coins: 345, tickets: 8, hits: 59, experience: 39, oreKind: 9, oreDamage: 31, veinCharge: 23, veinBoostLeft: 12, guideStep: 5 });
-  await shot("webgl-stone-v027"); await tap(215, 380); saved=await read();
+  await shot("webgl-stone-v028"); await tap(215, 380); saved=await read();
   check(saved.coins===345 && saved.tickets===8 && saved.hits===59 && saved.experience===57 && saved.enchantingExperience===18 && saved.miningBlocks===1 && saved.oresMined===0 && saved.veinCharge===23,
     "Real stone break pays XP only, including its level-up, without ticket or vein progress: "+JSON.stringify(saved));
   await page.reload(); await waitReady(); saved=await read();
-  check(saved.version===15 && saved.coins===345 && saved.tickets===8 && saved.miningBlocks===1 && saved.enchantingExperience===18 && saved.oreKind!==9,"Reload preserves the XP-only stone break and advances to a valuable resource");
+  check(saved.version===16 && saved.coins===345 && saved.tickets===8 && saved.miningBlocks===1 && saved.enchantingExperience===18 && saved.oreKind!==9,"Reload preserves the XP-only stone break and advances to a valuable resource");
 
   await seed({ ...fresh, coins: 100000, tickets: 20, experience: 25480, swapLevel: 1, guideStep: 5, lastSeenUtc: Math.floor(Date.now()/1000) });
   await tap(292,916); await tap(240,740); await tap(82,916);
@@ -121,7 +135,7 @@ async function run() {
   check(frozen.rollPending && frozen.totalRolls===1 && frozen.tickets===19 && JSON.stringify(frozen.pendingTypes)===JSON.stringify(tabPaused.pendingTypes),"Switching to Mine pauses the paid reels instead of disabling navigation");
   await tap(215,380); saved=await read();
   check(saved.totalClicks===tabPaused.totalClicks+1 && saved.coins>tabPaused.coins && saved.tickets===19 && saved.rollPending,"Real mining remains playable while the exact roulette choice is paused");
-  await shot("webgl-v027-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
+  await shot("webgl-v028-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
   await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
   saved=await read(); check(saved.totalRolls===1 && saved.tickets===19,"Returning to Roulette resumes its original paid draw without spending another ticket");
   await seed({...fresh,tickets:20,experience:25480,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
@@ -190,7 +204,7 @@ async function run() {
   await seed({ ...fresh, coins: 6543, enchantingExperience: 777, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest");
   check(await page.evaluate(() => accountFixture.requests === 0), "Loading a guest account never opens the Yandex authorization dialog automatically");
-  await tap(240, 73); await shot("webgl-v027-account-guest");
+  await tap(240, 73); await shot("webgl-v028-account-guest");
   await tap(240, 584);
   await page.waitForFunction(() => LuckyPickaxe.status().authorizationPending && accountFixture.requests === 1);
   const loginPending = await read();
@@ -200,7 +214,7 @@ async function run() {
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "authorized" && !LuckyPickaxe.status().paused && LuckyPickaxe.status().engineActive);
   saved = await read();
   check(saved.coins === 6543 && saved.enchantingExperience === 777 && saved.totalClicks === 0, "Successful account authorization resumes the game without replacing the local save or granting resources");
-  await shot("webgl-v027-account-connected"); await tap(240, 726);
+  await shot("webgl-v028-account-connected"); await tap(240, 726);
   await seed({ ...fresh, coins: 6543, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest");
   await tap(240, 73); await tap(240, 584);
@@ -209,6 +223,21 @@ async function run() {
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest" && !LuckyPickaxe.status().paused);
   check((await read()).coins === 6543 && await page.evaluate(() => LuckyPickaxe.status().engineActive), "Cancelling sign-in returns to a playable guest session with the same wallet");
   await tap(240, 726);
+  await seed({...fresh,earnedCoins:1000000,miningBlocks:800,totalBlocks:200,spentTickets:200,spentEnchantingExperience:10000,prestigeCount:2,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+  await tap(400,73);
+  await page.waitForFunction(()=>rankingFixture.reads.length===1&&!LuckyPickaxe.status().ratingLoadPending);
+  check(await page.evaluate(()=>rankingFixture.reads[0].name==="mmr"&&!rankingFixture.reads[0].options.includeUser&&rankingFixture.writes.length===0),"The header MMR badge opens a real guest leaderboard request without a fake score submission");
+  await shot("webgl-v028-rating-guest");const ratingWallet=await read();await tap(240,770);
+  check(JSON.stringify(await read())===JSON.stringify(ratingWallet)&&await page.evaluate(()=>rankingFixture.reads.length===1),"The leaderboard cooldown blocks repeated SDK reads without changing player resources");
+  await tap(240,282);await shot("webgl-v028-medals");await tap(376,282);await shot("webgl-v028-mmr-formula");await tap(104,282);await tap(240,820);await tap(240,584);
+  await page.waitForFunction(()=>LuckyPickaxe.status().authorizationPending);await page.evaluate(()=>accountFixture.resolve());
+  await page.waitForFunction(()=>rankingFixture.writes.length===1&&!LuckyPickaxe.status().ratingSendPending);
+  const ranked=await page.evaluate(()=>rankingFixture.writes[0]);
+  check(ranked.score===120&&ranked.name==="mmr"&&JSON.parse(ranked.extra).blocks===1000&&JSON.parse(ranked.extra).resets===2,"Successful sign-in submits 120 MMR from the actual lifetime counters, weighted formula and reset multiplier");
+  await tap(240,726);await tap(400,73);await page.waitForFunction(()=>rankingFixture.reads.length===2&&!LuckyPickaxe.status().ratingLoadPending);await tap(420,718);await shot("webgl-v028-rating-own");
+  check(await page.evaluate(()=>rankingFixture.reads[1].options.includeUser),"Signing in refreshes the table to include the player's Yandex row");
+  await tap(240,877);await tap(190,916);await tap(350,282);await tap(240,480);saved=await read();
+  check(saved.ratingTestProfile&&saved.coins===100000080&&saved.earnedCoins===1000000&&await page.evaluate(()=>rankingFixture.writes.length===1),"Temporary test currency permanently excludes that test profile from online MMR and does not count as earned coins");
   await seed({ ...fresh, coins: 80, workerCount: 1, guideStep: 5, offlineRateMilli: 2000, offlineCapacitySeconds: 14400, lastSeenUtc: Math.floor(Date.now() / 1000) - 600 });
   await shot("webgl-rewarded-offer");
   await tap(240, 684);
@@ -293,18 +322,18 @@ async function run() {
   await tap(480, 92); await tap(466,248); const helpWallet=await read();
   await tap(932,381); saved=await read();
   check(saved.coins===helpWallet.coins && saved.hasteLevel===0,"Upgrade question opens a modal that blocks purchases behind its shade");
-  await shot("webgl-v027-upgrade-info"); await tap(640,526);
+  await shot("webgl-v028-upgrade-info"); await tap(640,526);
   await tap(640,381); await tap(932,381); saved=await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Direct enchantments tab buys real Fortune and Haste ranks with their displayed prices");
   await shot("webgl-enchantments"); await page.reload(); await waitReady(); saved = await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Reload retains both new enchantments");
   await seed({ ...fresh, coins: 10000, experience: 700, enchantingExperience: 10000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(480, 92); await tap(749, 197); await shot("webgl-v027-enchanting-room");
+  await tap(480, 92); await tap(749, 197); await shot("webgl-v028-enchanting-room");
   await tap(867, 569); saved = await read();
   check(saved.enchantCount === 1 && saved.enchantments > 0 && saved.enchantingExperience === 9880 && saved.experience === 700, "The dedicated enchanting room spends 120 available XP and applies a real pick enchantment without reducing miner level");
   await tap(867, 317);
   check((await read()).enchantCount === 1 && (await read()).enchantingExperience === 9880, "The paid result modal blocks re-enchanting behind it before the player closes the reveal");
-  await shot("webgl-v027-enchantment-reveal"); await tap(640, 579);
+  await shot("webgl-v028-enchantment-reveal"); await tap(640, 579);
   await tap(867, 317); saved = await read();
   check(saved.enchantCount === 2 && saved.enchantingExperience === 9820 && saved.enchantments > 0, "Re-enchanting draws a paid random set and its first-tier price grows from 40 to 60 XP");
   const rerolled = saved.enchantments;
@@ -313,7 +342,7 @@ async function run() {
   check(saved.enchantCount === 2 && saved.enchantments === rerolled && saved.enchantingExperience === 9820 && saved.experience === 700, "Reload retains the exact paid enchantments, reroll counter and unspent XP");
   await tap(480, 92); await tap(967, 197); await tap(640, 351); await tap(640, 411); await tap(640, 470); saved = await read();
   check(saved.coins === 100010000 && saved.enchantingExperience === 19820 && saved.tickets === 12, "Temporary draft tools expose explicit buttons for 100 million coins, enchanting XP and a ten-roll test budget");
-  await shot("webgl-v027-draft-tools");
+  await shot("webgl-v028-draft-tools");
   await seed({ ...fresh, coins: 1000, pickWear: 160, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(1147, 490); saved = await read();
   check(saved.pickWear === 0 && saved.coins === 970, "The mine's direct repair button restores the existing worn pick for its displayed thirty coins");
@@ -339,7 +368,7 @@ async function run() {
   await page.waitForFunction(key => { const d=JSON.parse(localStorage.getItem(key)); return d.batchCompleted===10 && !d.batchActive && !d.rollPending; }, key, { timeout: 60000 });
   saved=await read();
   check(saved.totalRolls === 10 && saved.coins === 80 + saved.batchReward && saved.tickets >= 2, "Reload resumes the paid series, commits exactly ten rewards and never starts an eleventh draw");
-  await page.waitForTimeout(1000); await shot("webgl-v027-ten-roll-result");
+  await page.waitForTimeout(1000); await shot("webgl-v028-ten-roll-result");
   await seed({ ...fresh, tickets: 10, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(376, 740); await tap(376, 740);
   const stopped = await read();
@@ -369,7 +398,7 @@ async function run() {
   await shot("webgl-language-fallback");
 
   check(errors.length === 0, "Built game has no unexpected browser or JavaScript errors: " + errors.join("; "));
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
+  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, leaderboard: "controlled SDK table and submissions in isolated profile; no real account score posted", language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
   console.log(`LUCKY_PICKAXE_WEB_BROWSER: PASS (${checks} checks, Edge ${browserVersion})`);
 }
 run().catch(error => {

@@ -9,6 +9,8 @@ namespace MineLoot
         [DllImport("__Internal")] private static extern void LP_Attach(string receiver);
         [DllImport("__Internal")] private static extern void LP_Ready();
         [DllImport("__Internal")] private static extern int LP_Authorize();
+        [DllImport("__Internal")] private static extern int LP_SubmitRating(string json);
+        [DllImport("__Internal")] private static extern int LP_RequestRating();
         [DllImport("__Internal")] private static extern void LP_LanguageReady(string language);
         [DllImport("__Internal")] private static extern void LP_Gameplay(int active);
         [DllImport("__Internal")] private static extern int LP_ShowRewarded(string request);
@@ -67,6 +69,22 @@ namespace MineLoot
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             LP_WriteProgress(key, json);
+#endif
+        }
+        public static bool SubmitRating(string json)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return LP_SubmitRating(json)==1;
+#else
+            return false;
+#endif
+        }
+        public static bool RequestRating()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return LP_RequestRating()==1;
+#else
+            return false;
 #endif
         }
     }

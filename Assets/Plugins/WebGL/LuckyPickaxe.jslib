@@ -1,6 +1,8 @@
 mergeInto(LibraryManager.library, {
   LP_Attach: function (receiver) { window.LuckyPickaxe.attachReceiver(UTF8ToString(receiver)); },
   LP_Authorize: function () { return window.LuckyPickaxe.authorize() ? 1 : 0; },
+  LP_SubmitRating: function (json) { return window.LuckyPickaxe.submitRating(UTF8ToString(json)) ? 1 : 0; },
+  LP_RequestRating: function () { return window.LuckyPickaxe.requestRating() ? 1 : 0; },
   LP_Ready: function () { window.LuckyPickaxe.markReady(); },
   LP_LanguageReady: function (language) { window.LuckyPickaxe.confirmLanguage(UTF8ToString(language)); },
   LP_Gameplay: function (active) { window.LuckyPickaxe.setGameplay(active === 1); },
