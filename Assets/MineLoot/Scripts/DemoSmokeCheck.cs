@@ -37,13 +37,13 @@ namespace MineLoot
                 if (candidate.IsExpedition) shaft = candidate; else if (!candidate.IsEnchanting) stage = candidate;
             Check(stage != null && stage.OreVertices == 24 && stage.StaticBatches < 24, "Mining diorama uses a cubic ore mesh and batched static terrain");
             Check(shaft != null && shaft.VisibleBlocks == 25 && !shaft.gameObject.activeSelf, "Roulette shaft is intact and sleeps outside its own page");
-            CheckLayout(); Capture("unity-v028-start.png");
+            CheckLayout(); Capture("unity-v029-start.png");
             for (int i = 0; i < 12; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.1f); }
             Check(demo.Game.Progress.oreDamage == 12 && demo.Game.Progress.oresMined == 0 && demo.Game.Progress.coins == 176 && demo.Game.Progress.tickets == 2, "Twelve real clicks damage durable coal and still earn a roulette ticket");
-            Check(stage.CrackVisible, "Durable ore visibly cracks before breaking"); Capture("unity-v028-cracks.png");
+            Check(stage.CrackVisible, "Durable ore visibly cracks before breaking"); Capture("unity-v029-cracks.png");
             for (int i = 12; i < 48; i++) { Click("Mine rock"); yield return new WaitForSecondsRealtime(.1f); }
             Check(demo.Game.Progress.oresMined == 1 && demo.Game.Progress.coins == 640 && demo.Game.Progress.tickets == 2, "Full wooden-tool block pays the ore bonus and level reward once");
-            Capture("unity-v028-break.png");
+            Capture("unity-v029-break.png");
             Click("Upgrade pickaxe"); Click("Upgrade pickaxe");
             Check(demo.Game.PickTier == 1 && demo.Game.MiningDamage == 2 && demo.Game.Progress.coins == 376, "The visible tool upgrade reaches stone with a real damage improvement");
             yield return VerifyTicketVideo(demo);
@@ -55,21 +55,21 @@ namespace MineLoot
                 demo.RestoreForSmoke(new MineProgress { coins = 1000000, experience = MineGame.ExperienceForLevel(50), upgradeLevel = 32, forgeLevel = 6, workerCount = 10, drillCount = 2, cartCount = 2, oreKind = 8, oreDamage = 250, enchantingExperience = 10000 });
                 yield return new WaitForSecondsRealtime(.3f);
                 Check(demo.Game.PickTier == 5 && stage.VisibleWorkers == 3 && stage.DrillVisible && stage.CartVisible, "Netherite tool, miners, cart and drill are presented at " + size);
-                CheckLayout(); Capture("unity-v028-mine-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v029-mine-" + size.x + ".png");
                 Click("МАСТЕРСКАЯ");
                 Check(FindButton("Buy Fortune") != null && FindButton("Buy Haste") != null && FindButton("Mine rock") == null, "Enchantments have a direct dedicated page without the mining screen behind them");
                 int reward = demo.Game.OreReward; float swing = demo.Game.SwingSeconds;
                 Click("Buy Fortune"); Click("Buy Haste");
                 Check(demo.Game.OreReward > reward && demo.Game.SwingSeconds < swing, "Real enchantment buttons apply fortune and haste at " + size);
-                CheckLayout(); Capture("unity-v028-enchantments-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v029-enchantments-" + size.x + ".png");
                 Click("Production section"); Check(FindButton("Buy Press") != null && FindButton("Buy Worker") != null, "Production retains the token press and workers in one section");
-                CheckLayout(); Capture("unity-v028-production-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v029-production-" + size.x + ".png");
                 yield return VerifyEnchantingUi(demo, stage, size.x);
                 demo.ShowRewards();
                 Check(FindButton("Video tickets") != null && FindButton("Rewards milestones") != null && FindButton("Claim contract") != null, "Rewards expose video, achievements, warehouse and contract directly");
-                CheckLayout(); Capture("unity-v028-rewards-" + size.x + ".png");
+                CheckLayout(); Capture("unity-v029-rewards-" + size.x + ".png");
                 yield return VerifyRatingUi(demo,size.x);
-                demo.ShowPage(true); CheckLayout(); Capture("unity-v028-roulette-" + size.x + ".png");
+                demo.ShowPage(true); CheckLayout(); Capture("unity-v029-roulette-" + size.x + ".png");
             }
             yield return VerifyNewMineAndAccount(demo,stage);
             yield return VerifyWorkingCart(demo,stage);
@@ -96,14 +96,14 @@ namespace MineLoot
             Click("Enchanting section"); yield return new WaitForSecondsRealtime(.25f);
             long xp=demo.Game.Progress.enchantingExperience, lifetime=demo.Game.Progress.experience, cost=demo.Game.EnchantmentCost(2);
             Click("Enchanting table help");yield return null;
-            Check(GameObject.Find("Enchantment guide modal")!=null,"Clicking the actual enchanting table opens the effect guide");CheckLayout();Capture("unity-v028-enchantment-guide-"+width+".png");Click("Close enchantment guide");
+            Check(GameObject.Find("Enchantment guide modal")!=null,"Clicking the actual enchanting table opens the effect guide");CheckLayout();Capture("unity-v029-enchantment-guide-"+width+".png");Click("Close enchantment guide");
             foreach(var text in GameObject.Find("Enchantment offer 2").GetComponentsInChildren<Text>()) Check(!text.text.Contains("Эфф.")&&!text.text.Contains("Удача")&&!text.text.Contains("Прочн."),"Unpaid enchanting shows only grade and experience cost");
             Click("Enchant offer 2");
             Check(demo.Game.IsEnchanted && demo.Game.Progress.enchantingExperience==xp-cost && demo.Game.Progress.experience==lifetime && GameObject.Find("Enchantment result modal")!=null,"Paid hidden enchantment saves its effects and reveals them in a separate window");
             long afterFirst=demo.Game.Progress.enchantingExperience;demo.EnchantEquippedPick(0);
             Check(demo.Game.Progress.enchantingExperience==afterFirst,"A reveal window prevents double payment behind the modal");
-            CheckLayout();Capture("unity-v028-enchantment-result-"+width+".png");Click("Close enchantment result");
-            CheckLayout();Capture("unity-v028-table-"+width+".png");
+            CheckLayout();Capture("unity-v029-enchantment-result-"+width+".png");Click("Close enchantment result");
+            CheckLayout();Capture("unity-v029-table-"+width+".png");
             xp=demo.Game.Progress.enchantingExperience;cost=demo.Game.EnchantmentCost(0);
             Click("Enchant offer 0");
             Check(demo.Game.IsEnchanted && demo.Game.Progress.enchantingExperience==xp-cost && demo.Game.Progress.enchantCount==2,"Re-enchanting replaces the paid set and uses its increased cost");Click("Close enchantment result");
@@ -112,13 +112,13 @@ namespace MineLoot
             Check(demo.Game.Progress.coins==wallet+100000000 && demo.Game.Progress.enchantingExperience>=10000 && demo.Game.Progress.tickets>=12, "Temporary test tab grants the explicitly requested resources through real buttons");
             wallet=demo.Game.Progress.coins; demo.OnBrowserPause("1"); demo.GrantDraftResources(0); demo.OnBrowserPause("0");
             Check(demo.Game.Progress.coins==wallet, "Paused testing controls cannot mutate the wallet");
-            CheckLayout(); Capture("unity-v028-tools-"+width+".png");
+            CheckLayout(); Capture("unity-v029-tools-"+width+".png");
             demo.Game.Progress.pickWear=50; demo.ShowPage(false); long repair=demo.Game.RepairCost;
             Click("Repair pick");
             Check(demo.Game.Progress.pickWear==0 && demo.Game.Progress.coins==wallet-repair && demo.Game.IsEnchanted, "Repair is directly available in the mine and retains the equipped enchantments");
             int strikes=stage.WorkerStrikeCount; yield return new WaitForSecondsRealtime(1.2f);
             Check(stage.WorkerStrikeCount>strikes, "Background miners reach their own ore and emit actual timed strikes");
-            CheckLayout(); Capture("unity-v028-enchanted-mine-"+width+".png");
+            CheckLayout(); Capture("unity-v029-enchanted-mine-"+width+".png");
             yield return VerifyWorkerContact(stage);
         }
 
@@ -153,12 +153,23 @@ namespace MineLoot
             demo.Game.Progress.earnedCoins=123456789;demo.ConfigureRatingForSmoke(null,()=>true);
             demo.ShowRating();yield return null;
             Check(GameObject.Find("Rating modal")!=null,"The permanent header badge opens the MMR table at "+width);
+            Check(FindButton("Rating section 0")!=null && FindButton("Rating section 1")!=null && FindButton("Rating section 2")==null,"Rating exposes only the table and medals, without the calculation tab");
             demo.OnBrowserRating("{\"status\":\"ready\",\"userRank\":6,\"entries\":[{\"rank\":1,\"score\":20000,\"name\":\"Шахтёр алмазной долины\",\"hasStats\":true,\"blocks\":12000,\"resets\":4},{\"rank\":2,\"score\":10000,\"name\":\"Игрок 2\"},{\"rank\":3,\"score\":5000,\"name\":\"Игрок 3\"},{\"rank\":4,\"score\":2500,\"name\":\"Игрок 4\"},{\"rank\":5,\"score\":1200,\"name\":\"Игрок 5\"},{\"rank\":6,\"score\":600,\"name\":\"Текущий шахтёр\",\"me\":true,\"hasStats\":true,\"blocks\":400,\"resets\":1}]}");
-            CheckLayout();Capture("unity-v028-rating-"+width+".png");Click("Rating next");CheckLayout();Capture("unity-v028-rating-own-"+width+".png");
+            CheckLayout();Capture("unity-v029-rating-"+width+".png");Click("Rating next");CheckLayout();Capture("unity-v029-rating-own-"+width+".png");
             Check(GameObject.Find("Rating row 0")!=null && GameObject.Find("Rating row 1")==null,"The next page shows the real nearby player rather than dummy rows");
-            Click("Rating section 1");yield return null;CheckLayout();Capture("unity-v028-medals-"+width+".png");
+            Click("Rating section 1");yield return null;CheckLayout();Capture("unity-v029-medals-"+width+".png");
             for(int i=0;i<MineGame.RatingRankCount;i++) Check(GameObject.Find("Rating medal "+i)!=null,"All twelve ordinary and enchanted medals are visible: "+i);
-            Click("Rating section 2");yield return null;CheckLayout();Capture("unity-v028-mmr-formula-"+width+".png");Click("Close rating");yield return null;
+            foreach(var badge in GameObject.Find("Rating modal").GetComponentsInChildren<Image>(true))
+            {
+                if(badge.sprite==null || !badge.sprite.name.StartsWith("rank-medal-")) continue;
+                var rect=badge.rectTransform.rect;var texture=badge.sprite.texture;
+                Check(badge.preserveAspect && Mathf.Abs(rect.width-rect.height)<.01f && texture.filterMode==FilterMode.Point && texture.mipmapCount==1,"Rating badges retain square bounds and sharp pixel sampling at "+width);
+                int left=texture.width,right=0,bottom=texture.height,top=0;
+                for(int y=0;y<texture.height;y++)for(int x=0;x<texture.width;x++) if(texture.GetPixel(x,y).a>.1f) {left=Mathf.Min(left,x);right=Mathf.Max(right,x);bottom=Mathf.Min(bottom,y);top=Mathf.Max(top,y);}
+                float aspect=(right-left+1f)/(top-bottom+1f);
+                Check(aspect>=.9f && aspect<=1.1f,"Medal artwork fills its frame without a narrow silhouette: "+badge.sprite.name);
+            }
+            Click("Rating section 0");yield return null;CheckLayout();Click("Close rating");yield return null;
             Check(GameObject.Find("Rating modal")==null,"Closing MMR restores the current game page");demo.ConfigureRatingForSmoke(null,null);
         }
         private IEnumerator VerifyNewMineAndAccount(DemoController demo,VoxelStage stage)
@@ -167,27 +178,27 @@ namespace MineLoot
             demo.RestoreForSmoke(new MineProgress{coins=10000,experience=MineGame.ExperienceForLevel(50),prestigeCount=1,crystals=69,totalCrystals=69,workerCount=1});
             demo.Game.RecordSession(1700000000);demo.Game.PrepareOffline(1700000600);demo.ShowWorkshop();Click("Open prestige");
             Check(FindButton("Prepare prestige").interactable && FindButton("Prepare prestige").GetComponentInChildren<Text>().text=="ОТКРЫТЬ СКЛАД","A warehouse lock names its reason and offers the required action");
-            CheckLayout();Capture("unity-v028-reset-warehouse.png");Click("Prepare prestige");yield return null;
+            CheckLayout();Capture("unity-v029-reset-warehouse.png");Click("Prepare prestige");yield return null;
             Check(GameObject.Find("Offline reward modal")!=null,"The reset action opens the unclaimed warehouse instead of remaining unavailable");Click("Claim offline reward");yield return null;
             demo.ShowWorkshop();Click("Open prestige");
             for(int page=0;page<3;page++)
             {
-                CheckLayout();Capture("unity-v028-perks-"+page+".png");
+                CheckLayout();Capture("unity-v029-perks-"+page+".png");
                 for(int col=0;col<2;col++)for(int row=0;row<3;row++) Click("Buy prestige "+(page*6+col*3+row));
                 if(page<2) Click("Prestige next");
             }
             Check(demo.Game.Progress.crystals==0 && demo.Game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All eighteen visible permanent cards spend crystals once with named prerequisites");
-            Click("Prepare prestige");yield return null;CheckLayout();Capture("unity-v028-reset-confirm.png");Click("Confirm prestige");yield return null;
+            Click("Prepare prestige");yield return null;CheckLayout();Capture("unity-v029-reset-confirm.png");Click("Confirm prestige");yield return null;
             Check(demo.Game.Progress.prestigeCount==2 && demo.Game.Progress.tickets==12 && demo.Game.Progress.enchantingExperience==300 && stage.WorkerOreTier==2,"Actual reset applies the starter bonuses and upgrades background worker minerals visually");
             Click("Close prestige");demo.ShowPage(false);
             demo.RestoreForSmoke(new MineProgress{coins=1000,upgradeLevel=0,enchantments=3,enchantingExperience=300});
             Click("Upgrade pickaxe");Check(demo.Game.IsEnchanted,"Same-material tool rank retains its effects");Click("Upgrade pickaxe");
             Check(!demo.Game.IsEnchanted && demo.Game.PickTier==1 && demo.Game.Progress.enchantingExperience==300,"Real material upgrade clears the old enchantments and preserves the XP wallet");
-            Click("Yandex account");CheckLayout();Capture("unity-v028-account-native.png");Check(!FindButton("Authorize Yandex").interactable,"Native build exposes the account panel without inventing Yandex authentication");Click("Close Yandex account");
+            Click("Yandex account");CheckLayout();Capture("unity-v029-account-native.png");Check(!FindButton("Authorize Yandex").interactable,"Native build exposes the account panel without inventing Yandex authentication");Click("Close Yandex account");
             int requests=0;demo.ConfigureAuthorizationForSmoke(()=>{requests++;return true;});Click("Yandex account");Click("Authorize Yandex");
             Check(demo.IsPaused && requests==1,"Explicit login starts one SDK request and pauses gameplay");
             demo.OnBrowserAccount("{\"available\":true,\"status\":\"authorized\",\"name\":\"Тестовый шахтёр\"}");yield return null;
-            Check(!demo.IsPaused && FindButton("Authorize Yandex")==null,"Successful account result hides the login offer and resumes the existing game");CheckLayout();Capture("unity-v028-account-connected.png");Click("Close Yandex account");demo.ConfigureAuthorizationForSmoke(null);
+            Check(!demo.IsPaused && FindButton("Authorize Yandex")==null,"Successful account result hides the login offer and resumes the existing game");CheckLayout();Capture("unity-v029-account-connected.png");Click("Close Yandex account");demo.ConfigureAuthorizationForSmoke(null);
         }
         private IEnumerator VerifyWorkingCart(DemoController demo,VoxelStage stage)
         {
@@ -195,14 +206,14 @@ namespace MineLoot
             bool loading=false,outbound=false,hidden=false,returned=false;float deadline=Time.realtimeSinceStartup+19;
             while(Time.realtimeSinceStartup<deadline)
             {
-                if(stage.CartPhase=="loading" && stage.CartLoadFraction>.3f && !loading) { loading=true;Capture("unity-v028-cart-loading.png"); }
-                if(stage.CartPhase=="outbound" && !outbound) { outbound=true;Check(stage.CartLoadFraction==1,"Departing cart is fully loaded");Capture("unity-v028-cart-outbound.png"); }
-                if(stage.CartPhase=="tunnel" && !hidden) { hidden=true;Check(!stage.CartVisible,"Cart disappears inside tunnel darkness");Capture("unity-v028-cart-tunnel.png"); }
-                if(stage.CartPhase=="return" && !returned) { returned=true;Check(stage.CartLoadFraction==0,"Returning cart is empty after unloading");Capture("unity-v028-cart-return.png"); }
+                if(stage.CartPhase=="loading" && stage.CartLoadFraction>.3f && !loading) { loading=true;Capture("unity-v029-cart-loading.png"); }
+                if(stage.CartPhase=="outbound" && !outbound) { outbound=true;Check(stage.CartLoadFraction==1,"Departing cart is fully loaded");Capture("unity-v029-cart-outbound.png"); }
+                if(stage.CartPhase=="tunnel" && !hidden) { hidden=true;Check(!stage.CartVisible,"Cart disappears inside tunnel darkness");Capture("unity-v029-cart-tunnel.png"); }
+                if(stage.CartPhase=="return" && !returned) { returned=true;Check(stage.CartLoadFraction==0,"Returning cart is empty after unloading");Capture("unity-v029-cart-return.png"); }
                 yield return null;
             }
             Check(loading&&outbound&&hidden&&returned,"The real cart animation loads, departs, unloads out of view and returns empty");
-            Check(stage.WorkerOreTier==3,"Background ore is upgraded without altering worker income rules");CheckLayout();Capture("unity-v028-mine.png");
+            Check(stage.WorkerOreTier==3,"Background ore is upgraded without altering worker income rules");CheckLayout();Capture("unity-v029-mine.png");
         }
 
         private IEnumerator VerifyHighLevelUi(DemoController demo,VoxelStage stage)
@@ -214,15 +225,15 @@ namespace MineLoot
                 yield return null;Canvas.ForceUpdateCanvases();
                 var price=FindButton("Upgrade pickaxe").GetComponentInChildren<Text>();
                 Check(price.cachedTextGenerator.lineCount==1 && !price.text.Contains("\n") && price.text.Contains("млрд"),"Billion-coin quick upgrade price stays on one readable line");
-                CheckLayout();Capture("unity-v028-high-price-"+size.x+".png");
+                CheckLayout();Capture("unity-v029-high-price-"+size.x+".png");
                 var copper=stage.transform.Find("Batched mine-copper").GetComponent<MeshFilter>().sharedMesh.bounds.size;
                 Check(Mathf.Abs(copper.z/copper.x-1)<.01f,"Background mineral outcrop has cube proportions instead of a compressed slab");
-                demo.ShowWorkshop();CheckLayout();Capture("unity-v028-upgrades-"+size.x+".png");
+                demo.ShowWorkshop();CheckLayout();Capture("unity-v029-upgrades-"+size.x+".png");
                 for(int card=0;card<6;card++)
                 {
                     Click("Upgrade info "+card);yield return null;
                     Check(GameObject.Find("Upgrade details modal")!=null,"Every upgrade has an accessible explanation");
-                    CheckLayout();if(card==3) Capture("unity-v028-upgrade-help-"+size.x+".png");
+                    CheckLayout();if(card==3) Capture("unity-v029-upgrade-help-"+size.x+".png");
                     Click("Close upgrade details");yield return null;
                 }
                 demo.Game.Progress.efficiencyLevel=0;demo.Game.Progress.coins=100000;demo.ShowWorkshop();demo.CyclePurchaseAmount();
@@ -231,10 +242,10 @@ namespace MineLoot
                 string expectedPrice="Цена за "+quoteCount+" ур.: "+quotePrice.ToString("N0",System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))+" монет";
                 foreach(var text in GetComponentsInChildren<Text>(false)) exactQuote|=text.text==expectedPrice;
                 Check(quoteCount==10 && exactQuote,"Upgrade explanation shows the exact full price for the selected ten-level purchase");
-                CheckLayout();Capture("unity-v028-bulk-help-"+size.x+".png");Click("Close upgrade details");yield return null;
+                CheckLayout();Capture("unity-v029-bulk-help-"+size.x+".png");Click("Close upgrade details");yield return null;
                 Click("Open prestige");yield return null;
                 foreach(var text in GetComponentsInChildren<Text>(false)) Check(!text.text.ToLowerInvariant().Contains("переезд"),"New-mine UI uses an explicit reset description instead of unexplained relocations");
-                CheckLayout();Capture("unity-v028-new-mine-"+size.x+".png");Click("Close prestige");
+                CheckLayout();Capture("unity-v029-new-mine-"+size.x+".png");Click("Close prestige");
             }
         }
         private IEnumerator VerifyRouletteTabPause(DemoController demo)
@@ -249,7 +260,7 @@ namespace MineLoot
             Check(demo.Game.Progress.totalClicks==clicks+1 && string.Join(",",demo.Game.Progress.pendingTypes)==picks,"Mine remains playable while roulette keeps its exact paid picks");
             demo.ShowWorkshop();Click("Production section");Click("Buy Worker");
             Check(demo.Game.Progress.workerCount==1 && demo.IsRoulettePaused,"Safe production purchase works while roulette is paused");
-            CheckLayout();Capture("unity-v028-paused-roulette.png");
+            CheckLayout();Capture("unity-v029-paused-roulette.png");
             demo.ShowPage(true);yield return WaitForChoice(demo);demo.Spin();yield return FinishRoll(demo);
             Check(demo.Game.Progress.totalRolls==1 && !demo.Game.HasPendingRoll && demo.Game.Progress.tickets==19,"Returning resumes the same roll and credits its result once");
             demo.RestoreForSmoke(new MineProgress {tickets=20,coins=100000,experience=MineGame.ExperienceForLevel(50)});
@@ -269,9 +280,9 @@ namespace MineLoot
             bool onlyXp=false,heading=false;
             foreach(var text in GetComponentsInChildren<Text>(false)) { onlyXp|=text.text=="Только опыт"; heading|=text.text.StartsWith("ШАХТА · УР."); }
             Check(onlyXp && heading,"Stone panel explicitly shows XP-only and mine-level heading");
-            CheckLayout(); Capture("unity-v028-stone.png"); demo.Game.Progress.oreDamage=31; Click("Mine rock");
+            CheckLayout(); Capture("unity-v029-stone.png"); demo.Game.Progress.oreDamage=31; Click("Mine rock");
             Check(demo.Game.LastHit.broken && demo.Game.LastHit.experience==18 && demo.Game.Progress.coins==345 && demo.Game.Progress.tickets==8 && demo.Game.Progress.hits==59 && demo.Game.Progress.enchantingExperience==18,"Real stone click breaks the block, advances a level and journals XP without coins or tickets");
-            yield return new WaitForSecondsRealtime(.2f); CheckLayout(); Capture("unity-v028-stone-break.png");
+            yield return new WaitForSecondsRealtime(.2f); CheckLayout(); Capture("unity-v029-stone-break.png");
         }
 
         private IEnumerator VerifyRollBatch(DemoController demo)
@@ -286,7 +297,7 @@ namespace MineLoot
             float deadline=Time.realtimeSinceStartup+30;
             while((demo.IsBusy||demo.Game.Progress.batchActive)&&Time.realtimeSinceStartup<deadline) yield return null;
             Check(!demo.IsBusy&&!demo.Game.Progress.batchActive&&demo.Game.Progress.totalRolls==10&&demo.Game.Progress.batchCompleted==10, "A restored ten-roll series completes itself without ten manual confirmations or an eleventh roll");
-            CheckLayout(); Capture("unity-v028-batch-result.png");
+            CheckLayout(); Capture("unity-v029-batch-result.png");
             demo.RestoreForSmoke(new MineProgress{tickets=10}); demo.ShowPage(true); Click("Spin batch"); Click("Spin batch");
             deadline=Time.realtimeSinceStartup+8;
             while(demo.IsBusy&&Time.realtimeSinceStartup<deadline) yield return null;

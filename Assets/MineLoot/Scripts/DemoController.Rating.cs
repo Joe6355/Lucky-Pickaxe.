@@ -26,11 +26,11 @@ namespace MineLoot
             public bool test;
         }
         private Image ratingBadge,profileRatingBadge;
-        private Text ratingCaption,profileRatingTitle,profileRatingScore,profileRatingNext,ratingStatus,ratingPageLabel,ratingFormula;
-        private readonly GameObject[] ratingSections=new GameObject[3],ratingRows=new GameObject[5];
+        private Text ratingCaption,profileRatingTitle,profileRatingScore,profileRatingNext,ratingStatus,ratingPageLabel;
+        private readonly GameObject[] ratingSections=new GameObject[2],ratingRows=new GameObject[5];
         private readonly Image[] ratingRowBadges=new Image[5];
         private readonly Text[] ratingRowNames=new Text[5],ratingRowScores=new Text[5],ratingRowStats=new Text[5];
-        private readonly Button[] ratingTabs=new Button[3];
+        private readonly Button[] ratingTabs=new Button[2];
         private Button ratingRefresh,ratingLogin,ratingPrevious,ratingNext;
         private bool ratingWindowOpen,ratingSending;
         private int ratingSection,ratingPage,submittedRating=-1;
@@ -43,8 +43,8 @@ namespace MineLoot
         private void BuildRatingButton(Transform header)
         {
             var button=ButtonAt(header,"",344,56,112,32,ShowRating,Hex("d8c598"),Ink);button.name="Open rating";
-            ratingBadge=Icon(button.transform,"rank-medal-0",3,2,28,28);
-            ratingCaption=Label(button.transform,"MMR 0",33,1,76,30,16,Ink,FontStyle.Bold,TextAnchor.MiddleCenter);
+            ratingBadge=Icon(button.transform,"rank-medal-0",1,0,32,32);
+            ratingCaption=Label(button.transform,"MMR 0",37,1,72,30,16,Ink,FontStyle.Bold,TextAnchor.MiddleCenter);
             ratingCaption.resizeTextForBestFit=true;ratingCaption.resizeTextMinSize=12;ratingCaption.resizeTextMaxSize=16;
         }
         public void ShowRating()
@@ -54,15 +54,15 @@ namespace MineLoot
             modal=CreateModal("Rating modal");Card(modal.transform,"Rating card",24,48,432,864,Panel);
             Label(modal.transform,"РЕЙТИНГ ШАХТЁРОВ",40,62,400,42,26,Ink,FontStyle.Bold);
             var profile=Card(modal.transform,"Your rating",40,116,400,134,Hex("d4dfcf"));
-            profileRatingBadge=Icon(profile.transform,"rank-medal-0",12,18,76,76);
-            profileRatingTitle=Label(profile.transform,"",100,10,288,32,19,Ink,FontStyle.Bold);
+            profileRatingBadge=Icon(profile.transform,"rank-medal-0",8,2,96,96);
+            profileRatingTitle=Label(profile.transform,"",116,10,272,32,19,Ink,FontStyle.Bold);
             profileRatingTitle.resizeTextForBestFit=true;profileRatingTitle.resizeTextMinSize=15;profileRatingTitle.resizeTextMaxSize=19;
-            profileRatingScore=Label(profile.transform,"",100,46,288,34,26,Ink,FontStyle.Bold);
+            profileRatingScore=Label(profile.transform,"",116,46,272,34,26,Ink,FontStyle.Bold);
             profileRatingNext=Label(profile.transform,"",12,100,376,28,16,Muted);
-            string[] titles={"ТАБЛИЦА","МЕДАЛИ","РАСЧЁТ ММР"};
-            for(int i=0;i<3;i++)
+            string[] titles={"ТАБЛИЦА","МЕДАЛИ"};
+            for(int i=0;i<ratingTabs.Length;i++)
             {
-                int section=i;ratingTabs[i]=ButtonAt(modal.transform,titles[i],40+i*136,266,128,32,()=>SelectRatingSection(section),Panel,Ink);
+                int section=i;ratingTabs[i]=ButtonAt(modal.transform,titles[i],40+i*204,266,196,32,()=>SelectRatingSection(section),Panel,Ink);
                 ratingTabs[i].name="Rating section "+i;ratingTabs[i].GetComponentInChildren<Text>().fontSize=16;
                 ratingSections[i]=MakeRect(modal.transform,"Rating content "+i,0,0,480,840).gameObject;
             }
@@ -71,11 +71,12 @@ namespace MineLoot
             for(int i=0;i<5;i++)
             {
                 var row=Card(list,"Rating row "+i,40,354+i*66,400,62,Panel);ratingRows[i]=row.gameObject;
-                ratingRowBadges[i]=Icon(row.transform,"rank-medal-0",8,7,46,46);
-                ratingRowNames[i]=Label(row.transform,"",62,4,218,26,18,Ink,FontStyle.Bold);ratingRowNames[i].supportRichText=false;
+                ratingRowBadges[i]=Icon(row.transform,"rank-medal-0",3,3,56,56);
+                ratingRowNames[i]=Label(row.transform,"",68,4,212,26,18,Ink,FontStyle.Bold);ratingRowNames[i].supportRichText=false;
+                ratingRowNames[i].verticalOverflow=VerticalWrapMode.Truncate;
                 ratingRowScores[i]=Label(row.transform,"",280,4,110,26,18,Ink,FontStyle.Bold,TextAnchor.MiddleRight);
                 ratingRowScores[i].resizeTextForBestFit=true;ratingRowScores[i].resizeTextMinSize=12;ratingRowScores[i].resizeTextMaxSize=18;
-                ratingRowStats[i]=Label(row.transform,"",62,34,328,22,15,Muted);
+                ratingRowStats[i]=Label(row.transform,"",68,34,322,22,15,Muted);
             }
             ratingPrevious=ButtonAt(list,"<",40,704,40,30,()=>ChangeRatingPage(-1),Panel,Ink);ratingPrevious.name="Rating previous";
             ratingPageLabel=Label(list,"",90,704,300,30,17,Ink,FontStyle.Bold,TextAnchor.MiddleCenter);
@@ -85,11 +86,10 @@ namespace MineLoot
             for(int i=0;i<MineGame.RatingRankCount;i++)
             {
                 var medal=Card(ratingSections[1].transform,"Rating medal "+i,40+i%2*204,318+i/2*86,196,80,Hex(i%2==1?"ded3eb":"d7dfd1"));
-                Icon(medal.transform,"rank-medal-"+i,5,12,50,50);
-                Label(medal.transform,MineGame.RatingName(i),60,4,130,44,16,Ink,FontStyle.Bold);
-                Label(medal.transform,"От "+MineGame.RatingThreshold(i).ToString("N0",interfaceCulture)+" MMR",60,50,130,24,16,Muted);
+                Icon(medal.transform,"rank-medal-"+i,4,8,64,64);
+                Label(medal.transform,MineGame.RatingName(i),74,4,116,44,16,Ink,FontStyle.Bold);
+                Label(medal.transform,"От "+MineGame.RatingThreshold(i).ToString("N0",interfaceCulture)+" MMR",74,50,116,24,16,Muted);
             }
-            ratingFormula=Label(ratingSections[2].transform,"",40,316,400,510,18,Ink,FontStyle.Normal,TextAnchor.UpperLeft);
             ButtonAt(modal.transform,"Вернуться в игру",40,858,400,38,CloseModal,Panel,Ink).name="Close rating";
             RefreshRating();RequestRating();
         }
@@ -138,7 +138,7 @@ namespace MineLoot
             if(!ratingWindowOpen || modal==null || modal.name!="Rating modal") return;
             profileRatingBadge.sprite=art.Get("rank-medal-"+rank);profileRatingTitle.text=MineGame.RatingName(rank);profileRatingScore.text=score.ToString("N0",interfaceCulture)+" MMR";
             profileRatingNext.text=rank+1<MineGame.RatingRankCount?"До следующей медали: "+(MineGame.RatingThreshold(rank+1)-score).ToString("N0",interfaceCulture)+" MMR":"Высшая медаль шахтёра";
-            for(int i=0;i<3;i++) {ratingSections[i].SetActive(i==ratingSection);ratingTabs[i].image.color=i==ratingSection?Hex("b6c997"):Panel;}
+            for(int i=0;i<ratingTabs.Length;i++) {ratingSections[i].SetActive(i==ratingSection);ratingTabs[i].image.color=i==ratingSection?Hex("b6c997"):Panel;}
             ratingStatus.text=ratingData.status=="loading"?"Загружаем рейтинг Яндекса…":ratingData.status=="error"?"Не удалось загрузить таблицу. Попробуй позже.":ratingData.status=="unavailable"?"Общий рейтинг доступен в Яндекс Играх.":ratingData.entries.Length==0?"В рейтинге пока нет игроков. Стань первым!":ratingData.userRank>0?"Твоё место: "+ratingData.userRank+" · в таблице лучший результат":"Лучшие игроки и участники рядом с тобой";
             if(game.Progress.ratingTestProfile && ratingData.status!="loading") ratingStatus.text="Тестовый прогресс: в общий топ не отправляется.";
             else if(ratingData.status=="ready" && ratingReceipt.Length>0 && ratingData.userRank==0) ratingStatus.text=ratingReceipt;
@@ -158,7 +158,6 @@ namespace MineLoot
             int wait=Mathf.CeilToInt(Mathf.Max(0,nextRatingLoad-Time.unscaledTime));ratingRefresh.interactable=wait==0&&ratingData.status!="loading";
             ratingRefresh.GetComponentInChildren<Text>().text=wait>0?"ОБНОВИТЬ ЧЕРЕЗ "+wait+" С":"ОБНОВИТЬ ТАБЛИЦУ";
             ratingLogin.gameObject.SetActive(accountStatus!="authorized");ratingLogin.interactable=accountAvailable&&!accountPending;
-            ratingFormula.text="Прогресс за все шахты:\n\n(монеты + блоки × 1 000 +\nжетоны × 5 000 + опыт чар × 100)\n÷ 100 000 × (1 + сбросы).\nИтог округляется вниз.\n\nБлоков добыто: "+game.RatingBlocks.ToString("N0",interfaceCulture)+"\nМонет получено: "+game.Progress.earnedCoins.ToString("N0",interfaceCulture)+"\nЖетонов потрачено: "+game.Progress.spentTickets.ToString("N0",interfaceCulture)+"\nОпыта на чары: "+game.Progress.spentEnchantingExperience.ToString("N0",interfaceCulture)+"\nСбросов шахты: "+game.Progress.prestigeCount+" · множитель ×"+(game.Progress.prestigeCount+1)+"\n\nПокупки не уменьшают ММР.\nВ таблице — лучший результат.\n"+(game.Progress.ratingHistoryPartial?"\nИстория монет и расходов на чары\nраньше не велась. Их учёт начат\nс этого обновления.":game.Progress.ratingTestProfile?"\nТестовый профиль не участвует в общем топе.":"\nДля участия в таблице войди в Яндекс.");
         }
         internal void ConfigureRatingForSmoke(Func<string,bool> submit,Func<bool> load)
         {

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace MineLoot
 {
-    // Original code-authored 16/32px art. Point filtering and hard edges throughout.
+    // Original code-authored 16/32/48px art. Point filtering and hard edges throughout.
     public sealed class PixelArt
     {
         private readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
@@ -18,7 +18,7 @@ namespace MineLoot
             string kind = tile ? name.Substring(name.IndexOf('-') + 1) : name;
             bool mining = kind.StartsWith("mine-");
             if (mining) kind = kind.Substring(5);
-            int size = tile ? 16 : ui ? 12 : 32;
+            int size = tile ? 16 : ui ? 12 : name.StartsWith("rank-medal-") ? 48 : 32;
             var t = new Texture2D(size, size, TextureFormat.RGBA32, false) { name = name, filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
             t.SetPixels(new Color[size * size]);
             void R(int x, int y, int w, int h, string c)
@@ -174,21 +174,22 @@ namespace MineLoot
             {
                 int.TryParse(name.Substring(11),out int rank);rank=Mathf.Clamp(rank,0,11);
                 bool enchanted=(rank&1)==1;
-                R(7,0,6,12,enchanted?"#8656b6":"#356879");R(19,0,6,12,enchanted?"#8656b6":"#356879");
-                R(9,0,2,9,enchanted?"#d7b8ff":"#93d6ce");R(21,0,2,9,enchanted?"#d7b8ff":"#93d6ce");
-                R(7,7,18,24,"#74522d");R(4,10,24,18,"#74522d");
-                R(7,8,18,22,enchanted?"#bc96dc":"#dfbe72");R(5,11,22,16,enchanted?"#bc96dc":"#dfbe72");
-                R(8,10,16,18,enchanted?"#4c3c63":"#384c50");R(7,12,18,14,enchanted?"#4c3c63":"#384c50");
+                // Keep the complete 32px pick inside a broad medallion; never resample it.
+                R(12,0,10,16,enchanted?"#69438f":"#285664");R(26,0,10,16,enchanted?"#69438f":"#285664");
+                R(14,0,3,12,enchanted?"#c49ae9":"#8bc8ba");R(28,0,3,12,enchanted?"#c49ae9":"#8bc8ba");
+                R(10,9,28,38,enchanted?"#61456f":"#71502e");R(5,13,38,30,enchanted?"#61456f":"#71502e");R(2,18,44,20,enchanted?"#61456f":"#71502e");
+                R(10,11,28,34,enchanted?"#b993d5":"#d7b363");R(7,15,34,26,enchanted?"#b993d5":"#d7b363");R(4,19,40,18,enchanted?"#b993d5":"#d7b363");
+                R(11,14,26,28,enchanted?"#473650":"#2e4548");R(8,17,32,22,enchanted?"#473650":"#2e4548");R(6,20,36,16,enchanted?"#473650":"#2e4548");
+                R(11,11,26,2,enchanted?"#ecdaff":"#fff0b9");R(4,20,2,15,enchanted?"#d9b7f1":"#efd18b");
                 string[] picks={"pick-wood","pick-stone","pick2","pick-gold","pick4","pick-netherite"};
                 var pick=Get(picks[rank/2]).texture;
-                for(int y=0;y<20;y++)for(int x=0;x<20;x++)
+                for(int y=0;y<pick.height;y++)for(int x=0;x<pick.width;x++)
                 {
-                    Color pixel=pick.GetPixel(x*pick.width/20,y*pick.height/20);if(pixel.a<.1f) continue;
-                    if(enchanted && (x+y)%9<3) pixel=Color.Lerp(pixel,new Color(.82f,.58f,1),.65f);
-                    t.SetPixel(6+x,3+y,pixel);
+                    Color pixel=pick.GetPixel(x,y);if(pixel.a<.1f) continue;
+                    if(enchanted && (x+y)%11<2) pixel=Color.Lerp(pixel,new Color(.82f,.58f,1),.4f);
+                    t.SetPixel(8+x,2+y,pixel);
                 }
-                R(8,9,16,1,enchanted?"#ecd8ff":"#fff0b9");
-                if(enchanted) {R(24,6,1,5,"#fff0ff");R(22,8,5,1,"#fff0ff");R(5,26,3,1,"#d7b8ff");}
+                if(enchanted) {R(39,11,2,8,"#fff0ff");R(36,14,8,2,"#fff0ff");R(7,37,2,6,"#d7b8ff");R(5,39,6,2,"#d7b8ff");}
             }
             else if (name == "medal")
             {
