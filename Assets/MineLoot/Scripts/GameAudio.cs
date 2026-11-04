@@ -12,7 +12,7 @@ namespace MineLoot
         [Serializable] private sealed class Preferences
         {
             public int version = 1;
-            public float master = 1, mining = 1, roulette = 1;
+            public float master = .5f, mining = 1, roulette = 1;
             public bool muted;
         }
         private readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();

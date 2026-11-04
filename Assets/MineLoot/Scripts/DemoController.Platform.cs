@@ -16,6 +16,14 @@ namespace MineLoot
         private System.Globalization.CultureInfo interfaceCulture = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
         public string InterfaceLanguage { get; private set; } = "ru";
         public bool IsPaused => applicationPaused;
+        private bool mobileDevice;
+        public void OnBrowserDevice(string device)
+        {
+            mobileDevice = device == "mobile" || device == "tablet";
+            Application.targetFrameRate = mobileDevice ? 30 : 60;
+            FitScreen();
+        }
+        public void OnBrowserInputCancel(string unused) { holding = false; holdRepeated = true; }
         public bool RewardedVideoPending => !string.IsNullOrEmpty(rewardedRequest);
         private Button accountButton,accountLoginButton;
         private Text accountStatusLabel;
@@ -66,7 +74,7 @@ namespace MineLoot
             if(!SmokeMode) return;authorizationForSmoke=authorize;
             OnBrowserAccount(JsonUtility.ToJson(new AccountPayload{available=authorize!=null,status=authorize!=null?"guest":"unavailable",name=""}));
         }
-        private float PlayDelta => applicationPaused ? 0 : Time.unscaledDeltaTime;
+        private float PlayDelta => applicationPaused || settingsWindowOpen ? 0 : Time.unscaledDeltaTime;
 
         private IEnumerator Start()
         {
@@ -172,12 +180,12 @@ namespace MineLoot
         private void ApplyPlatformPause()
         {
             bool paused = enginePaused || browserPaused || RewardedVideoPending || accountPending;
-            if (paused == applicationPaused) { BrowserPlatform.Gameplay(!paused); return; }
+            if (paused == applicationPaused) { BrowserPlatform.Gameplay(!paused && !settingsWindowOpen); return; }
             if (paused) { holding = false; Flush(true); }
             applicationPaused = paused; skipEconomyFrame = true;
             platformInput.interactable = !paused;
             platformInput.blocksRaycasts = !paused;
-            stage.Paused = enchantingWorld.Paused = paused;
+            stage.Paused = enchantingWorld.Paused = paused || settingsWindowOpen;
             shaft.Paused = paused || !roulette || settingsWindowOpen;
             sounds.SetSuspended(paused || !audioFocused);
             if (!paused)
@@ -186,7 +194,7 @@ namespace MineLoot
                 if (!SmokeMode || smokeSessionKey != null) PrepareReturn(SessionUtc, afterVideo);
                 if (afterVideo) PresentRewardedResult();
             }
-            BrowserPlatform.Gameplay(!applicationPaused);
+            BrowserPlatform.Gameplay(!applicationPaused && !settingsWindowOpen);
         }
     }
 }

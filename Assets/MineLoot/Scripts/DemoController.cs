@@ -90,6 +90,7 @@ namespace MineLoot
 
         private void RestorePresentation()
         {
+            holding = holdRepeated = false;
             busy = false; selectedPick = -1; RollPhase = "idle";
             if(settingsWindowOpen) sounds.FlushPreferences();settingsWindowOpen=false;
             if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
@@ -117,7 +118,7 @@ namespace MineLoot
         private void Update()
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
-            if (applicationPaused) return;
+            if (applicationPaused || settingsWindowOpen) return;
             PumpRating();
             float dt = PlayDelta;
             if ((!SmokeMode || smokeClockRunning) && !applicationPaused && !skipEconomyFrame) TickEconomy(dt, minePage.activeSelf && !EconomyBusy && modal == null && Application.isFocused);
@@ -158,6 +159,8 @@ namespace MineLoot
         {
             lastWidth = Screen.width; lastHeight = Screen.height; lastSafe = Screen.safeArea;
             var safe = lastSafe.width > 0 ? lastSafe : new Rect(0, 0, Screen.width, Screen.height);
+            if (!mobileDevice && safe.width > safe.height * 2)
+                safe = new Rect(safe.center.x - safe.height, safe.y, safe.height * 2, safe.height);
             ApplyResponsiveLayout(safe);
             shell.anchoredPosition = (safe.center - new Vector2(Screen.width * .5f, Screen.height * .5f)) / canvas.scaleFactor;
         }
@@ -359,7 +362,8 @@ namespace MineLoot
         {
             roulette = selectedPage == 1;
             game.RoulettePaused = IsRoulettePaused;
-            shaft.Paused = applicationPaused || !roulette;
+            shaft.Paused = applicationPaused || !roulette || settingsWindowOpen;
+            stage.Paused = enchantingWorld.Paused = applicationPaused || settingsWindowOpen;
             bool mining = selectedPage == 0;
             minePage.SetActive(mining); rollPage.SetActive(roulette); workshopPage.SetActive(selectedPage == 2); rewardsPage.SetActive(selectedPage == 3);
             mineTab.image.color = mining ? Hex("a4c975") : Panel;

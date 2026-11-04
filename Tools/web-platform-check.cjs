@@ -23,6 +23,9 @@ function fixture(settings = {}) {
     features: { LoadingAPI: { ready() { readyCalls++; calls.push("sdk-ready"); } } },
     on(event, fn) { sdkEvents.set(event, fn); }, off(event) { sdkEvents.delete(event); }
   };
+  if(settings.device) sdk.deviceInfo={type:settings.device};
+  let fullscreenCalls=0;
+  if(settings.fullscreen) sdk.screen={fullscreen:{status:settings.fullscreenOn?"on":"off",request(){fullscreenCalls++;if(settings.fullscreenThrows) throw new Error("Fullscreen denied");return settings.fullscreenRejects?Promise.reject(new Error("Fullscreen denied")):Promise.resolve();}}};
   if (!settings.noGameplay) sdk.features.GameplayAPI = {
     start() { gameplayCalls.push("start"); calls.push("gameplay-start"); if (settings.gameplayThrows) throw new Error("Gameplay unavailable"); if (settings.onGameplay) settings.onGameplay("start"); },
     stop() { gameplayCalls.push("stop"); calls.push("gameplay-stop"); if (settings.gameplayThrows) throw new Error("Gameplay unavailable"); if (settings.onGameplay) settings.onGameplay("stop"); }
@@ -49,6 +52,7 @@ function fixture(settings = {}) {
   }
   Object.assign(root, {
     document: doc, location: { hostname: settings.host || "games.example", search: settings.search || "" },
+    navigator:{userAgent:settings.userAgent||"Desktop test browser",maxTouchPoints:settings.touchPoints||0},
     console: { warn() {}, error() {} },
     localStorage: {
       getItem(key) { if (settings.storageBlocked) throw new Error("Storage denied"); return data.get(key) || null; },
@@ -66,7 +70,7 @@ function fixture(settings = {}) {
     if (method === "OnBrowserPause" && !settings.manualGameplay) api.setGameplay(value === "0");
     if (settings.onMessage) settings.onMessage(method, value, api);
   } };
-  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, ranking, advanceClock(ms){clock+=ms;}, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
+  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, ranking, advanceClock(ms){clock+=ms;}, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get fullscreenCalls(){return fullscreenCalls;}, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
 function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
@@ -322,6 +326,28 @@ async function run() {
   f=fixture({auth:true,leaderboard:true});await start(f);await settleRating();f.api.requestRating();await settleRating();f.api.authorize();f.authRequests[0].resolve();await settleRating();f.api.requestRating();await settleRating();
   check(f.ranking.reads.length===2 && f.ranking.reads[1].options.includeUser,"Signing in invalidates the guest cache and includes the real current-player row");
   f=fixture();await start(f);check(!f.api.requestRating() && !f.api.submitRating(submission),"A missing leaderboard provider is not replaced by a fake online table");
+
+  for(const settings of [{device:"mobile"},{device:"tablet"},{userAgent:"Mozilla Android"},{userAgent:"Mozilla iPhone"},{userAgent:"Mozilla Macintosh",touchPoints:5}]) {
+    f=fixture(settings);await start(f);
+    check(["mobile","tablet"].includes(f.api.status().device) && f.calls.some(value=>value.method==="OnBrowserDevice" && value.value===f.api.status().device),"SDK device or mobile browser fallback reaches the existing Unity layout: "+JSON.stringify(settings));
+  }
+  f=fixture({device:"desktop",userAgent:"Mozilla Android"});await start(f);
+  check(f.api.status().device==="desktop","Explicit SDK device information takes priority over the browser fallback");
+  f.api.setViewportPaused(true);f.api.setViewportPaused(true);
+  check(f.api.status().viewportPaused && lastPause(f)==="1" && f.gameplayCalls.at(-1)==="stop","The mobile start/rotation overlay pauses the actual game and SDK gameplay");
+  f.emitSDK("game_api_pause");f.api.setViewportPaused(false);
+  check(lastPause(f)==="1","Returning to portrait cannot clear a platform ad pause");
+  f.api.setViewportPaused(true);f.emitSDK("game_api_resume");f.root.emit("focus");
+  check(lastPause(f)==="1","SDK resume and browser focus cannot clear the rotation pause");
+  f.api.setViewportPaused(false);check(lastPause(f)==="0" && f.gameplayCalls.at(-1)==="start","The last released pause reason resumes gameplay once");
+  f.api.cancelInput();check(f.calls.at(-1).method==="OnBrowserInputCancel","A cancelled browser touch releases the mining hold in Unity");
+  check(!await f.api.requestFullscreen(),"A browser without the SDK fullscreen method remains playable");
+  for(const settings of [{fullscreen:true},{fullscreen:true,fullscreenOn:true},{fullscreen:true,fullscreenThrows:true},{fullscreen:true,fullscreenRejects:true}]) {
+    f=fixture(settings);await start(f);const success=await f.api.requestFullscreen();
+    check(success===!(settings.fullscreenThrows||settings.fullscreenRejects) && f.fullscreenCalls===(settings.fullscreenOn?0:1) && !f.api.status().failed,"Fullscreen success, existing mode and browser denial are handled without a startup error: "+JSON.stringify(settings));
+  }
+  f.api.dispose();const ended=f.calls.length;f.api.setViewportPaused(false);f.api.cancelInput();await f.api.requestFullscreen();
+  check(f.calls.length===ended,"Viewport and touch callbacks cannot reach a disposed Unity instance");
 
   fs.mkdirSync(path.join(__dirname, "../Logs"), { recursive: true });
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));

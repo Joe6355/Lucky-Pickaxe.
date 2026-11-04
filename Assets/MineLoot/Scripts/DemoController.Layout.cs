@@ -102,11 +102,14 @@ namespace MineLoot
                 entry.Key.anchoredPosition = entry.Value.position; entry.Key.sizeDelta = entry.Value.size; entry.Key.localScale = entry.Value.scale;
             }
             foreach (var entry in portraitFonts) entry.Key.fontSize = entry.Value;
-            wideLayout = safe.width >= 800 && safe.width / safe.height >= 1.35f;
+            wideLayout = !mobileDevice && safe.width >= 800 && safe.width / safe.height >= 1.35f;
             canvas.scaleFactor = Mathf.Max(.1f, wideLayout ? safe.height / 960f : Mathf.Min(safe.width / 480f, safe.height / 960f));
             float width = wideLayout ? safe.width / canvas.scaleFactor : 480;
             shell.sizeDelta = new Vector2(width, 960);
-            experienceWidth = 404; ticketWidth = 360; miningVisualScale = 1; noticeHome = new Vector2(24, -10);
+            experienceWidth = 404; ticketWidth = 360; miningVisualScale = 1; noticeHome = new Vector2(24, -90);
+            Frame(noticeRect, 24, 90, 432, 76);
+            Frame(noticeTitle.rectTransform, 10, 4, 412, 28);
+            Frame(noticeDetail.rectTransform, 10, 32, 412, 40);
             quickUpgradesLayout.gameObject.SetActive(true);
             equipmentAside.SetActive(wideLayout);
             minePage.transform.Find("Open team").gameObject.SetActive(!wideLayout);
@@ -176,6 +179,8 @@ namespace MineLoot
             Frame(rewardsPage.GetComponent<RectTransform>(), (width - 480) / 2, 168, 480, 700, 1.04f);
             noticeHome = new Vector2((width - 374) / 2, -10);
             Frame(noticeRect, noticeHome.x, 10, 374, 76);
+            Frame(noticeTitle.rectTransform, 10, 4, 354, 28);
+            Frame(noticeDetail.rectTransform, 10, 32, 354, 40);
             ReflowMine(left);
             ReflowExpedition(width - 48);
         }
@@ -255,6 +260,7 @@ namespace MineLoot
         private void ResizeWorldView(VoxelStage world, RawImage display, float density)
         {
             Vector2 size = ((RectTransform)display.transform.parent).rect.size;
+            if (mobileDevice) density = Mathf.Min(density, 1.5f);
             float factor = Mathf.Min(density, 1536f / size.x, 1024f / size.y);
             world.ResizeViewport(Mathf.RoundToInt(size.x * factor), Mathf.RoundToInt(size.y * factor));
             display.texture = world.Target;

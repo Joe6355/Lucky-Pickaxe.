@@ -76,7 +76,7 @@ namespace MineLoot
             var surface = PanelAt(shell, "Surface", Color.white, 0, 0, 480, 960);
             surface.color = Hex("e0e5e2");
             PanelAt(shell, "Header shadow", Hex("1e3440"), 0, 0, 480, 164);
-            Card(shell, "Inventory base", 12, 164, 456, 712, Hex("e0e5e2"));
+            Card(shell, "Inventory base", 12, 164, 456, 724, Hex("e0e5e2"));
             Icon(shell, "pick-wood", 23, 28, 44, 44).name="Header pickaxe";
             Label(shell, "КИРКА УДАЧИ", 78, 19, 320, 42, 32, Hex("faf1cf"), FontStyle.Bold);
             accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,252,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
@@ -702,6 +702,8 @@ namespace MineLoot
             settingsWindowOpen = false;shaft.Paused=applicationPaused||!roulette;
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = ratingWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
             dialogShade.SetActive(false); Refresh();
+            stage.Paused=enchantingWorld.Paused=applicationPaused;
+            BrowserPlatform.Gameplay(!applicationPaused);
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")

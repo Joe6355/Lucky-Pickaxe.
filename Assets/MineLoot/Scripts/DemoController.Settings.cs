@@ -13,7 +13,8 @@ namespace MineLoot
         public void ShowSettings()
         {
             if(applicationPaused || modal!=null) return;
-            holding=false;settingsWindowOpen=true;shaft.Paused=true;
+            holding=false;settingsWindowOpen=true;stage.Paused=enchantingWorld.Paused=shaft.Paused=true;
+            Flush(true);BrowserPlatform.Gameplay(false);
             modal=CreateModal("Settings modal");Card(modal.transform,"Settings card",24,104,432,752,Panel);
             Label(modal.transform,"НАСТРОЙКИ ЗВУКА",44,120,392,42,27,Ink,FontStyle.Bold);
             settingsMute=ButtonAt(modal.transform,"",44,176,392,44,()=>{if(applicationPaused)return;sounds.Toggle();RefreshSettings();},Hex("bad5ca"),Ink);

@@ -30,11 +30,12 @@ async function seed(values) {
   }, { key, data, token });
   await page.reload(); await waitReady();
 }
-async function open(profile) {
+async function open(profile, device = {}) {
   context = await chromium.launchPersistentContext(profile, {
     channel: process.env.WEBGL_CHANNEL || "msedge", headless: true,
     viewport: { width: 480, height: 960 }, deviceScaleFactor: 1,
     ignoreHTTPSErrors: true, hasTouch: true,
+    ...device,
     args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--autoplay-policy=no-user-gesture-required"]
   });
   page = context.pages()[0] || await context.newPage();
@@ -55,6 +56,8 @@ function rewardedFixture() {
     const fixture = window.rewardedFixture = { requests: 0, callbacks: null };
     let authorized = false;
     const account = window.accountFixture = { requests: 0, resolve: null, reject: null };
+    const fullscreen = window.fullscreenFixture = { requests:0, userGesture:false };
+    const screen = {fullscreen:{status:"off",request(){fullscreen.requests++;fullscreen.userGesture=!!navigator.userActivation?.isActive;return Promise.resolve();}}};
     const ranking = window.rankingFixture = { reads: [], writes: [], playerReads: 0 };
     let remoteScore;
     const leaderboards = {
@@ -86,6 +89,7 @@ function rewardedFixture() {
     } });
     return new Proxy(sdk, { get(target, property) {
       if (property === "adv") return adv;
+      if (property === "screen") return screen;
       if (property === "auth") return auth;
       if (property === "getPlayer") return async () => player;
       if (property === "leaderboards") return leaderboards;
@@ -124,9 +128,11 @@ async function run() {
 
   const audioKey="LuckyPickaxe.MineLoot.Audio.v1.journal";
   const readAudio=()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)),audioKey);
-  const audioProgress=await read();
-  await page.screenshot({path:path.join(logs,"webgl-v0302-audio-on.png"),clip:{x:0,y:0,width:480,height:164}});
-  await tap(434,47);await shot("webgl-v0302-settings");
+  let audioProgress=await read();
+  await page.screenshot({path:path.join(logs,"webgl-v0310-audio-on.png"),clip:{x:0,y:0,width:480,height:164}});
+  await tap(434,47);await shot("webgl-v0310-settings");
+  audioProgress=await read();
+  check(await page.evaluate(()=>!LuckyPickaxe.status().gameplayReported),"Opening audio settings stops SDK gameplay while their controls remain usable");
   await tap(274,327);await tap(155,455);await tap(342,583);
   let audio=await readAudio();
   check(audio?.version===1&&Math.abs(audio.master-.6)<.015&&Math.abs(audio.mining-.25)<.015&&Math.abs(audio.roulette-.8)<.015,"Real settings sliders save independent master, mining and roulette volumes");
@@ -134,22 +140,23 @@ async function run() {
   check(JSON.stringify(await read())===JSON.stringify(audioProgress),"Audio settings block mining behind the modal without modifying game progress");
   await tap(240,198);check((await readAudio()).muted,"The settings mute button preserves the three chosen volumes while disabling sound");
   await tap(240,810);
-  await page.screenshot({path:path.join(logs,"webgl-v0302-audio-off.png"),clip:{x:0,y:0,width:480,height:164}});
+  check(await page.evaluate(()=>LuckyPickaxe.status().gameplayReported),"Closing audio settings resumes SDK gameplay");
+  await page.screenshot({path:path.join(logs,"webgl-v0310-audio-off.png"),clip:{x:0,y:0,width:480,height:164}});
   await page.reload();await waitReady();await tap(434,47);await tap(240,198);audio=await readAudio();
   check(!audio.muted&&Math.abs(audio.master-.6)<.015&&Math.abs(audio.mining-.25)<.015&&Math.abs(audio.roulette-.8)<.015,"Reload applies the saved mute preference and all category volumes before the panel opens again");
   await page.evaluate(()=>window.dispatchEvent(new Event("blur")));await page.waitForFunction(()=>LuckyPickaxe.status().paused);
   await page.evaluate(()=>window.dispatchEvent(new Event("focus")));await page.waitForFunction(()=>!LuckyPickaxe.status().paused);
   check(JSON.stringify(await readAudio())===JSON.stringify(audio),"Platform pause and resume retain the player's sound preferences");
-  await tap(140,654);await tap(340,654);await shot("webgl-v0302-settings-adjusted");
+  await tap(140,654);await tap(340,654);await shot("webgl-v0310-settings-adjusted");
   const beforeAudioReset=await read();await tap(240,716);audio=await readAudio();
-  check(audio.master===1&&audio.mining===1&&audio.roulette===1&&!audio.muted&&JSON.stringify(await read())===JSON.stringify(beforeAudioReset),"Reset restores only default audio settings and leaves the paid game progress intact");
+  check(audio.master===.5&&audio.mining===1&&audio.roulette===1&&!audio.muted&&JSON.stringify(await read())===JSON.stringify(beforeAudioReset),"Reset restores fifty percent master volume and leaves the paid game progress intact");
   await tap(240,810);
   await tap(434,47);await tap(70,327);await tap(240,810);
-  await page.screenshot({path:path.join(logs,"webgl-v0302-audio-zero.png"),clip:{x:0,y:0,width:480,height:164}});
+  await page.screenshot({path:path.join(logs,"webgl-v0310-audio-zero.png"),clip:{x:0,y:0,width:480,height:164}});
   await tap(434,47);await tap(240,716);await tap(240,810);
 
   await seed({ ...fresh, coins: 345, tickets: 8, hits: 59, experience: 39, oreKind: 9, oreDamage: 31, veinCharge: 23, veinBoostLeft: 12, guideStep: 5 });
-  await shot("webgl-stone-v0302"); await tap(215, 380); saved=await read();
+  await shot("webgl-stone-v0310"); await tap(215, 380); saved=await read();
   check(saved.coins===345 && saved.tickets===8 && saved.hits===59 && saved.experience===57 && saved.enchantingExperience===18 && saved.miningBlocks===1 && saved.oresMined===0 && saved.veinCharge===23,
     "Real stone break pays XP only, including its level-up, without ticket or vein progress: "+JSON.stringify(saved));
   await page.reload(); await waitReady(); saved=await read();
@@ -161,7 +168,7 @@ async function run() {
   check(frozen.rollPending && frozen.totalRolls===1 && frozen.tickets===19 && JSON.stringify(frozen.pendingTypes)===JSON.stringify(tabPaused.pendingTypes),"Switching to Mine pauses the paid reels instead of disabling navigation");
   await tap(215,380); saved=await read();
   check(saved.totalClicks===tabPaused.totalClicks+1 && saved.coins>tabPaused.coins && saved.tickets===19 && saved.rollPending,"Real mining remains playable while the exact roulette choice is paused");
-  await shot("webgl-v0302-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
+  await shot("webgl-v0310-tab-paused"); await tap(292,916); await page.waitForTimeout(2200); await tap(240,740);
   await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
   saved=await read(); check(saved.totalRolls===1 && saved.tickets===19,"Returning to Roulette resumes its original paid draw without spending another ticket");
   await seed({...fresh,tickets:20,experience:25480,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
@@ -230,7 +237,7 @@ async function run() {
   await seed({ ...fresh, coins: 6543, enchantingExperience: 777, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest");
   check(await page.evaluate(() => accountFixture.requests === 0), "Loading a guest account never opens the Yandex authorization dialog automatically");
-  await tap(240, 73); await shot("webgl-v0302-account-guest");
+  await tap(240, 73); await shot("webgl-v0310-account-guest");
   await tap(240, 584);
   await page.waitForFunction(() => LuckyPickaxe.status().authorizationPending && accountFixture.requests === 1);
   const loginPending = await read();
@@ -240,7 +247,7 @@ async function run() {
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "authorized" && !LuckyPickaxe.status().paused && LuckyPickaxe.status().engineActive);
   saved = await read();
   check(saved.coins === 6543 && saved.enchantingExperience === 777 && saved.totalClicks === 0, "Successful account authorization resumes the game without replacing the local save or granting resources");
-  await shot("webgl-v0302-account-connected"); await tap(240, 726);
+  await shot("webgl-v0310-account-connected"); await tap(240, 726);
   await seed({ ...fresh, coins: 6543, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await page.waitForFunction(() => LuckyPickaxe.status().accountStatus === "guest");
   await tap(240, 73); await tap(240, 584);
@@ -254,14 +261,14 @@ async function run() {
   await tap(400,73);
   await page.waitForFunction(()=>rankingFixture.reads.length===1&&!LuckyPickaxe.status().ratingLoadPending);
   check(await page.evaluate(()=>rankingFixture.reads[0].name==="mmr"&&!rankingFixture.reads[0].options.includeUser&&rankingFixture.writes.length===0),"The header MMR badge opens a real guest leaderboard request without a fake score submission");
-  await shot("webgl-v0302-rating-guest");const ratingWallet=await read();await tap(240,770);
+  await shot("webgl-v0310-rating-guest");const ratingWallet=await read();await tap(240,770);
   check(JSON.stringify(await read())===JSON.stringify(ratingWallet)&&await page.evaluate(()=>rankingFixture.reads.length===1),"The leaderboard cooldown blocks repeated SDK reads without changing player resources");
-  await tap(342,282);await shot("webgl-v0302-medals");await tap(138,282);await tap(240,820);await tap(240,584);
+  await tap(342,282);await shot("webgl-v0310-medals");await tap(138,282);await tap(240,820);await tap(240,584);
   await page.waitForFunction(()=>LuckyPickaxe.status().authorizationPending);await page.evaluate(()=>accountFixture.resolve());
   await page.waitForFunction(()=>rankingFixture.writes.length===1&&!LuckyPickaxe.status().ratingSendPending);
   const ranked=await page.evaluate(()=>rankingFixture.writes[0]);
   check(ranked.score===120&&ranked.name==="mmr"&&JSON.parse(ranked.extra).blocks===1000&&JSON.parse(ranked.extra).resets===2,"Successful sign-in submits 120 MMR from the actual lifetime counters, weighted formula and reset multiplier");
-  await tap(240,726);await tap(400,73);await page.waitForFunction(()=>rankingFixture.reads.length===2&&!LuckyPickaxe.status().ratingLoadPending);await tap(420,718);await shot("webgl-v0302-rating-own");
+  await tap(240,726);await tap(400,73);await page.waitForFunction(()=>rankingFixture.reads.length===2&&!LuckyPickaxe.status().ratingLoadPending);await tap(420,718);await shot("webgl-v0310-rating-own");
   check(await page.evaluate(()=>rankingFixture.reads[1].options.includeUser),"Signing in refreshes the table to include the player's Yandex row");
   await tap(240,877);await tap(190,916);await tap(350,282);await tap(240,480);saved=await read();
   check(!saved.ratingTestProfile&&saved.coins===100000080&&saved.earnedCoins===1000000&&await page.evaluate(()=>rankingFixture.writes.length===1),"Resource grants keep the profile eligible for rating without inventing extra lifetime earnings or rewriting an equal score");
@@ -349,18 +356,18 @@ async function run() {
   await tap(480, 92); await tap(466,248); const helpWallet=await read();
   await tap(932,381); saved=await read();
   check(saved.coins===helpWallet.coins && saved.hasteLevel===0,"Upgrade question opens a modal that blocks purchases behind its shade");
-  await shot("webgl-v0302-upgrade-info"); await tap(640,526);
+  await shot("webgl-v0310-upgrade-info"); await tap(640,526);
   await tap(640,381); await tap(932,381); saved=await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Direct enchantments tab buys real Fortune and Haste ranks with their displayed prices");
   await shot("webgl-enchantments"); await page.reload(); await waitReady(); saved = await read();
   check(saved.fortuneLevel === 1 && saved.hasteLevel === 1 && saved.coins === 9200, "Reload retains both new enchantments");
   await seed({ ...fresh, coins: 10000, experience: 700, enchantingExperience: 10000, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
-  await tap(480, 92); await tap(749, 197); await shot("webgl-v0302-enchanting-room");
+  await tap(480, 92); await tap(749, 197); await shot("webgl-v0310-enchanting-room");
   await tap(867, 569); saved = await read();
   check(saved.enchantCount === 1 && saved.enchantments > 0 && saved.enchantingExperience === 9880 && saved.experience === 700, "The dedicated enchanting room spends 120 available XP and applies a real pick enchantment without reducing miner level");
   await tap(867, 317);
   check((await read()).enchantCount === 1 && (await read()).enchantingExperience === 9880, "The paid result modal blocks re-enchanting behind it before the player closes the reveal");
-  await shot("webgl-v0302-enchantment-reveal"); await tap(640, 579);
+  await shot("webgl-v0310-enchantment-reveal"); await tap(640, 579);
   await tap(867, 317); saved = await read();
   check(saved.enchantCount === 2 && saved.enchantingExperience === 9820 && saved.enchantments > 0, "Re-enchanting draws a paid random set and its first-tier price grows from 40 to 60 XP");
   const rerolled = saved.enchantments;
@@ -369,7 +376,7 @@ async function run() {
   check(saved.enchantCount === 2 && saved.enchantments === rerolled && saved.enchantingExperience === 9820 && saved.experience === 700, "Reload retains the exact paid enchantments, reroll counter and unspent XP");
   await tap(480, 92); await tap(967, 197); await tap(640, 351); await tap(640, 411); await tap(640, 470); saved = await read();
   check(saved.coins === 100010000 && saved.enchantingExperience === 19820 && saved.tickets === 12, "Temporary draft tools expose explicit buttons for 100 million coins, enchanting XP and a ten-roll test budget");
-  await shot("webgl-v0302-draft-tools");
+  await shot("webgl-v0310-draft-tools");
   await seed({ ...fresh, coins: 1000, pickWear: 160, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(1147, 490); saved = await read();
   check(saved.pickWear === 0 && saved.coins === 970, "The mine's direct repair button restores the existing worn pick for its displayed thirty coins");
@@ -395,7 +402,7 @@ async function run() {
   await page.waitForFunction(key => { const d=JSON.parse(localStorage.getItem(key)); return d.batchCompleted===10 && !d.batchActive && !d.rollPending; }, key, { timeout: 60000 });
   saved=await read();
   check(saved.totalRolls === 10 && saved.coins === 80 + saved.batchReward && saved.tickets >= 2, "Reload resumes the paid series, commits exactly ten rewards and never starts an eleventh draw");
-  await page.waitForTimeout(1000); await shot("webgl-v0302-ten-roll-result");
+  await page.waitForTimeout(1000); await shot("webgl-v0310-ten-roll-result");
   await seed({ ...fresh, tickets: 10, guideStep: 5, lastSeenUtc: Math.floor(Date.now() / 1000) });
   await tap(292, 916); await tap(376, 740); await tap(376, 740);
   const stopped = await read();
@@ -424,9 +431,80 @@ async function run() {
   }
   await shot("webgl-language-fallback");
 
+  await context.close();
+  await verifyPhones(fresh);
   check(errors.length === 0, "Built game has no unexpected browser or JavaScript errors: " + errors.join("; "));
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, audio: "actual Unity sliders, mute, reload, platform pause, preview and reset in an isolated browser profile", leaderboard: "controlled SDK table and submissions in isolated profile; no real account score posted", language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
+  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, mobile:"Android and iPhone UA/viewport/touch emulation in Chromium; 320x568 through 412x915, portrait with rotation pause; Safari engine and real fullscreen not tested", audio: "actual Unity sliders, mute, reload, platform pause, preview and reset in an isolated browser profile", leaderboard: "controlled SDK table and submissions in isolated profile; no real account score posted", language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus and real resize/touchcancel in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
   console.log(`LUCKY_PICKAXE_WEB_BROWSER: PASS (${checks} checks, Edge ${browserVersion})`);
+}
+async function phonePoint(x,y) {
+  return page.locator("#unity-canvas").evaluate((canvas,[x,y])=>{
+    const r=canvas.getBoundingClientRect(),s=Math.min(r.width/480,r.height/960);
+    return {x:r.x+(r.width-480*s)/2+x*s,y:r.y+(r.height-960*s)/2+y*s};
+  },[x,y]);
+}
+async function phoneTap(x,y) { const p=await phonePoint(x,y);await page.touchscreen.tap(p.x,p.y);await page.waitForTimeout(160); }
+async function playPhone() {await page.getByRole("button",{name:"ИГРАТЬ",exact:true}).tap();await page.waitForFunction(()=>!LuckyPickaxe.status().paused);}
+async function phoneSeed(data) {await seed(data);await playPhone();}
+async function verifyPhones(fresh) {
+  for(const device of [
+    {name:"android",userAgent:"Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",viewport:{width:360,height:780}},
+    {name:"iphone",userAgent:"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",viewport:{width:390,height:844}}
+  ]) {
+    const profile=fs.mkdtempSync(path.join(root,"_test-concept/web-phone-"));
+    await open(profile,{userAgent:device.userAgent,viewport:device.viewport,deviceScaleFactor:3,isMobile:true});
+    await page.route("**/sdk.js",async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+"\n("+rewardedFixture.toString()+")();\n"});});
+    await page.reload();await waitReady();
+    const startup=await page.evaluate(()=>LuckyPickaxe.status());
+    check(startup.device==="mobile" && startup.paused && startup.viewportPaused && await page.locator("#mobile-start").isVisible(),device.name+": the SDK selects a mobile start screen and waits for a real user gesture");
+    check(await page.locator("#unity-canvas").evaluate(canvas=>canvas.width<=canvas.clientWidth*1.51),device.name+": a high-density phone caps WebGL rendering at DPR 1.5");
+    await shot("webgl-v0310-"+device.name+"-start");await playPhone();
+    check(await page.evaluate(()=>fullscreenFixture.requests===1 && fullscreenFixture.userGesture),device.name+": the play tap requests SDK fullscreen inside the browser user gesture");
+    await phoneSeed({...fresh,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+    for(let i=0;i<6;i++) await phoneTap(215,380);
+    let data=await read();check(data.totalClicks===6 && data.oreDamage===6,device.name+": actual touch events mine ore exactly once per tap");
+    const session=await context.newCDPSession(page),p=await phonePoint(215,380);
+    await session.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:p.x,y:p.y,id:0}]});await page.waitForTimeout(800);
+    await session.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await page.waitForTimeout(200);
+    data=await read();const held=data.totalClicks;await page.waitForTimeout(500);
+    check(held>6 && (await read()).totalClicks===held,device.name+": holding mines repeatedly and lifting the finger stops it");
+    await session.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:p.x,y:p.y,id:0}]});
+    await session.send("Input.dispatchTouchEvent",{type:"touchCancel",touchPoints:[]});await page.waitForTimeout(600);
+    check((await read()).totalClicks===held,device.name+": a cancelled touch cannot leave auto-mining stuck on");
+    for(const size of [{width:320,height:568},{width:360,height:640},{width:390,height:844},{width:412,height:915}]) {
+      await page.setViewportSize(size);await page.waitForTimeout(350);
+      const before=await read();await phoneTap(215,380);data=await read();
+      check(data.totalClicks===before.totalClicks+1 && await page.evaluate(()=>document.documentElement.scrollWidth===innerWidth && document.documentElement.scrollHeight===innerHeight),device.name+": touch coordinates and no page scrolling at "+size.width+"x"+size.height);
+    }
+    await page.setViewportSize(device.viewport);
+    await phoneSeed({...fresh,coins:1000,experience:700,enchantingExperience:1000,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+    await phoneTap(120,734);data=await read();check(data.upgradeLevel===1 && data.coins===880,device.name+": the touch upgrade button spends its displayed price");
+    await phoneTap(188,916);await phoneTap(350,249);await phoneTap(130,454);data=await read();
+    check(data.workerCount===1 && data.coins>=580 && data.coins<600,device.name+": touch navigation opens production and hires a miner");
+    await phoneTap(125,279);await shot("webgl-v0310-"+device.name+"-enchanting");await phoneTap(375,662);data=await read();
+    check(data.enchantCount===1 && data.enchantingExperience===960 && data.enchantments>0,device.name+": touch enchanting spends XP and reveals a paid random result");
+    await phoneSeed({...fresh,coins:1000,tickets:12,experience:700,swapLevel:1,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+    await phoneTap(292,916);await phoneTap(240,740);await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).rollPending,key);
+    const paid=await read();await page.setViewportSize({width:device.viewport.height,height:device.viewport.width});
+    await page.waitForFunction(()=>LuckyPickaxe.status().viewportPaused);await page.waitForTimeout(1200);
+    data=await read();check(await page.locator("#rotate").isVisible() && data.tickets===paid.tickets && data.totalRolls===paid.totalRolls && data.rollPending && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),device.name+": landscape pauses the same paid roulette without another charge");
+    await shot("webgl-v0310-"+device.name+"-rotation");
+    await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
+    check(await page.evaluate(()=>LuckyPickaxe.status().paused && !LuckyPickaxe.status().gameplayReported),device.name+": focus cannot resume roulette behind the rotation screen");
+    await page.setViewportSize(device.viewport);await page.waitForFunction(()=>!LuckyPickaxe.status().paused);
+    await page.reload();await waitReady();data=await read();
+    check(data.rollPending && data.tickets===paid.tickets && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),device.name+": reloading keeps the exact paid pick choice behind the mobile start screen");
+    await playPhone();await phoneTap(240,740);await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
+    data=await read();check(data.totalRolls===1 && data.tickets===11,device.name+": the resumed touch confirmation completes the original draw once");
+    await phoneSeed({...fresh,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+    await page.locator("body").evaluate(body=>{body.style.padding="24px 10px 20px 10px";});
+    await page.waitForTimeout(350);
+    await phoneTap(434,30);await phoneTap(274,327);await phoneTap(240,810);
+    check(await page.evaluate(()=>Math.abs(JSON.parse(localStorage.getItem("LuckyPickaxe.MineLoot.Audio.v1.journal")).master-.6)<.02),device.name+": touch audio controls respect simulated screen safe insets");
+    await shot("webgl-v0310-"+device.name+"-mine");
+    check(await page.locator("audio,video").count()===0,device.name+": the game creates no HTML audio/video elements or system media player");
+    await context.close();
+  }
 }
 run().catch(error => {
   fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "FAIL", checks, error: error.message }, null, 2));

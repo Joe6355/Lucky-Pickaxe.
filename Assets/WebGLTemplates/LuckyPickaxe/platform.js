@@ -6,6 +6,7 @@
   let warnedStorage = false, rewardRequest, sentRewardedAvailable;
   let requestedLanguage, language, sentLanguage = false, languageApplied = false;
   let disposed = false, engineActive = false, gameplayReported = false, gameplayUnavailable = false;
+  let device, sentDevice, viewportPaused = false;
   let account = { available: false, status: "unavailable", name: "" }, authPending = false, sentAccount, accountGeneration=0;
   const ratingName="mmr";
   let ratingCache, ratingLoadPending=false, ratingSendPending=false, ratingLoadAfter=0, ratingSendAfter=0, ratingLoadGeneration=-1;
@@ -18,6 +19,9 @@
   }
   function notify(force) {
     if (disposed) return;
+    if (unity && receiver && device && (force || sentDevice !== device)) {
+      sentDevice = device; send("OnBrowserDevice", device);
+    }
     if (unity && receiver && language && !sentLanguage) {
       sentLanguage = true;
       send("OnBrowserLanguage", language);
@@ -37,7 +41,22 @@
     if(unity && receiver && (force || accountJson!==sentAccount)) { sentAccount=accountJson;send("OnBrowserAccount",accountJson); }
     syncGameplay();
   }
-  function isPaused() { return disposed || sdkPaused || hidden || blurred || !!rewardRequest || authPending || !ready; }
+  function isPaused() { return disposed || sdkPaused || hidden || blurred || viewportPaused || !!rewardRequest || authPending || !ready; }
+  function selectDevice() {
+    const reported = sdk?.deviceInfo?.type;
+    const touchBrowser = /Android|iPhone|iPad|iPod/i.test(root.navigator?.userAgent || "") ||
+      /Macintosh/i.test(root.navigator?.userAgent || "") && root.navigator?.maxTouchPoints > 1;
+    device = ["mobile", "tablet", "desktop", "tv"].includes(reported) ? reported : touchBrowser ? "mobile" : "desktop";
+    if (options.onDevice) options.onDevice(device);
+    notify();
+  }
+  function requestFullscreen() {
+    if (disposed || local || !sdk?.screen?.fullscreen || typeof sdk.screen.fullscreen.request !== "function") return Promise.resolve(false);
+    if (sdk.screen.fullscreen.status === "on") return Promise.resolve(true);
+    // Called directly from the HTML play button to retain the browser's user gesture.
+    try { return Promise.resolve(sdk.screen.fullscreen.request()).then(() => true, () => false); }
+    catch { return Promise.resolve(false); }
+  }
   function syncGameplay() {
     if (!sdk || local || gameplayUnavailable) return;
     const active = engineActive && !isPaused();
@@ -175,7 +194,7 @@
       if (event?.persisted === false) dispose();
     });
     listen(root, "pageshow", () => { hidden = !!root.document.hidden; blurred = false; notify(); });
-    if (local) { initialization = Promise.resolve(); selectLanguage("ru"); finishReady(); return initialization; }
+    if (local) { initialization = Promise.resolve(); selectDevice(); selectLanguage("ru"); finishReady(); return initialization; }
     initialization = new Promise((resolve, reject) => {
       if (root.YaGames) { resolve(); return; }
       const script = root.document.createElement("script");
@@ -187,6 +206,7 @@
       if (!value || !value.features || !value.features.LoadingAPI || typeof value.features.LoadingAPI.ready !== "function" || typeof value.on !== "function")
         throw new Error("Incomplete Yandex SDK");
       sdk = value;
+      selectDevice();
       const pause = () => { sdkPaused = true; notify(); };
       const resume = () => { sdkPaused = false; notify(); };
       sdk.on("game_api_pause", pause); sdk.on("game_api_resume", resume);
@@ -225,6 +245,9 @@
       finishReady();
     },
     setGameplay(active) { if (!disposed) { engineActive = active === true; syncGameplay(); } },
+    setViewportPaused(paused) { if (!disposed && viewportPaused !== (paused === true)) { viewportPaused = paused === true; notify(); } },
+    cancelInput() { if (!disposed) send("OnBrowserInputCancel", ""); },
+    requestFullscreen,
     showRewarded,
     authorize,
     requestRating,
@@ -239,6 +262,6 @@
       catch (error) { storageWarning(error); return false; }
     },
     dispose,
-    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending, ratingLoadPending, ratingSendPending }; }
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, device, viewportPaused, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending, ratingLoadPending, ratingSendPending }; }
   };
 })(window);
