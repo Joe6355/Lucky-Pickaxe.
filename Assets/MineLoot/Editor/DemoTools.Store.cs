@@ -86,8 +86,6 @@ public static partial class DemoTools
             else
             {
                 StoreSprite(root, art.Get("pick4"), 180, 166, 288, 288);
-                foreach (var edge in new[] {new Rect(0,0,width,8),new Rect(0,height-8,width,8),new Rect(0,0,8,height),new Rect(width-8,0,8,height)})
-                    StoreRect(root, "Border", edge.x, edge.y, edge.width, edge.height).gameObject.AddComponent<Image>().color = new Color32(45, 59, 40, 255);
             }
             camera.transform.position = new Vector3(width / 2f, height / 2f, -100);
             camera.orthographicSize = height / 2f; camera.aspect = width / (float)height; camera.targetTexture = output;

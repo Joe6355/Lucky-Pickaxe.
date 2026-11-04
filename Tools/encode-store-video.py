@@ -48,11 +48,13 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     run([str(args.ffmpeg.resolve()), "-hide_banner", "-loglevel", "error", "-y",
          "-safe", "1", "-f", "concat", "-i", str(timeline), "-t", f"{duration:.6f}",
-         "-vf", "fps=30,format=yuv420p", "-c:v", "libx264", "-preset", "medium",
+         "-vf", "fps=30,scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-color_range", "tv",
+         "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-preset", "medium",
          "-crf", "18", "-movflags", "+faststart", "-an", str(output)])
     decoded = run([str(args.ffmpeg.resolve()), "-hide_banner", "-i", str(output), "-f", "null", "-"])
-    if not re.search(r"Video: h264.*1280x720", decoded.stderr):
-        raise ValueError("Encoded video must be H.264 1280x720")
+    if not re.search(r"Video: h264.*yuv420p.*1280x720.*30 fps", decoded.stderr):
+        raise ValueError("Encoded video must be H.264 yuv420p 1280x720 at 30 fps")
     if output.stat().st_size > 100_000_000:
         raise ValueError("Video exceeds 100 MB")
     report = dict(result="PASS", width=1280, height=720, fps=30, seconds=round(duration, 3),

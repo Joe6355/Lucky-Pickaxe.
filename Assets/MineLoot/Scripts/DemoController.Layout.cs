@@ -21,6 +21,13 @@ namespace MineLoot
         private Vector2 noticeHome = new Vector2(24, -10);
         public bool IsWideLayout => wideLayout;
 
+        internal void FitCaptureForSmoke(int width,int height)
+        {
+            if(!SmokeMode) return;
+            if(width<=0 || height<=0) {FitScreen();return;}
+            ApplyResponsiveLayout(new Rect(0,0,width,height));shell.anchoredPosition=Vector2.zero;
+        }
+
         private void InitializeResponsiveLayout()
         {
             headerLayout = GroupRegion(shell, "Header layout", new Rect(0, 0, 480, 164));
@@ -153,8 +160,8 @@ namespace MineLoot
             Frame(workshopPage.GetComponent<RectTransform>(), (width - workshopWidth) / 2, 168, workshopWidth, 740);
             Frame(workshopPage.transform, "Workshop header", 24, 0, workshopWidth - 48, 60);
             ButtonFrame(prestigeButton, workshopWidth - 180, 14, 132, 32);
-            var sections = new[] { equipmentTab, productionTabButton, enchantingTab, draftToolsTab };
-            float sectionWidth = (workshopWidth - 84) / 4;
+            var sections = DraftToolsEnabled ? new[] { equipmentTab, productionTabButton, enchantingTab, draftToolsTab } : new[] { equipmentTab, productionTabButton, enchantingTab };
+            float sectionWidth = (workshopWidth - 48 - 12 * (sections.Length - 1)) / sections.Length;
             for (int i = 0; i < sections.Length; i++) ButtonFrame(sections[i], 24 + i * (sectionWidth + 12), 76, sectionWidth, 38);
             ReflowEnchanting(workshopWidth);
             for (int i = 0; i < workshopCards.Length; i++)

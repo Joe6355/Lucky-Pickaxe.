@@ -7,8 +7,8 @@ namespace MineLoot
 {
     public sealed partial class DemoController
     {
-        // Temporary controls requested for the draft. Disable before a public release.
-        public const bool DraftToolsEnabled = true;
+        // Release builds cannot expose or grant the former draft resources.
+        public static readonly bool DraftToolsEnabled = false;
         private int workshopSection;
         private Button enchantingTab, draftToolsTab;
         private GameObject enchantingArea, draftToolsArea;
@@ -25,7 +25,7 @@ namespace MineLoot
 
         private void BuildEnchantmentSection(Transform page)
         {
-            enchantingTab = ButtonAt(page, "ЗАЧАРОВАНИЕ", 24, 98, 211, 26, ShowEnchanting, Panel, Ink);
+            enchantingTab = ButtonAt(page, "ЗАЧАРОВАНИЕ", 24, 98, DraftToolsEnabled ? 211 : 432, 26, ShowEnchanting, Panel, Ink);
             enchantingTab.name = "Enchanting section"; enchantingTab.GetComponentInChildren<Text>().fontSize = 17;
             draftToolsTab = ButtonAt(page, "ТЕСТ", 245, 98, 211, 26, () => SelectUpgradeSection(3), Hex("e6cc8e"), Ink);
             draftToolsTab.name = "Draft tools section"; draftToolsTab.gameObject.SetActive(DraftToolsEnabled);
