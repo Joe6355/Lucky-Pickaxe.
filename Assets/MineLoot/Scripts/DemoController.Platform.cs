@@ -35,6 +35,7 @@ namespace MineLoot
         {
             AccountPayload data;try { data=JsonUtility.FromJson<AccountPayload>(json); } catch { return; }
             if(data==null || string.IsNullOrEmpty(data.status)) return;
+            if(accountStatus!=data.status) cloudRatingReady=false;
             bool returning=accountPending && data.status!="pending";
             accountAvailable=data.available;accountStatus=data.status;accountPending=data.status=="pending";
             accountName=(data.name??"").Replace("<","").Replace(">","").Trim();if(accountName.Length>40) accountName=accountName.Substring(0,40);
@@ -49,8 +50,10 @@ namespace MineLoot
             modal=CreateModal("Yandex account modal");Card(modal.transform,"Yandex account card",24,148,432,644,Panel);
             Label(modal.transform,"АККАУНТ ЯНДЕКСА",44,168,392,40,26,Ink,FontStyle.Bold);
             accountStatusLabel=Label(modal.transform,"",44,238,392,96,22,Ink,FontStyle.Bold);
-            Label(modal.transform,"Подключи профиль Яндекса для участия в рейтинге шахтёров.\n\nСохранение хранится на этом устройстве.",44,356,392,128,19,Muted);
+            Label(modal.transform,"Войди для облачного сохранения и рейтинга. Прогресс можно продолжить на другом устройстве.\nГость сохраняется на этом устройстве.",44,350,392,100,19,Muted);
+            cloudStatusLabel=Label(modal.transform,"",44,458,392,80,19,Muted);
             accountLoginButton=ButtonAt(modal.transform,"ВОЙТИ ЧЕРЕЗ ЯНДЕКС",44,560,392,48,BeginYandexLogin,Hex("dfc285"),Ink);accountLoginButton.name="Authorize Yandex";
+            cloudSyncButton=ButtonAt(modal.transform,"СОХРАНИТЬ В ОБЛАКО",44,560,392,48,RequestCloudSync,Hex("bad5ca"),Ink);cloudSyncButton.name="Sync cloud save";
             ButtonAt(modal.transform,"Продолжить игру",44,704,392,44,CloseModal,Panel,Ink).name="Close Yandex account";
             RefreshAccount();
         }
@@ -68,6 +71,7 @@ namespace MineLoot
             if(modal==null || modal.name!="Yandex account modal") return;
             accountStatusLabel.text=accountStatus=="authorized"?"Вход выполнен\n"+(accountName.Length>0?accountName:"Игрок Яндекса"):accountPending?"Открывается вход через Яндекс…":!accountAvailable?"Вход доступен в браузерной версии на Яндекс Играх.":accountStatus=="checking"?"Проверяем аккаунт…":"Вы играете как гость.\nМожно войти кнопкой ниже.";
             accountLoginButton.gameObject.SetActive(accountStatus!="authorized");accountLoginButton.interactable=accountAvailable&&!accountPending&&accountStatus!="checking";
+            RefreshCloudStatus();
         }
         internal void ConfigureAuthorizationForSmoke(System.Func<bool> authorize)
         {
@@ -80,6 +84,7 @@ namespace MineLoot
         {
             ApplyPlatformPause();
             BrowserPlatform.Attach(gameObject.name);
+            if(!SmokeMode) BrowserPlatform.StartCloud(JsonUtility.ToJson(game.Progress),localSaveExisted);
             // The first UI frame, font and procedural worlds must exist before Game Ready.
             yield return null;
             BrowserPlatform.Ready();
@@ -179,7 +184,9 @@ namespace MineLoot
 
         private void ApplyPlatformPause()
         {
-            bool paused = enginePaused || browserPaused || RewardedVideoPending || accountPending;
+            bool externalPause = enginePaused || browserPaused || RewardedVideoPending || accountPending;
+            if(cloudInput!=null) {cloudInput.ignoreParentGroups=cloudWindowOpen;cloudInput.interactable=cloudInput.blocksRaycasts=!externalPause;}
+            bool paused = externalPause || cloudWindowOpen;
             if (paused == applicationPaused) { BrowserPlatform.Gameplay(!paused && !settingsWindowOpen); return; }
             if (paused) { holding = false; Flush(true); }
             applicationPaused = paused; skipEconomyFrame = true;

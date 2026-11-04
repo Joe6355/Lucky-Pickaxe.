@@ -8,6 +8,7 @@ namespace MineLoot
         // The storage key stays stable so v1/v2 installations are upgraded in place.
         public const string Key = "MineLoot.Progress.v2";
         private const string LegacyKey = "MineLoot.Demo.Progress.v1";
+        public static bool HasSaved => !string.IsNullOrEmpty(BrowserPlatform.ReadProgress(Key)) || PlayerPrefs.HasKey(Key) || PlayerPrefs.HasKey(Key + ".backup") || PlayerPrefs.HasKey(LegacyKey);
 
         public static MineGame Load(string key = Key)
         {

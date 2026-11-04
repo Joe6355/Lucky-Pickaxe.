@@ -30,6 +30,7 @@ namespace MineLoot
             Screen.SetResolution(480, 960, false);
             yield return new WaitForSecondsRealtime(.8f);
             if(Array.IndexOf(args,"-demoBenchmark")>=0) { BenchmarkPresentation(demo,args);Application.Quit(0);yield break; }
+            if(Array.IndexOf(args,"-demoCloudSmoke")>=0) {yield return VerifyCloudAndLandscape(demo);File.WriteAllText(Path.Combine(output,"cloud-runtime-check.json"),"{\"result\":\""+(errors==0?"PASS":"FAIL")+"\",\"errors\":"+errors+"}");Application.Quit(errors==0?0:1);yield break;}
             if(Array.IndexOf(args,"-demoStoreCapture")>=0)
             {
                 yield return RecordStoreMedia(demo);
@@ -80,6 +81,7 @@ namespace MineLoot
                 demo.ShowPage(true); CheckLayout(); Capture("unity-v0311-roulette-" + size.x + ".png");
             }
             yield return VerifyMobilePresentation(demo);
+            yield return VerifyCloudAndLandscape(demo);
             yield return VerifyNewMineAndAccount(demo,stage);
             yield return VerifyWorkingCart(demo,stage);
             yield return VerifyHighLevelUi(demo,stage);
@@ -158,6 +160,50 @@ namespace MineLoot
                 demo.ShowPage(true);yield return null;CheckLayout();Capture("unity-v0311-phone-roulette-"+size.x+".png");
             }
             demo.OnBrowserDevice("desktop");Check(Application.targetFrameRate==60,"Desktop browsers retain their sixty frame target");
+        }
+
+        private IEnumerator VerifyCloudAndLandscape(DemoController demo)
+        {
+            demo.RestoreForSmoke(new MineProgress{coins=7654,tickets=1,swapLevel=1});
+            demo.ShowPage(true);demo.SpinForSmoke(()=>.6);yield return WaitForChoice(demo);
+            string paid=JsonUtility.ToJson(demo.Game.Progress);
+            foreach(var size in new[]{new Vector2Int(844,390),new Vector2Int(915,412),new Vector2Int(1024,768)}) {
+                demo.OnBrowserDevice("mobile");Screen.SetResolution(size.x,size.y,false);yield return new WaitForSecondsRealtime(.3f);
+                bool columns=size.x/(float)size.y>=1.6f;
+                Check(demo.IsWideLayout==columns && !demo.IsPaused && demo.AwaitingPickChoice,"Landscape is playable and keeps the paid choice at "+size);
+                Check(StableCloudFixture(demo.Game.Progress)==StableCloudFixture(ProgressStore.Decode(paid)),"Rotation does not charge or reroll at "+size);
+                Capture("unity-v0320-landscape-roulette-"+size.x+".png");
+                demo.ShowWorkshop();yield return null;
+                if(columns) {
+                    var scroll=GameObject.Find("Landscape page viewport").GetComponent<ScrollRect>();
+                    scroll.verticalNormalizedPosition=0;Canvas.ForceUpdateCanvases();yield return null;
+                    Check(scroll.content.rect.height>scroll.viewport.rect.height,"Long landscape pages have an internal scroll range");
+                }
+                demo.ShowSettings();yield return null;
+                var dialog=GameObject.Find("Dialog viewport").GetComponent<ScrollRect>();
+                Check(dialog.enabled==columns && (!columns || dialog.content.rect.height*dialog.content.localScale.y>dialog.viewport.rect.height),"Settings remain accessible at "+size);
+                Check((FindButton("Close landscape dialog")!=null)==columns,"Wide landscape dialogs provide an always-visible return button");
+                if(columns) dialog.verticalNormalizedPosition=0;yield return null;Capture("unity-v0320-landscape-settings-"+size.x+".png");Click(columns?"Close landscape dialog":"Close settings");
+                demo.ShowPage(true);
+            }
+            demo.OnBrowserDevice("desktop");Screen.SetResolution(480,960,false);yield return new WaitForSecondsRealtime(.3f);
+            var remote=new MineGame(new MineProgress{coins=88888,tickets=3,upgradeLevel=5,workerCount=2});remote.BeginRoll(()=>.6);
+            string remoteJson=JsonUtility.ToJson(remote.Progress);
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="choice",token="fixture-1",data=remoteJson,local=paid}));yield return null;
+            Check(demo.IsPaused && GameObject.Find("Cloud conflict modal")!=null,"Divergent cloud versions pause the game and require a choice");
+            long clicks=demo.Game.Progress.totalClicks;demo.Mine();yield return new WaitForSecondsRealtime(.25f);
+            Check(demo.Game.Progress.totalClicks==clicks && StableCloudFixture(demo.Game.Progress)==StableCloudFixture(ProgressStore.Decode(paid)),"Cloud choice cannot mine, charge or complete a paid roulette behind the panel");
+            CheckLayout();Capture("unity-v0320-cloud-choice.png");Click("Use local save");yield return null;
+            Check(!demo.IsPaused && demo.AwaitingPickChoice && demo.Game.Progress.coins==7654 && demo.Game.Progress.tickets==0,"Keeping this device preserves the paid picks and wallet without merging");
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="choice",token="fixture-2",data=remoteJson,local=paid}));Click("Use cloud save");yield return null;
+            Check(!demo.IsPaused && demo.AwaitingPickChoice && demo.Game.Progress.coins==remote.Progress.coins && demo.Game.Progress.tickets==remote.Progress.tickets && demo.Game.Progress.workerCount==2,"Cloud load restores its exact wallet, workers and paid pending draw");
+            demo.OnBrowserCloud("{\"status\":\"guest\"}");demo.RestoreForSmoke(new MineProgress());
+        }
+        [Serializable] private sealed class CloudFixture {public string status,token,data,local;}
+        private static string StableCloudFixture(MineProgress source)
+        {
+            var copy=ProgressStore.Decode(JsonUtility.ToJson(source));copy.lastSeenUtc=0;copy.milestoneBest=new long[16];
+            return JsonUtility.ToJson(copy);
         }
 
         private void BenchmarkPresentation(DemoController demo,string[] args)
@@ -789,37 +835,48 @@ namespace MineLoot
             demo.ShowEnchanting();yield return new WaitForSecondsRealtime(.3f);CheckLayout();Capture("store-mobile-enchanting-v0311.png",720,1280);
             demo.ShowPage(true);int mobileSample=0;double[] mobilePicks={.99,0,.6,.99,.6};demo.SpinForSmoke(()=>mobilePicks[mobileSample++]);
             yield return WaitForChoice(demo);CheckLayout();Capture("store-mobile-roulette-v0311.png",720,1280);
-            demo.OnBrowserDevice("desktop");
-            Screen.SetResolution(1280, 720, false); yield return new WaitForSecondsRealtime(.3f);
-            demo.RestoreForSmoke(new MineProgress { coins = 6000, experience = MineGame.ExperienceForLevel(12), upgradeLevel = 5, forgeLevel = 3, swapLevel = 1, efficiencyLevel = 2, pressLevel = 2, workerCount = 4, drillCount = 1, cartCount = 2, railLevel = 2, stratum = 4 });
+            foreach(bool vertical in new[]{false,true}) {
+            demo.OnBrowserDevice(vertical?"mobile":"desktop");
+            int width=vertical?720:1280,height=vertical?1280:720;
+            Screen.SetResolution(width, height, false); yield return new WaitForSecondsRealtime(.3f);
+            demo.RestoreForSmoke(new MineProgress { coins = 6000, enchantingExperience=2000, experience = MineGame.ExperienceForLevel(12), upgradeLevel = 5, forgeLevel = 3, swapLevel = 1, efficiencyLevel = 2, pressLevel = 2, workerCount = 4, drillCount = 1, cartCount = 2, railLevel = 2, stratum = 4 });
             demo.ShowPage(false); demo.UseLiveClockForSmoke(true);
             yield return new WaitForSecondsRealtime(.5f);
             CheckLayout();Capture("store-desktop-mine-v0311.png");
-            string folder = Path.Combine(output, "store-frames-v0311"); Directory.CreateDirectory(folder);
+            string frameFolder="store-frames-v0320"+(vertical?"-vertical":"");
+            string folder = Path.Combine(output, frameFolder); Directory.CreateDirectory(folder);
             var times = new System.Text.StringBuilder("frame,seconds\n");
             double start = Time.realtimeSinceStartupAsDouble, nextMine = 0;
-            bool launched = false, exchanged = false, confirmed = false, production = false;
+            bool launched = false, exchanged = false, confirmed = false, production = false,enchanting=false,enchanted=false,revealed=false;
             int frame = 0, sample = 0; double[] picks = { .99, 0, .6, .99, .6 };
-            while (Time.realtimeSinceStartupAsDouble - start < 18)
+            while (Time.realtimeSinceStartupAsDouble - start < 24)
             {
                 double elapsed = Time.realtimeSinceStartupAsDouble - start;
-                if (elapsed < 4.5 && elapsed >= nextMine) { Click("Mine rock"); nextMine = elapsed + .22; }
-                if (elapsed >= 4.5 && !launched) { demo.ShowPage(true); demo.SpinForSmoke(() => picks[sample++]); launched = true; }
+                if (elapsed < 4 && elapsed >= nextMine) { Click("Mine rock"); nextMine = elapsed + .22; }
+                if(elapsed>=4 && !enchanting) {demo.ShowEnchanting();enchanting=true;}
+                if(elapsed>=5.2 && !enchanted) {Click("Enchant offer 2");enchanted=true;}
+                if(elapsed>=7.2 && !revealed) {Click("Close enchantment result");revealed=true;}
+                if (elapsed >= 8 && !launched) { demo.ShowPage(true); demo.SpinForSmoke(() => picks[sample++]); launched = true; }
                 if (demo.AwaitingPickChoice && !exchanged) { CheckLayout();Capture("store-desktop-roulette-v0311.png");demo.SelectPick(0); demo.SelectPick(1); exchanged = true; }
-                else if (demo.AwaitingPickChoice && exchanged && !confirmed && elapsed >= 9) { demo.Spin(); confirmed = true; }
-                if (elapsed >= 14 && !demo.IsBusy && !production)
+                else if (demo.AwaitingPickChoice && exchanged && !confirmed && elapsed >= 13) { demo.Spin(); confirmed = true; }
+                if (elapsed >= 19 && !demo.IsBusy && !production)
                 {
                     demo.ShowWorkshop(); Click("Production section");
                     if (FindButton("Buy Worker").interactable) Click("Buy Worker");
                     production = true;
                 }
                 times.Append(frame).Append(',').AppendLine(elapsed.ToString("F6", System.Globalization.CultureInfo.InvariantCulture));
-                Capture(Path.Combine("store-frames-v0311", "frame-" + (frame++).ToString("D4") + ".jpg"));
+                Capture(Path.Combine(frameFolder, "frame-" + (frame++).ToString("D4") + ".jpg"),width,height);
                 yield return new WaitForSecondsRealtime(1f / 30);
             }
             File.WriteAllText(Path.Combine(folder, "times.csv"), times.ToString());
-            Check(launched && exchanged && confirmed && production && !demo.Game.HasPendingRoll, "Store video records real mining, exchange, paid result and production actions");
+            Check(launched && exchanged && confirmed && production && enchanted && !demo.Game.HasPendingRoll, "Store video records real mining, enchantment, exchange, paid result and production actions");
             demo.UseLiveClockForSmoke(false);
+            }
+            demo.OnBrowserDevice("mobile");Screen.SetResolution(1280,720,false);yield return new WaitForSecondsRealtime(.3f);
+            demo.ShowPage(false);Capture("store-mobile-landscape-mine-v0320.png",1280,720);
+            demo.ShowPage(true);Capture("store-mobile-landscape-roulette-v0320.png",1280,720);
+            demo.OnBrowserDevice("desktop");
             Screen.SetResolution(480, 960, false); yield return new WaitForSecondsRealtime(.3f);
             demo.RestoreForSmoke(ProgressStore.Decode(original)); demo.ShowPage(true);
         }

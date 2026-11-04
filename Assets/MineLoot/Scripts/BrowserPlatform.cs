@@ -9,6 +9,9 @@ namespace MineLoot
         [DllImport("__Internal")] private static extern void LP_Attach(string receiver);
         [DllImport("__Internal")] private static extern void LP_Ready();
         [DllImport("__Internal")] private static extern int LP_Authorize();
+        [DllImport("__Internal")] private static extern void LP_CloudStart(string json, int existed);
+        [DllImport("__Internal")] private static extern void LP_CloudSync();
+        [DllImport("__Internal")] private static extern void LP_CloudResolve(string token, int remote);
         [DllImport("__Internal")] private static extern int LP_SubmitRating(string json);
         [DllImport("__Internal")] private static extern int LP_RequestRating();
         [DllImport("__Internal")] private static extern void LP_LanguageReady(string language);
@@ -21,6 +24,24 @@ namespace MineLoot
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             LP_Attach(receiver);
+#endif
+        }
+        public static void StartCloud(string json, bool existed)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LP_CloudStart(json, existed ? 1 : 0);
+#endif
+        }
+        public static void SyncCloud()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LP_CloudSync();
+#endif
+        }
+        public static void ResolveCloud(string token, bool remote)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LP_CloudResolve(token, remote ? 1 : 0);
 #endif
         }
         public static void Ready()

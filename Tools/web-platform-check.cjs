@@ -12,7 +12,7 @@ function emitter(target = {}) {
   return target;
 }
 function fixture(settings = {}) {
-  const calls = [], data = new Map(), root = emitter();
+  const calls = [], data = settings.storage || new Map(), root = emitter(), timers=new Map();let timerId=0;
   let clock=Date.now();const FixtureDate=class extends Date {static now(){return clock;}};
   const doc = emitter({ hidden: false, createElement: () => ({}) });
   let initCalls = 0, readyCalls = 0, writes = 0, languageReads = 0;
@@ -38,7 +38,7 @@ function fixture(settings = {}) {
   } };
   const authRequests=[];let playerAuthorized=!!settings.authorized,playerCalls=0;
   if(settings.auth) {
-    sdk.getPlayer=()=>{playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));return Promise.resolve({isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр"});};
+    sdk.getPlayer=()=>{playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));return Promise.resolve({isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр",getUniqueID:()=>settings.accountID||"fixture-account",getData:async()=>{if(settings.cloud?.read) return settings.cloud.read();return JSON.parse(JSON.stringify(settings.cloud?.data||{}));},setData:async(value,flush)=>{if(settings.cloud?.write) return settings.cloud.write(value,flush);if(settings.cloud) {settings.cloud.writes.push({value,flush});settings.cloud.data=JSON.parse(JSON.stringify(value));}}});};
     sdk.auth={openAuthDialog(){if(settings.authThrows) throw new Error("Dialog unavailable");return new Promise((resolve,reject)=>authRequests.push({resolve(){playerAuthorized=true;resolve();},reject}));}};
   }
   const ranking={writes:[],reads:[],playerReads:0,availability:[]};let remoteScore=settings.remoteScore;
@@ -52,6 +52,7 @@ function fixture(settings = {}) {
   }
   Object.assign(root, {
     document: doc, location: { hostname: settings.host || "games.example", search: settings.search || "" },
+    setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,at:clock+ms});return id;},clearTimeout(id){timers.delete(id);},
     navigator:{userAgent:settings.userAgent||"Desktop test browser",maxTouchPoints:settings.touchPoints||0},
     console: { warn() {}, error() {} },
     localStorage: {
@@ -70,7 +71,7 @@ function fixture(settings = {}) {
     if (method === "OnBrowserPause" && !settings.manualGameplay) api.setGameplay(value === "0");
     if (settings.onMessage) settings.onMessage(method, value, api);
   } };
-  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, ranking, advanceClock(ms){clock+=ms;}, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get fullscreenCalls(){return fullscreenCalls;}, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
+  return { root, doc, api, sdk, calls, data, unity, ads, gameplayCalls, ranking, advanceClock(ms){clock+=ms;for(const [id,timer] of timers) if(timer.at<=clock){timers.delete(id);timer.fn();}}, emitSDK(event) { sdkEvents.get(event)?.(); }, authRequests, get fullscreenCalls(){return fullscreenCalls;}, get playerCalls(){return playerCalls;}, get initCalls() { return initCalls; }, get readyCalls() { return readyCalls; }, get writes() { return writes; }, get languageReads() { return languageReads; } };
 }
 function lastPause(f) { return f.calls.filter(value => value.method === "OnBrowserPause").at(-1)?.value; }
 function videoEvents(f) { return f.calls.filter(value => value.method === "OnRewardedVideo").map(value => value.value); }
@@ -353,4 +354,5 @@ async function run() {
   fs.writeFileSync(path.join(__dirname, "../Logs/web-platform-check.json"), JSON.stringify({ result: "PASS", checks }));
   console.log(`LUCKY_PICKAXE_WEB_PLATFORM: PASS (${checks} checks)`);
 }
-run().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports={fixture,start};
+if(require.main===module) run().catch(error => { console.error(error); process.exitCode = 1; });

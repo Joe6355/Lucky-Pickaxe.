@@ -1,0 +1,131 @@
+{
+  "result": "PASS",
+  "version": "0.32.0",
+  "images": 9,
+  "videos": 4,
+  "assets": [
+    {
+      "file": "icon.png",
+      "width": 512,
+      "height": 512,
+      "mode": "RGB",
+      "bytes": 86183,
+      "sha256": "58343f588ffd319a386f23bed7876f1bbe25e3e3d5d11fefd3dddeab4a48f2fe",
+      "inCard": true
+    },
+    {
+      "file": "cover.png",
+      "width": 800,
+      "height": 470,
+      "mode": "RGB",
+      "bytes": 225184,
+      "sha256": "9795c650c80bf0929a999fa2af025b93355f9b99892479725c5b87b519ffa1e4",
+      "inCard": true
+    },
+    {
+      "file": "desktop-mine.png",
+      "width": 1280,
+      "height": 720,
+      "mode": "RGB",
+      "bytes": 321011,
+      "sha256": "351a6e12775683c8c977cd3040c892e66c72dcc70eb36b36d929e8db70618485",
+      "inCard": true
+    },
+    {
+      "file": "desktop-roulette.png",
+      "width": 1280,
+      "height": 720,
+      "mode": "RGB",
+      "bytes": 150749,
+      "sha256": "c4343002aa264cf62d784691801d01714f1669c36e1e3cf50a67d8fb399bd5ae",
+      "inCard": true
+    },
+    {
+      "file": "mobile-mine.png",
+      "width": 720,
+      "height": 1280,
+      "mode": "RGB",
+      "bytes": 266845,
+      "sha256": "dd0b26ba287a03ce86257780b581d13b4c616fe3a6e722b4ff14d7e619c720cf",
+      "inCard": true
+    },
+    {
+      "file": "mobile-enchanting.png",
+      "width": 720,
+      "height": 1280,
+      "mode": "RGB",
+      "bytes": 147846,
+      "sha256": "9fb0b1f8f42aae1b802947b5795c37d8b6069299751c94bc6c4669544d04057f",
+      "inCard": true
+    },
+    {
+      "file": "mobile-roulette.png",
+      "width": 720,
+      "height": 1280,
+      "mode": "RGB",
+      "bytes": 159185,
+      "sha256": "c158d203560a9c7a0d229852d58ebb083aeb4c2590904a8ab27805a8872e4bec",
+      "inCard": true
+    },
+    {
+      "file": "mobile-landscape-mine.png",
+      "width": 1280,
+      "height": 720,
+      "mode": "RGB",
+      "bytes": 302853,
+      "sha256": "0efe63216f6474db21ea259daa9d91495d4dac9ba6244767c008afc81edf1de4",
+      "inCard": false
+    },
+    {
+      "file": "mobile-landscape-roulette.png",
+      "width": 1280,
+      "height": 720,
+      "mode": "RGB",
+      "bytes": 167291,
+      "sha256": "c6a49cbfa525c9f3248d17121e4bc041e303132abc7d46d9cc4e8eb047173e8c",
+      "inCard": false
+    },
+    {
+      "file": "gameplay.mp4",
+      "width": 1280,
+      "height": 720,
+      "seconds": 24.018,
+      "fps": 30,
+      "bytes": 1405456,
+      "sha256": "383a0155cd043d46237307107557717eda6a300f50f5de6f24fabfce49bd827f",
+      "inCard": true
+    },
+    {
+      "file": "gameplay-vertical.mp4",
+      "width": 720,
+      "height": 1280,
+      "seconds": 24.013,
+      "fps": 30,
+      "bytes": 1617558,
+      "sha256": "6696f67910f35df8bcb596c25b198e4b87f43b07d4b23262c11e07e77940d5c0",
+      "inCard": true
+    },
+    {
+      "file": "trailer.mp4",
+      "width": 1280,
+      "height": 720,
+      "seconds": 24,
+      "fps": 30,
+      "bytes": 1798252,
+      "sha256": "54bad68e593c09791f1e4525a80de42a8e106d35f6f1e2ef64c7758c813d90ff",
+      "inCard": true
+    },
+    {
+      "file": "trailer-vertical.mp4",
+      "width": 720,
+      "height": 1280,
+      "seconds": 24,
+      "fps": 30,
+      "bytes": 1944006,
+      "sha256": "d065e3f23dc099a239a7081a7197f6c6cedc44b0c2cbb84a2df3fb5a234a65f9",
+      "inCard": true
+    }
+  ],
+  "cardImages": 7,
+  "preparedLandscapeImages": 2
+}

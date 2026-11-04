@@ -121,7 +121,7 @@ namespace MineLoot
         private void PumpRating()
         {
             if(ratingWindowOpen && Time.unscaledTime>=nextRatingRefresh) {nextRatingRefresh=Time.unscaledTime+.5f;RefreshRating();}
-            if(game==null || accountStatus!="authorized" || ratingSending || Time.unscaledTime<nextRatingSend || game.Mmr<=Math.Max(0,submittedRating)) return;
+            if(game==null || accountStatus!="authorized" || !SmokeMode && !cloudRatingReady || ratingSending || Time.unscaledTime<nextRatingSend || game.Mmr<=Math.Max(0,submittedRating)) return;
             if(SmokeMode && ratingSubmitForSmoke==null) return;
             nextRatingSend=Time.unscaledTime+30;ratingSending=true;
             var data=new RatingSubmission {score=game.Mmr,blocks=game.RatingBlocks,coins=game.Progress.earnedCoins,tickets=game.Progress.spentTickets,xp=game.Progress.spentEnchantingExperience,resets=game.Progress.prestigeCount};

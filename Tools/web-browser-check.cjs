@@ -30,7 +30,7 @@ async function seed(values) {
   }, { key, data, token });
   await page.reload(); await waitReady();
 }
-async function open(profile, device = {}) {
+async function open(profile, device = {}, prepare) {
   context = await chromium.launchPersistentContext(profile, {
     channel: process.env.WEBGL_CHANNEL || "msedge", headless: true,
     viewport: { width: 480, height: 960 }, deviceScaleFactor: 1,
@@ -44,6 +44,7 @@ async function open(profile, device = {}) {
     consoleLogs.push({ type: message.type(), text: message.text(), url: message.location().url });
     if (message.type() === "error") errors.push(message.text());
   });
+  if(prepare) await prepare(context,page);
   await page.goto(url, { waitUntil: "domcontentloaded" }); await waitReady();
 }
 // This fixture controls video, account callbacks and SDK language in this isolated test profile.
@@ -54,7 +55,7 @@ function rewardedFixture() {
     const sdk = await initialize(...args);
     const fixtureLanguage = sessionStorage.getItem("test-sdk-language");
     const fixture = window.rewardedFixture = { requests: 0, callbacks: null };
-    let authorized = false;
+    let authorized = sessionStorage.getItem("test-cloud-auth")==="1";
     const account = window.accountFixture = { requests: 0, resolve: null, reject: null };
     const fullscreen = window.fullscreenFixture = { requests:0, userGesture:false };
     const screen = {fullscreen:{status:"off",request(){fullscreen.requests++;fullscreen.userGesture=!!navigator.userActivation?.isActive;return Promise.resolve();}}};
@@ -70,7 +71,12 @@ function rewardedFixture() {
       async getPlayerEntry(){ranking.playerReads++;if(remoteScore===undefined) throw {code:"LEADERBOARD_PLAYER_NOT_PRESENT"};return {score:remoteScore};},
       async setScore(name,score,extra){ranking.writes.push({name,score,extra});remoteScore=score;}
     };
-    const player = { isAuthorized: () => authorized, getName: () => authorized ? "Тестовый шахтёр" : "" };
+    const cloud=window.cloudFixture={writes:[],reads:0};
+    const player = { isAuthorized: () => authorized, getName: () => authorized ? "Тестовый шахтёр" : "",
+      getUniqueID:()=>"isolated-browser-account",
+      async getData(){cloud.reads++;return window.fixtureCloudRead?window.fixtureCloudRead():JSON.parse(localStorage.getItem("fixture-cloud-data")||"{}");},
+      async setData(value,flush){cloud.writes.push({value,flush});if(window.fixtureCloudWrite) await window.fixtureCloudWrite(value);else localStorage.setItem("fixture-cloud-data",JSON.stringify(value));}
+    };
     const auth = new Proxy(sdk.auth || {}, { get(target, property) {
       if (property === "openAuthDialog") return () => {
         account.requests++;
@@ -112,6 +118,12 @@ async function run() {
   check(state.engineActive && state.gameplayReported, "The built Unity controller reports active gameplay through the official SDK after Game Ready");
   const fresh = await read();
   check(fresh.coins === 80 && fresh.tickets === 2 && fresh.guideStep === 0, "Fresh browser session uses the existing starting resources and guide");
+  if(process.argv.includes("--phones-only")) {
+    const startupChecks=checks;await context.close();await verifyPhones(fresh);
+    check(errors.length===0,"Mobile suite has no unexpected JavaScript or browser errors: "+errors.join("; "));
+    fs.writeFileSync(path.join(logs,"web-browser-phones-check.json"),JSON.stringify({result:"PASS",checks:checks-startupChecks,startupChecks,browser:browserVersion,scope:"Android and iPhone touch, portrait, landscape, modal scroll, reload and safe-area; isolated SDK fixtures",realDevice:false,browserErrors:errors},null,2));
+    console.log("LUCKY_PICKAXE_WEB_PHONES: PASS ("+(checks-startupChecks)+" checks)");return;
+  }
   await shot("webgl-start");
   await page.mouse.move(215, 380); await page.mouse.down({ button: "right" });
   await page.waitForTimeout(600); await page.mouse.up({ button: "right" });
@@ -432,10 +444,48 @@ async function run() {
   await shot("webgl-language-fallback");
 
   await context.close();
+  await verifyCloudDevices(fresh);
   await verifyPhones(fresh);
   check(errors.length === 0, "Built game has no unexpected browser or JavaScript errors: " + errors.join("; "));
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, mobile:"Android and iPhone UA/viewport/touch emulation in Chromium; 320x568 through 412x915, portrait with rotation pause; Safari engine and real fullscreen not tested", audio: "actual Unity sliders, mute, reload, platform pause, preview and reset in an isolated browser profile", leaderboard: "controlled SDK table and submissions in isolated profile; no real account score posted", language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus and real resize/touchcancel in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
+  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "PASS", checks, browser: browserVersion, sdkEnvironment: "official dev proxy 0.0.2", profile, realDevice: false, mobile:"Android and iPhone UA/viewport/touch emulation in Chromium; portrait 320x568 through 412x915 and playable landscape, internal settings scroll; Safari engine and real fullscreen not tested", cloud:"two isolated profiles sharing a controlled SDK cloud store: paid choice, second-device load, completion, conflict resolution; no owner cloud or account touched", audio: "actual Unity sliders, mute, reload, platform pause, preview and reset in an isolated browser profile", leaderboard: "controlled SDK table and submissions in isolated profile; no real account score posted", language: "Russian acknowledgement plus en/kk/tr SDK fixtures; no English translation declared", lifecycleEvents: "dispatched blur/focus and real resize/touchcancel in headless Edge", rewardedVideo: "controlled video callbacks in isolated profile; no real ad inventory tested" }, null, 2));
   console.log(`LUCKY_PICKAXE_WEB_BROWSER: PASS (${checks} checks, Edge ${browserVersion})`);
+}
+async function verifyCloudDevices(fresh){
+  let shared={};
+  async function prepareCloud(ctx,tab){
+    await ctx.exposeBinding("fixtureCloudRead",async()=>JSON.parse(JSON.stringify(shared)));
+    await ctx.exposeBinding("fixtureCloudWrite",async(source,value)=>{shared=JSON.parse(JSON.stringify(value));});
+    await tab.addInitScript(()=>sessionStorage.setItem("test-cloud-auth","1"));
+    await tab.route("**/sdk.js",async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+"\n("+rewardedFixture.toString()+")();\n"});});
+  }
+  const first=fs.mkdtempSync(path.join(root,"_test-concept/web-cloud-a-")),second=fs.mkdtempSync(path.join(root,"_test-concept/web-cloud-b-"));
+  await open(first,{},prepareCloud);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="local");
+  await seed({...fresh,coins:1234,tickets:1,swapLevel:1,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
+  await tap(292,916);await tap(240,740);await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).rollPending,key);
+  const paid=await read();await page.waitForTimeout(3000);
+  await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
+  check(JSON.parse(shared.luckyPickaxeSave.data).rollPending && JSON.parse(shared.luckyPickaxeSave.data).tickets===0,"First browser saves the already-paid roulette to the controlled cloud");
+  await shot("webgl-v0320-cloud-saved");await context.close();
+  await open(second,{},prepareCloud);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
+  let data=await read();check(data.rollPending && data.tickets===paid.tickets && data.coins===paid.coins && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),"A fresh second browser automatically restores the exact cloud picks and wallet");
+  await shot("webgl-v0320-cloud-second-device");await tap(240,740);await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
+  await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
+  const completed=JSON.parse(shared.luckyPickaxeSave.data);check(completed.totalRolls===1 && !completed.rollPending && completed.tickets===0,"Second browser completes and saves the original paid draw exactly once");
+  await context.close();await open(first,{userAgent:"Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",viewport:{width:844,height:390},isMobile:true},prepareCloud);
+  await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="choice");await page.waitForTimeout(300);
+  await playPhone();await page.waitForTimeout(300);
+  data=await read();check(data.rollPending && data.tickets===0 && !await page.evaluate(()=>LuckyPickaxe.status().gameplayReported),"Returning with an older local revision presents a conflict and pauses gameplay");
+  await swipeDialog({width:844,height:390});
+  await shot("webgl-v0320-cloud-conflict");await page.touchscreen.tap(422,201);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
+  data=await read();check(!data.rollPending && data.totalRolls===1 && data.coins===completed.coins && data.tickets===completed.tickets,"Actual cloud-choice button loads the completed version without merging or replaying its reward");
+  check(await page.evaluate(()=>LuckyPickaxe.status().gameplayReported),"Resolving the cloud choice restores active gameplay");
+  await context.close();
+}
+async function swipeDialog(size){
+  const session=await context.newCDPSession(page),x=size.width*.5-size.height*.4+8;
+  await session.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y:size.height*.9,id:0}]});
+  for(let i=1;i<=10;i++) {await session.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x,y:size.height*(.9-i*.082),id:0}]});await page.waitForTimeout(45);}
+  await session.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await page.waitForTimeout(350);
 }
 async function phonePoint(x,y) {
   return page.locator("#unity-canvas").evaluate((canvas,[x,y])=>{
@@ -486,11 +536,22 @@ async function verifyPhones(fresh) {
     await phoneSeed({...fresh,coins:1000,tickets:12,experience:700,swapLevel:1,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
     await phoneTap(292,916);await phoneTap(240,740);await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).rollPending,key);
     const paid=await read();await page.setViewportSize({width:device.viewport.height,height:device.viewport.width});
-    await page.waitForFunction(()=>LuckyPickaxe.status().viewportPaused);await page.waitForTimeout(1200);
-    data=await read();check(await page.locator("#rotate").isVisible() && data.tickets===paid.tickets && data.totalRolls===paid.totalRolls && data.rollPending && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),device.name+": landscape pauses the same paid roulette without another charge");
+    await page.waitForFunction(()=>!LuckyPickaxe.status().paused);await page.waitForTimeout(1200);
+    data=await read();check(!await page.locator("#mobile-start").isVisible() && data.tickets===paid.tickets && data.totalRolls===paid.totalRolls && data.rollPending && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),device.name+": landscape remains playable and preserves the same paid roulette without another charge");
     await shot("webgl-v0311-"+device.name+"-rotation");
     await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
-    check(await page.evaluate(()=>LuckyPickaxe.status().paused && !LuckyPickaxe.status().gameplayReported),device.name+": focus cannot resume roulette behind the rotation screen");
+    check(await page.evaluate(()=>!LuckyPickaxe.status().paused && LuckyPickaxe.status().gameplayReported),device.name+": landscape reports active gameplay after focus returns");
+    const landscapeSize=page.viewportSize();
+    await page.touchscreen.tap(landscapeSize.width*.375,landscapeSize.height*.183);await page.waitForTimeout(250);
+    await shot("webgl-v0320-"+device.name+"-landscape-upgrades");
+    await page.touchscreen.tap(landscapeSize.width*.97,landscapeSize.height*.077);await page.waitForTimeout(200);
+    const audioBeforeSwipe=await page.evaluate(()=>localStorage.getItem("LuckyPickaxe.MineLoot.Audio.v1.journal"));
+    await swipeDialog(landscapeSize);
+    await shot("webgl-v0320-"+device.name+"-landscape-settings");
+    check(await page.evaluate(()=>scrollY===0 && document.documentElement.scrollHeight===innerHeight),device.name+": landscape dialog swipes stay inside Unity rather than scrolling the browser");
+    check(await page.evaluate(()=>localStorage.getItem("LuckyPickaxe.MineLoot.Audio.v1.journal"))===audioBeforeSwipe,device.name+": scrolling the dialog margin does not change a volume slider");
+    await page.touchscreen.tap(landscapeSize.width*.5+landscapeSize.height*.325,landscapeSize.height*.061);await page.waitForTimeout(200);
+    await page.waitForFunction(()=>LuckyPickaxe.status().engineActive,null,{timeout:2000});
     await page.setViewportSize(device.viewport);await page.waitForFunction(()=>!LuckyPickaxe.status().paused);
     await page.reload();await waitReady();data=await read();
     check(data.rollPending && data.tickets===paid.tickets && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),device.name+": reloading keeps the exact paid pick choice behind the mobile start screen");
@@ -503,11 +564,23 @@ async function verifyPhones(fresh) {
     check(await page.evaluate(()=>Math.abs(JSON.parse(localStorage.getItem("LuckyPickaxe.MineLoot.Audio.v1.journal")).master-.6)<.02),device.name+": touch audio controls respect simulated screen safe insets");
     await shot("webgl-v0311-"+device.name+"-mine");
     check(await page.locator("audio,video").count()===0,device.name+": the game creates no HTML audio/video elements or system media player");
+    if(device.name==="android") {
+      await page.setViewportSize({width:1280,height:720});
+      await phoneSeed({...fresh,coins:6000,experience:700,enchantingExperience:2000,upgradeLevel:5,forgeLevel:3,swapLevel:1,efficiencyLevel:2,pressLevel:2,workerCount:4,drillCount:1,cartCount:2,railLevel:2,stratum:4,guideStep:5,lastSeenUtc:0});
+      // The mobile start pause legitimately prepares a small warehouse crate for a seeded working mine.
+      // Close it through the persistent return control before recording the underlying page.
+      await page.touchscreen.tap(874,44);await page.waitForTimeout(250);
+      await page.screenshot({path:path.join(logs,"store-mobile-landscape-mine-v0320.png"),scale:"css"});
+      await page.touchscreen.tap(800,134);await page.waitForTimeout(250);await page.touchscreen.tap(750,449);
+      await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).rollPending,key);await page.waitForTimeout(3200);
+      await page.screenshot({path:path.join(logs,"store-mobile-landscape-roulette-v0320.png"),scale:"css"});
+      check((await read()).tickets===1,"Landscape touch navigation and spin spend one ticket at 1280x720");
+    }
     await context.close();
   }
 }
 run().catch(error => {
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "FAIL", checks, error: error.message }, null, 2));
+  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "FAIL", checks, error: error.message,browserErrors:errors }, null, 2));
   console.error(error); process.exitCode = 1;
 }).finally(async () => {
   fs.writeFileSync(path.join(logs, "web-browser-console.json"), JSON.stringify(consoleLogs, null, 2));

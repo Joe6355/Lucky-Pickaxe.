@@ -34,10 +34,14 @@ def main():
     if not 1 <= duration <= 28:
         raise ValueError("Recording must last between 1 and 28 seconds")
     lines = ["ffconcat version 1.0"]
+    with Image.open(folder / f"frame-{int(rows[0]['frame']):04d}.jpg") as picture:
+        width, height = picture.size
+    if (width,height) not in ((1280,720),(720,1280)):
+        raise ValueError("Expected desktop 16:9 or mobile 9:16 recording")
     for i, row in enumerate(rows):
         frame = folder / f"frame-{int(row['frame']):04d}.jpg"
         with Image.open(frame) as picture:
-            if picture.size != (1280, 720):
+            if picture.size != (width, height):
                 raise ValueError(f"Unexpected frame dimensions: {frame.name}")
         frame_duration = timestamps[i + 1] - timestamps[i] if i + 1 < len(rows) else 1 / 30
         lines += [f"file '{frame.name}'", f"duration {frame_duration:.6f}"]
@@ -48,19 +52,19 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     run([str(args.ffmpeg.resolve()), "-hide_banner", "-loglevel", "error", "-y",
          "-safe", "1", "-f", "concat", "-i", str(timeline), "-t", f"{duration:.6f}",
-         "-vf", "fps=30,scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p",
+         "-vf", "fps=30,scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-color_range", "tv",
          "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-preset", "medium",
          "-crf", "18", "-movflags", "+faststart", "-an", str(output)])
     decoded = run([str(args.ffmpeg.resolve()), "-hide_banner", "-i", str(output), "-f", "null", "-"])
-    if not re.search(r"Video: h264.*yuv420p.*1280x720.*30 fps", decoded.stderr):
-        raise ValueError("Encoded video must be H.264 yuv420p 1280x720 at 30 fps")
+    if not re.search(rf"Video: h264.*yuv420p.*{width}x{height}.*30 fps", decoded.stderr):
+        raise ValueError("Encoded video must be H.264 yuv420p at 30 fps with its native dimensions")
     if output.stat().st_size > 100_000_000:
         raise ValueError("Video exceeds 100 MB")
-    report = dict(result="PASS", width=1280, height=720, fps=30, seconds=round(duration, 3),
+    report = dict(result="PASS", width=width, height=height, fps=30, seconds=round(duration, 3),
                   frames=len(rows), bytes=output.stat().st_size, audio=False,
                   source="native game render with recorded frame timing", output=str(output))
-    (folder.parent / "store-video-check.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (folder.parent / ("store-video-vertical-check.json" if height>width else "store-video-check.json")).write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report))
 
 

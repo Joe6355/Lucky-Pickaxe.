@@ -57,6 +57,7 @@ namespace MineLoot
         private long sessionUtc;
         private double sessionRealtime;
         private string smokeSessionKey;
+        private bool localSaveExisted;
         // Session time advances from a monotonic clock; changing the wall clock while playing has no effect.
         private long SessionUtc => sessionUtc + (long)Math.Max(0, Time.realtimeSinceStartupAsDouble - sessionRealtime);
         public bool FastRoll { get; private set; }
@@ -72,6 +73,7 @@ namespace MineLoot
         {
             double startup = Time.realtimeSinceStartupAsDouble;
             Application.runInBackground = true;
+            localSaveExisted = !SmokeMode && ProgressStore.HasSaved;
             game = SmokeMode ? new MineGame() : ProgressStore.Load();
             sessionUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); sessionRealtime = Time.realtimeSinceStartupAsDouble;
             if (!SmokeMode)
@@ -95,6 +97,7 @@ namespace MineLoot
             if(settingsWindowOpen) sounds.FlushPreferences();settingsWindowOpen=false;
             if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
             if (dialogShade != null) dialogShade.SetActive(false);
+            SetDialogScrollActive(false);
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = false;
             offlineNoticeQueued = game.HasOfflineReward;
             productionTab = false; workshopSection = 0; purchaseAmount = 1; batchVisual = game.Progress.pendingBatch;
@@ -118,6 +121,7 @@ namespace MineLoot
         private void Update()
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
+            PumpCloudDecision();
             if (applicationPaused || settingsWindowOpen) return;
             PumpRating();
             float dt = PlayDelta;
@@ -360,6 +364,7 @@ namespace MineLoot
 
         private void ApplyPageVisibility()
         {
+            if(bodyScroll!=null && scrollPage!=selectedPage) {scrollPage=selectedPage;bodyScroll.StopMovement();bodyScroll.verticalNormalizedPosition=1;}
             roulette = selectedPage == 1;
             game.RoulettePaused = IsRoulettePaused;
             shaft.Paused = applicationPaused || !roulette || settingsWindowOpen;

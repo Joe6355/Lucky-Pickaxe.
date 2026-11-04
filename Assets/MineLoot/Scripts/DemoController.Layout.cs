@@ -13,6 +13,11 @@ namespace MineLoot
         private RectTransform experienceLayout, oresLayout, ticketLayout, campLayout, quickUpgradesLayout;
         private RectTransform shaftPresentation, expeditionHeader, expeditionResult, expeditionActions;
         private RectTransform dialogRoot;
+        private RectTransform bodyViewport,bodyContent,dialogViewport;
+        private ScrollRect bodyScroll,dialogScroll;
+        private Button landscapeDialogClose;
+        private bool mobileLandscape;
+        private int scrollPage=-1;
         private GameObject dialogShade, desktopRollHints;
         private RawImage mineDisplay, shaftDisplay;
         private bool wideLayout;
@@ -52,6 +57,33 @@ namespace MineLoot
             Stretch(dialogShade.GetComponent<RectTransform>()); dialogShade.GetComponent<Image>().raycastTarget = true;
             dialogShade.SetActive(false);
             dialogRoot = MakeRect(shell, "Dialog layout", 0, 0, 480, 960);
+            bodyViewport=MakeRect(shell,"Landscape page viewport",0,180,480,540);
+            bodyViewport.SetSiblingIndex(navigationLayout.GetSiblingIndex());
+            bodyScroll=AddScroll(bodyViewport);
+            bodyContent=MakeRect(bodyViewport,"Landscape page content",0,0,480,786);bodyScroll.content=bodyContent;
+            bodyViewport.gameObject.SetActive(false);
+            dialogViewport=MakeRect(shell,"Dialog viewport",0,0,480,960);
+            cloudInput=dialogViewport.gameObject.AddComponent<CanvasGroup>();
+            dialogScroll=AddScroll(dialogViewport);dialogScroll.content=dialogRoot;
+            dialogRoot.SetParent(dialogViewport,false);SetDialogScrollActive(false);
+            landscapeDialogClose=ButtonAt(dialogViewport,"В ИГРУ",480,12,148,64,CloseModal,Hex("bad5ca"),Ink);
+            landscapeDialogClose.name="Close landscape dialog";landscapeDialogClose.gameObject.SetActive(false);
+        }
+
+        private static ScrollRect AddScroll(RectTransform viewport)
+        {
+            var background=viewport.gameObject.AddComponent<Image>();background.color=Color.clear;
+            viewport.gameObject.AddComponent<RectMask2D>();
+            var scroll=viewport.gameObject.AddComponent<ScrollRect>();scroll.viewport=viewport;
+            scroll.horizontal=false;scroll.vertical=true;scroll.movementType=ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity=40;return scroll;
+        }
+        private void SetDialogScrollActive(bool active)
+        {
+            if(dialogScroll==null) return;
+            dialogViewport.GetComponent<Image>().raycastTarget=active;
+            dialogScroll.enabled=active&&mobileLandscape;
+            if(landscapeDialogClose!=null) landscapeDialogClose.gameObject.SetActive(active&&mobileLandscape&&!cloudWindowOpen);
         }
 
         private RectTransform GroupRegion(Transform parent, string name, Rect area)
@@ -104,15 +136,19 @@ namespace MineLoot
         private void ApplyResponsiveLayout(Rect safe)
         {
             if (headerLayout == null) return;
+            foreach(var page in new[]{minePage,rollPage,workshopPage,rewardsPage,guideCard}) page.transform.SetParent(shell,false);
             foreach (var entry in portraitRects)
             {
                 entry.Key.anchoredPosition = entry.Value.position; entry.Key.sizeDelta = entry.Value.size; entry.Key.localScale = entry.Value.scale;
             }
             foreach (var entry in portraitFonts) entry.Key.fontSize = entry.Value;
-            wideLayout = !mobileDevice && safe.width >= 800 && safe.width / safe.height >= 1.35f;
-            canvas.scaleFactor = Mathf.Max(.1f, wideLayout ? safe.height / 960f : Mathf.Min(safe.width / 480f, safe.height / 960f));
+            // Short, wide phones use columns; a 4:3 tablet retains the larger portrait controls.
+            mobileLandscape=mobileDevice && safe.width/safe.height>=1.6f;
+            wideLayout = mobileLandscape || !mobileDevice && safe.width >= 800 && safe.width / safe.height >= 1.35f;
+            float logicalHeight=mobileLandscape?720:960;
+            canvas.scaleFactor = Mathf.Max(.1f, wideLayout ? safe.height / logicalHeight : Mathf.Min(safe.width / 480f, safe.height / 960f));
             float width = wideLayout ? safe.width / canvas.scaleFactor : 480;
-            shell.sizeDelta = new Vector2(width, 960);
+            shell.sizeDelta = new Vector2(width, logicalHeight);
             experienceWidth = 404; ticketWidth = 360; miningVisualScale = 1; noticeHome = new Vector2(24, -90);
             Frame(noticeRect, 24, 90, 432, 76);
             Frame(noticeTitle.rectTransform, 10, 4, 412, 28);
@@ -123,8 +159,25 @@ namespace MineLoot
             workshopTab.gameObject.SetActive(true); workshopNavMark.gameObject.SetActive(true);
             desktopRollHints.SetActive(false);
             if (wideLayout) ReflowDesktop(width);
+            bodyViewport.gameObject.SetActive(mobileLandscape);
+            if(mobileLandscape) {
+                Frame(shell,"Surface",0,0,width,720);Frame(shell,"Inventory base",12,176,width-24,544);
+                Frame(navigationLayout,24,96,width-48,78);Frame(navigationLayout,"Navigation",0,0,width-48,78);
+                float tabWidth=(width-81)/4;var tabs=new[]{mineTab,workshopTab,rollTab,rewardsTab};
+                var marks=new[]{mineNavMark,workshopNavMark,rollNavMark,rewardsNavMark};
+                for(int i=0;i<4;i++) {ButtonFrame(tabs[i],9+i*(tabWidth+5),5,tabWidth,64);Frame(marks[i].rectTransform,9+i*(tabWidth+5)+(tabWidth-66)/2,72,66,3);}
+                Frame(bodyViewport,0,180,width,540);Frame(bodyContent,0,0,width,786);
+                foreach(var page in new[]{minePage,rollPage,workshopPage,rewardsPage,guideCard}) {
+                    var rect=page.GetComponent<RectTransform>();rect.SetParent(bodyContent,false);rect.anchoredPosition+=Vector2.up*168;
+                }
+                bodyScroll.StopMovement();bodyScroll.verticalNormalizedPosition=1;
+            }
             pickHome = clickPick.rectTransform.anchoredPosition;
-            Frame(dialogRoot, (width - 480) / 2, 0, 480, 960);
+            float dialogScale=mobileLandscape?4f/3:1,dialogWidth=480*dialogScale;
+            Frame(dialogViewport,(width-dialogWidth)/2,0,dialogWidth,logicalHeight);
+            Frame(dialogRoot,0,0,480,960,dialogScale);
+            dialogScroll.StopMovement();dialogScroll.verticalNormalizedPosition=1;SetDialogScrollActive(modal!=null);
+            dialogShade.transform.SetAsLastSibling();dialogViewport.SetAsLastSibling();
             ResizeWorldView(stage, mineDisplay, 2);
             ResizeWorldView(shaft, shaftDisplay, shaftPresentation.localScale.x);
             ResizeWorldView(enchantingWorld, enchantingDisplay, 2);
@@ -199,29 +252,31 @@ namespace MineLoot
             Frame(stageBadge.rectTransform, width - 180, 7, 164, 25);
             Frame(experienceLayout, "Experience track", 14, 39, width - 28, 5); experienceWidth = width - 28;
             var hero = (RectTransform)mineBackdrop.transform.parent;
-            Frame(hero, 24, 58, width, 520); miningVisualScale = 520f / 280;
+            float heroHeight=mobileLandscape?340:520;
+            Frame(hero, 24, 58, width, heroHeight); miningVisualScale = heroHeight / 280;
             Frame(hero, "Power badge", width - 151, 12, 138, 29);
             Frame(powerLabel.rectTransform, width - 151, 12, 138, 29);
             Frame(richVeinTimer.rectTransform, width - 151, 43, 138, 22);
             ButtonFrame(richVeinButton, width - 114, 66, 96, 42);
-            Frame(hero, "Tap hint", 12, 480, width - 24, 29);
-            Frame(mineStatus.rectTransform, 12, 480, width - 24, 29); FontSize(mineStatus, 20);
-            Frame(oresLayout, 24, 586, width, 54);
+            Frame(hero, "Tap hint", 12, heroHeight-40, width - 24, 29);
+            Frame(mineStatus.rectTransform, 12, heroHeight-40, width - 24, 29); FontSize(mineStatus, 20);
+            float compact=520-heroHeight;
+            Frame(oresLayout, 24, 586-compact, width, 54);
             float slot = (width - 4 * (MineGame.OreCount - 1)) / MineGame.OreCount;
             for (int i = 0; i < MineGame.OreCount; i++)
             {
                 float x = i * (slot + 4);
                 Frame(oreSlots[i].rectTransform, x, 0, slot, 54);
                 Frame(oreIcons[i].rectTransform, x + (slot - 28) / 2, 2, 28, 28);
-                Frame(oreNames[i].rectTransform, x + 2, 31, slot - 4, 22); FontSize(oreNames[i], 16);
+                Frame(oreNames[i].rectTransform, x + 2, 31, slot - 4, 22); FontSize(oreNames[i], mobileLandscape?14:16);
             }
-            Frame(ticketLayout, 24, 648, width, 48);
+            Frame(ticketLayout, 24, 648-compact, width, 48);
             Frame(ticketLayout, "Next ticket", 0, 0, width, 48);
             Frame(progressLabel.rectTransform, width - 141, 3, 127, 24);
             Frame(ticketLayout, "Ticket track", 56, 33, width - 72, 7); ticketWidth = width - 72;
-            Frame(campLayout, 24, 706, width, 30);
+            Frame(campLayout, 24, 706-compact, width, 30);
             Frame(upgradeHint.rectTransform, width - 213, 3, 213, 22);
-            Frame(nextUpgrade.rectTransform, 24, 742, width, 22); FontSize(nextUpgrade, 18);
+            Frame(nextUpgrade.rectTransform, 24, 742-compact, width, 22); FontSize(nextUpgrade, 18);
         }
 
         private void ReflowExpedition(float width)
@@ -230,12 +285,12 @@ namespace MineLoot
             Frame(expeditionHeader, "Expedition header", 0, 0, width, 60);
             Frame(expeditionHeader, "Hardness badge", width - 108, 13, 96, 32);
             Frame(floorHint.rectTransform, width - 108, 13, 96, 32);
-            bool spacious = width >= 1000;
-            float shaftScale = spacious ? 640f / 444 : 508f / 429;
+            bool spacious = mobileLandscape || width >= 1000;
+            float shaftScale = mobileLandscape?Mathf.Min(1.05f,(width*.48f)/444):spacious ? 640f / 444 : 508f / 429;
             Frame(shaftPresentation, spacious ? 24 : 24 + (width - 444 * shaftScale) / 2, 65, 444, 429, shaftScale);
             if (spacious)
             {
-                float x = 688, column = width - 664;
+                float x = mobileLandscape?24+444*shaftScale+24:688, column = width-x+24;
                 Frame(expeditionResult, x, 65, column, 156);
                 Frame(expeditionResult, "Result panel", 0, 0, column, 156);
                 Frame(rollRewardIcon.rectTransform, 16, 20, 48, 48);
@@ -294,7 +349,8 @@ namespace MineLoot
 
         private GameObject CreateModal(string name)
         {
-            dialogShade.SetActive(true); dialogRoot.SetAsLastSibling();
+            dialogShade.SetActive(true); dialogViewport.SetAsLastSibling();SetDialogScrollActive(true);
+            dialogScroll.StopMovement();dialogScroll.verticalNormalizedPosition=1;
             return MakeRect(dialogRoot, name, 0, 0, 480, 960).gameObject;
         }
     }

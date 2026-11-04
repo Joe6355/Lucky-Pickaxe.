@@ -697,11 +697,12 @@ namespace MineLoot
 
         private void CloseModal()
         {
-            if (modal == null || RewardedVideoPending) return;
+            if (modal == null || RewardedVideoPending || cloudWindowOpen) return;
             if(settingsWindowOpen) sounds.FlushPreferences();
             settingsWindowOpen = false;shaft.Paused=applicationPaused||!roulette;
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = ratingWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
             dialogShade.SetActive(false); Refresh();
+            SetDialogScrollActive(false);
             stage.Paused=enchantingWorld.Paused=applicationPaused;
             BrowserPlatform.Gameplay(!applicationPaused);
         }

@@ -13,6 +13,101 @@
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
+  const progressKey = "MineLoot.Progress.v2", cloudKey = "luckyPickaxeSave", cloudMetaKey = "LuckyPickaxe.cloud.v1";
+  let playerHandle, cloudContext, latestProgress, cloudAccount = "", cloudMeta = {}, cloudState = {status:"unavailable"};
+  let cloudEpoch = 0, cloudSerial = 0, cloudTimer, cloudBusy = false, cloudDecision, cloudAfter = 0, cloudNeedsWrite=false;
+
+  function stored(key) { try { return root.localStorage.getItem(key); } catch (error) { storageWarning(error); return null; } }
+  function store(key,value) { try { root.localStorage.setItem(key,value); return true; } catch (error) { storageWarning(error); return false; } }
+  function meaningful(json) {
+    try { const data=JSON.parse(json);delete data.lastSeenUtc;return JSON.stringify(data,Object.keys(data).sort()); } catch {return "";}
+  }
+  function cloudLocal() { return latestProgress || stored(journalKey(progressKey)) || cloudContext?.data || ""; }
+  function cloudCall(promise) {
+    return new Promise((resolve,reject)=>{
+      const timeout=root.setTimeout(()=>reject(new Error("Cloud timeout")),20000);
+      Promise.resolve(promise).then(resolve,reject).finally(()=>root.clearTimeout(timeout));
+    });
+  }
+  function cloudNotify(state) { cloudState=state;send("OnBrowserCloud",JSON.stringify(state)); }
+  function saveCloudMeta() { store(cloudMetaKey,JSON.stringify(cloudMeta)); }
+  function cancelCloudTimer() { if(cloudTimer!==undefined) root.clearTimeout(cloudTimer);cloudTimer=undefined; }
+  function scheduleCloud() {
+    if(disposed || !cloudContext || !cloudAccount || cloudBusy || cloudDecision || !["local","saved","error"].includes(cloudState.status)) return;
+    if(cloudTimer===undefined) cloudTimer=root.setTimeout(()=>{cloudTimer=undefined;syncCloud();},30000);
+  }
+  function validRemote(value) {
+    if(value==null) return null;
+    if(value.version!==1 || typeof value.revision!=="string" || !/^[a-zA-Z0-9-]{1,100}$/.test(value.revision) || typeof value.data!=="string" || value.data.length>180000) throw new Error("Invalid cloud save");
+    const data=JSON.parse(value.data);
+    if(!data || !Number.isInteger(data.version) || data.version<1 || data.version>16) throw new Error("Unsupported cloud save");
+    return value;
+  }
+  function offerCloud(remote,automatic) {
+    const token=cloudEpoch+"-"+(++cloudSerial);
+    cloudDecision={token,remote};cancelCloudTimer();
+    cloudNotify({status:automatic?"remote":"choice",token,data:remote?.data||"",local:cloudLocal()});
+  }
+  function acceptLocal(remote) {
+    cloudMeta={account:cloudAccount,revision:remote?.revision||"",pending:cloudNeedsWrite?(remote?.revision||cloudMeta.pending||""):""};saveCloudMeta();
+    const same=!cloudNeedsWrite && !!remote && meaningful(cloudLocal())===meaningful(remote.data);
+    cloudNotify({status:same?"saved":"local"});if(!same) scheduleCloud();
+  }
+  function reconcileCloud(remote,initial) {
+    const sameAccount=cloudMeta.account===cloudAccount;
+    if(remote && sameAccount && (remote.revision===cloudMeta.revision || remote.revision===cloudMeta.pending)) {cloudNeedsWrite=cloudNeedsWrite||!!cloudMeta.pending;acceptLocal(remote);return true;}
+    if(remote && meaningful(cloudLocal())===meaningful(remote.data)) {acceptLocal(remote);return true;}
+    if(!remote && (!cloudMeta.account || sameAccount && !cloudMeta.revision && !cloudMeta.pending)) {acceptLocal(null);return true;}
+    const fresh=initial && !cloudContext.existed && meaningful(cloudLocal())===meaningful(cloudContext.data);
+    offerCloud(remote,!!remote&&fresh);return false;
+  }
+  async function beginCloud() {
+    cancelCloudTimer();const epoch=++cloudEpoch;cloudBusy=false;cloudDecision=null;cloudAccount="";cloudAfter=0;cloudNeedsWrite=false;
+    if(!cloudContext) return;
+    if(!playerHandle || account.status!=="authorized") {cloudNotify({status:"guest"});return;}
+    try {
+      if(typeof playerHandle.getUniqueID!=="function" || typeof playerHandle.getData!=="function" || typeof playerHandle.setData!=="function") throw new Error("Cloud methods unavailable");
+      cloudAccount=String(playerHandle.getUniqueID()||"");if(!cloudAccount) throw new Error("Account ID unavailable");
+      try {cloudMeta=JSON.parse(stored(cloudMetaKey)||"{}");} catch {cloudMeta={};}
+      if(!cloudMeta || typeof cloudMeta!=="object" || Array.isArray(cloudMeta)) cloudMeta={};
+      cloudNotify({status:"loading"});cloudBusy=true;
+      const data=await cloudCall(playerHandle.getData([cloudKey]));
+      if(disposed || epoch!==cloudEpoch) return;
+      cloudBusy=false;reconcileCloud(validRemote(data?.[cloudKey]),true);
+    } catch(error) {if(!disposed && epoch===cloudEpoch) {cloudBusy=false;cloudNotify({status:"error"});scheduleCloud();}}
+  }
+  async function syncCloud() {
+    if(disposed || !cloudAccount || cloudBusy || cloudDecision || !cloudContext || account.status!=="authorized") return false;
+    if(Date.now()<cloudAfter) {scheduleCloud();return false;}
+    cancelCloudTimer();cloudAfter=Date.now()+10000;cloudBusy=true;
+    const epoch=cloudEpoch, handle=playerHandle;
+    cloudNotify({status:"syncing"});
+    try {
+      const result=await cloudCall(handle.getData([cloudKey]));if(disposed || epoch!==cloudEpoch) return false;
+      cloudBusy=false;
+      if(!reconcileCloud(validRemote(result?.[cloudKey]),false)) return false;
+      const data=cloudLocal();
+      const remote=validRemote(result?.[cloudKey]);
+      if(!cloudNeedsWrite && remote && meaningful(data)===meaningful(remote.data)) return true;
+      cloudBusy=true;cancelCloudTimer();cloudNotify({status:"syncing"});
+      const revision=Date.now().toString(36)+"-"+(++cloudSerial)+"-"+Math.random().toString(36).slice(2);
+      const envelope={version:1,revision,parent:cloudMeta.revision,updatedAt:Date.now(),data};
+      // Persist the in-flight revision first: a lost acknowledgement can be recovered on the next read.
+      cloudMeta.pending=revision;saveCloudMeta();
+      await cloudCall(handle.setData({[cloudKey]:envelope},true));
+      if(disposed || epoch!==cloudEpoch) return false;
+      cloudMeta={account:cloudAccount,revision,pending:""};saveCloudMeta();cloudBusy=false;cloudNeedsWrite=false;
+      cloudNotify({status:meaningful(cloudLocal())===meaningful(data)?"saved":"local"});
+      if(cloudState.status==="local") scheduleCloud();return true;
+    } catch(error) {if(!disposed && epoch===cloudEpoch) {cloudBusy=false;cloudNotify({status:"error"});scheduleCloud();}return false;}
+  }
+  function resolveCloud(token,useCloud) {
+    if(!cloudDecision || token!==cloudDecision.token) return false;
+    const remote=cloudDecision.remote;cloudDecision=null;
+    // Unity validates and installs the selected snapshot before acknowledging this decision.
+    acceptLocal(remote);
+    if(!useCloud) syncCloud();return true;
+  }
 
   function send(method, value) {
     if (unity && receiver) unity.SendMessage(receiver, method, value);
@@ -39,6 +134,7 @@
     if (options.onPause) options.onPause(ready && paused);
     const accountJson=JSON.stringify(account);
     if(unity && receiver && (force || accountJson!==sentAccount)) { sentAccount=accountJson;send("OnBrowserAccount",accountJson); }
+    if(force && cloudContext) send("OnBrowserCloud",JSON.stringify(cloudState));
     syncGameplay();
   }
   function isPaused() { return disposed || sdkPaused || hidden || blurred || viewportPaused || !!rewardRequest || authPending || !ready; }
@@ -104,7 +200,7 @@
   function readAccount() {
     if(!sdk || typeof sdk.getPlayer!=="function" || typeof sdk.auth?.openAuthDialog!=="function") return;
     const generation=++accountGeneration;account={available:true,status:"checking",name:""};notify();
-    Promise.resolve().then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration){account=accountFrom(player);notify();}}).catch(()=>{if(!disposed && generation===accountGeneration){account={available:true,status:"guest",name:""};notify();}});
+    Promise.resolve().then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration){playerHandle=player;account=accountFrom(player);notify();beginCloud();}}).catch(()=>{if(!disposed && generation===accountGeneration){playerHandle=null;account={available:true,status:"guest",name:""};notify();beginCloud();}});
   }
   function authorize() {
     if(disposed || !ready || local || isPaused() || !account.available || authPending || account.status==="authorized") return false;
@@ -112,7 +208,7 @@
     let dialog;
     try { dialog=sdk.auth.openAuthDialog(); }
     catch(error) { authPending=false;account={available:true,status:"guest",name:""};notify();return false; }
-    Promise.resolve(dialog).then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration) account=accountFrom(player);}).catch(()=>{if(!disposed && generation===accountGeneration) account={available:true,status:"guest",name:""};}).finally(()=>{if(!disposed && generation===accountGeneration){authPending=false;notify();}});
+    Promise.resolve(dialog).then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration) {playerHandle=player;account=accountFrom(player);}}).catch(()=>{if(!disposed && generation===accountGeneration) {playerHandle=null;account={available:true,status:"guest",name:""};}}).finally(()=>{if(!disposed && generation===accountGeneration){authPending=false;notify();beginCloud();}});
     return true;
   }
   function fail(error) {
@@ -186,11 +282,11 @@
     if (initialization) return initialization;
     options = settings || {};
     local = loopback && new URLSearchParams(root.location.search).get("local") === "1";
-    listen(root.document, "visibilitychange", () => { hidden = !!root.document.hidden; notify(); });
+    listen(root.document, "visibilitychange", () => { hidden = !!root.document.hidden;if(hidden){send("OnBrowserSave", "");syncCloud();}notify(); });
     listen(root, "blur", () => { blurred = true; notify(); });
     listen(root, "focus", () => { blurred = false; hidden = !!root.document.hidden; notify(); });
     listen(root, "pagehide", event => {
-      send("OnBrowserSave", ""); hidden = true; notify();
+      send("OnBrowserSave", "");syncCloud(); hidden = true; notify();
       if (event?.persisted === false) dispose();
     });
     listen(root, "pageshow", () => { hidden = !!root.document.hidden; blurred = false; notify(); });
@@ -224,7 +320,7 @@
   }
   function dispose() {
     if (disposed) return;
-    disposed = true; ready = false; engineActive = false;
+    disposed = true; ready = false; engineActive = false;cancelCloudTimer();++cloudEpoch;
     if (sentPause !== true) { sentPause = true; send("OnBrowserPause", "1"); }
     syncGameplay(); rewardRequest = null;authPending=false;
     while (removers.length) {
@@ -250,6 +346,9 @@
     requestFullscreen,
     showRewarded,
     authorize,
+    startCloud(json,existed) {if(disposed) return;cloudContext={data:json,existed:!!existed};beginCloud();},
+    syncCloud,
+    resolveCloud,
     requestRating,
     submitRating,
     readProgress(key) {
@@ -258,10 +357,12 @@
     },
     writeProgress(key, json) {
       // setItem replaces one complete JSON atomically; no asynchronous write window.
-      try { root.localStorage.setItem(journalKey(key), json); return true; }
+      // Cloud must also see the newest snapshot when localStorage is blocked or full.
+      if(key===progressKey) {latestProgress=json;if(cloudState.status==="saved") cloudNotify({status:"local"});scheduleCloud();}
+      try { root.localStorage.setItem(journalKey(key), json);return true; }
       catch (error) { storageWarning(error); return false; }
     },
     dispose,
-    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, device, viewportPaused, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending, ratingLoadPending, ratingSendPending }; }
+    status() { return { ready, local, sdk: !!sdk, paused: isPaused(), failed, device, viewportPaused, rewardedPending: !!rewardRequest, requestedLanguage, language, languageApplied, engineActive, gameplayReported, disposed, accountStatus:account.status, authorizationPending:authPending, ratingLoadPending, ratingSendPending,cloudStatus:cloudState.status }; }
   };
 })(window);
