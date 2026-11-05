@@ -187,19 +187,48 @@ namespace MineLoot
                 demo.ShowPage(true);
             }
             demo.OnBrowserDevice("desktop");Screen.SetResolution(480,960,false);yield return new WaitForSecondsRealtime(.3f);
-            var remote=new MineGame(new MineProgress{coins=88888,tickets=3,upgradeLevel=5,workerCount=2});remote.BeginRoll(()=>.6);
+            var remote=new MineGame(new MineProgress{coins=88888,tickets=3,upgradeLevel=5,workerCount=2,swapLevel=1});remote.BeginRoll(()=>.6);
             string remoteJson=JsonUtility.ToJson(remote.Progress);
-            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="choice",token="fixture-1",data=remoteJson,local=paid}));yield return null;
-            Check(demo.IsPaused && GameObject.Find("Cloud conflict modal")!=null,"Divergent cloud versions pause the game and require a choice");
-            long clicks=demo.Game.Progress.totalClicks;demo.Mine();yield return new WaitForSecondsRealtime(.25f);
-            Check(demo.Game.Progress.totalClicks==clicks && StableCloudFixture(demo.Game.Progress)==StableCloudFixture(ProgressStore.Decode(paid)),"Cloud choice cannot mine, charge or complete a paid roulette behind the panel");
-            CheckLayout();Capture("unity-v0320-cloud-choice.png");Click("Use local save");yield return null;
-            Check(!demo.IsPaused && demo.AwaitingPickChoice && demo.Game.Progress.coins==7654 && demo.Game.Progress.tickets==0,"Keeping this device preserves the paid picks and wallet without merging");
-            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="choice",token="fixture-2",data=remoteJson,local=paid}));Click("Use cloud save");yield return null;
-            Check(!demo.IsPaused && demo.AwaitingPickChoice && demo.Game.Progress.coins==remote.Progress.coins && demo.Game.Progress.tickets==remote.Progress.tickets && demo.Game.Progress.workerCount==2,"Cloud load restores its exact wallet, workers and paid pending draw");
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-1",data=remoteJson,local=paid}));yield return null;
+            Check(!demo.IsPaused && GameObject.Find("Cloud conflict modal")==null,"Cloud merging never opens a choice dialog or pauses gameplay");
+            Check(demo.AwaitingPickChoice && StableCloudFixture(demo.Game.Progress)==StableCloudFixture(ProgressStore.Decode(paid)),"A merge never replaces a live paid roulette");
+            demo.OnBrowserCloud("{\"status\":\"guest\"}");
+            demo.RestoreForSmoke(new MineProgress{coins=1000,tickets=4,workerCount=1});demo.ShowWorkshop();
+            string local=JsonUtility.ToJson(demo.Game.Progress);
+            var merged=new MineGame(new MineProgress{coins=9999,tickets=12,upgradeLevel=20,workerCount=5});
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-2",data=JsonUtility.ToJson(merged.Progress),local=local}));yield return null;
+            Check(!demo.IsPaused && demo.Game.Progress.coins==9999 && demo.Game.Progress.tickets==12 && demo.Game.Progress.workerCount==5,"An acknowledged automatic merge installs its validated resource totals");
+            Check(GameObject.Find("Cloud conflict modal")==null && GameObject.Find("Workshop page")!=null,"Automatic merge retains the current page without showing a selection window");
+            Click("Yandex account");string accountLocal=JsonUtility.ToJson(demo.Game.Progress);
+            var accountMerged=new MineGame(new MineProgress{coins=11111,tickets=13,upgradeLevel=20,workerCount=5});
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-account",data=JsonUtility.ToJson(accountMerged.Progress),local=accountLocal}));yield return null;
+            Check(demo.Game.Progress.coins==11111 && FindButton("Close Yandex account")!=null,"An open account status panel applies the merge without closing itself or blocking synchronization");
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="waiting",waitingFor="remote-roulette"}));yield return null;
+            bool remoteReason=false;foreach(var text in GameObject.Find("Yandex account modal").GetComponentsInChildren<Text>()) remoteReason|=text.text.Contains("На другом устройстве не завершена рулетка");
+            Check(remoteReason,"Cloud waiting identifies which device has a paid roulette without blocking unclaimed warehouses");
+            string accountPaidLocal=JsonUtility.ToJson(demo.Game.Progress);
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-account-paid",data=remoteJson,local=accountPaidLocal}));yield return null;
+            Check(demo.Game.HasPendingRoll && FindButton("Close Yandex account")!=null && demo.Game.Progress.tickets==remote.Progress.tickets,"The account panel preserves an incoming paid draw until returning to the game");
+            Click("Close Yandex account");yield return null;
+            Check(demo.AwaitingPickChoice && demo.Game.Progress.tickets==remote.Progress.tickets,"Closing the account panel resumes incoming paid picks without buying or rerolling them");
+            demo.OnBrowserCloud("{\"status\":\"guest\"}");
+            demo.RestoreForSmoke(new MineProgress{coins=100,offlineCoins=100,offlineRewardSeconds=10,offlineElapsedSeconds=10,offlineRewardCapacity=14400,offlineRewardRateMilli=20000});demo.ShowOfflineReward();
+            string warehouseLocal=JsonUtility.ToJson(demo.Game.Progress);
+            var combinedWarehouse=new MineGame(new MineProgress{coins=777,offlineCoins=300,offlineRewardSeconds=10,offlineElapsedSeconds=10,offlineRewardCapacity=14400,offlineRewardRateMilli=20000,offlineMerged=true});
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-warehouse",data=JsonUtility.ToJson(combinedWarehouse.Progress),local=warehouseLocal}));yield return null;
+            Check(demo.Game.Progress.coins==777 && demo.Game.Progress.offlineCoins==300 && FindButton("Claim offline reward")!=null,"An open warehouse accepts the combined balance without closing or blocking the merge");
+            Click("Claim offline reward");yield return null;
+            Check(demo.Game.Progress.coins==1077 && !demo.Game.HasOfflineReward && !demo.Game.Progress.offlineMerged,"A combined warehouse can be collected once through its normal UI");
+            demo.OnBrowserCloud("{\"status\":\"guest\"}");demo.RestoreForSmoke(ProgressStore.Decode(JsonUtility.ToJson(merged.Progress)));
+            string stable=JsonUtility.ToJson(demo.Game.Progress);
+            demo.ShowSettings();demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-3",data=remoteJson,local=stable}));yield return null;
+            Check(demo.Game.Progress.coins==9999 && FindButton("Close settings")!=null,"Synchronization does not close an open settings panel");
+            demo.OnBrowserCloud("{\"status\":\"guest\"}");Click("Close settings");
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-4",data=remoteJson,local=stable}));yield return null;
+            Check(demo.AwaitingPickChoice && demo.Game.Progress.coins==remote.Progress.coins && demo.Game.Progress.tickets==remote.Progress.tickets,"A transferred paid draw is restored with its exact ticket balance");
             demo.OnBrowserCloud("{\"status\":\"guest\"}");demo.RestoreForSmoke(new MineProgress());
         }
-        [Serializable] private sealed class CloudFixture {public string status,token,data,local;}
+        [Serializable] private sealed class CloudFixture {public string status,token,data,local,waitingFor;}
         private static string StableCloudFixture(MineProgress source)
         {
             var copy=ProgressStore.Decode(JsonUtility.ToJson(source));copy.lastSeenUtc=0;copy.milestoneBest=new long[16];

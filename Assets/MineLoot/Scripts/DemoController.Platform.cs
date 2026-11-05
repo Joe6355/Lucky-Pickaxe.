@@ -146,9 +146,10 @@ namespace MineLoot
             if (outcome == "rewarded")
             {
                 if (offlineVideoPaid) return;
-                long before = game.Progress.coins;
+                long before = game.Progress.coins, beforeWarehouse = game.Progress.offlineCoins;
                 if (ticketVideo ? !game.ClaimVideoTickets(SessionUtc) : !game.ClaimOffline(true)) return;
                 offlineVideoPaid = true; offlineVideoCredit = ticketVideo ? MineGame.VideoTickets : game.Progress.coins - before;
+                if(!ticketVideo) BrowserPlatform.OfflineClaim(beforeWarehouse-game.Progress.offlineCoins,offlineVideoCredit);
                 game.RecordSession(SessionUtc); Persist(); Flush(true); Refresh();
             }
             else if (outcome == "closed" || outcome == "error") FinishRewardedVideo(outcome);
@@ -185,8 +186,8 @@ namespace MineLoot
         private void ApplyPlatformPause()
         {
             bool externalPause = enginePaused || browserPaused || RewardedVideoPending || accountPending;
-            if(cloudInput!=null) {cloudInput.ignoreParentGroups=cloudWindowOpen;cloudInput.interactable=cloudInput.blocksRaycasts=!externalPause;}
-            bool paused = externalPause || cloudWindowOpen;
+            if(cloudInput!=null) {cloudInput.interactable=cloudInput.blocksRaycasts=!externalPause;}
+            bool paused = externalPause;
             if (paused == applicationPaused) { BrowserPlatform.Gameplay(!paused && !settingsWindowOpen); return; }
             if (paused) { holding = false; Flush(true); }
             applicationPaused = paused; skipEconomyFrame = true;

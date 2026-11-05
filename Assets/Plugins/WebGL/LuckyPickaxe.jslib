@@ -4,6 +4,7 @@ mergeInto(LibraryManager.library, {
   LP_CloudStart: function (json, existed) { window.LuckyPickaxe.startCloud(UTF8ToString(json), existed === 1); },
   LP_CloudSync: function () { window.LuckyPickaxe.syncCloud(); },
   LP_CloudResolve: function (token, remote) { window.LuckyPickaxe.resolveCloud(UTF8ToString(token), remote === 1); },
+  LP_CloudOfflineClaim: function (json) { window.LuckyPickaxe.noteOfflineClaim(UTF8ToString(json)); },
   LP_SubmitRating: function (json) { return window.LuckyPickaxe.submitRating(UTF8ToString(json)) ? 1 : 0; },
   LP_RequestRating: function () { return window.LuckyPickaxe.requestRating() ? 1 : 0; },
   LP_Ready: function () { window.LuckyPickaxe.markReady(); },

@@ -36,9 +36,27 @@ function fixture(settings = {}) {
     if (settings.adThrows) throw new Error("Video unavailable");
     if (settings.adSynchronous) { callbacks.onRewarded(); callbacks.onClose(); }
   } };
-  const authRequests=[];let playerAuthorized=!!settings.authorized,playerCalls=0;
+  const authRequests=[];let playerAuthorized=!!settings.authorized,playerCalls=0,memoizedPlayer;
   if(settings.auth) {
-    sdk.getPlayer=()=>{playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));return Promise.resolve({isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр",getUniqueID:()=>settings.accountID||"fixture-account",getData:async()=>{if(settings.cloud?.read) return settings.cloud.read();return JSON.parse(JSON.stringify(settings.cloud?.data||{}));},setData:async(value,flush)=>{if(settings.cloud?.write) return settings.cloud.write(value,flush);if(settings.cloud) {settings.cloud.writes.push({value,flush});settings.cloud.data=JSON.parse(JSON.stringify(value));}}});};
+    sdk.getPlayer=()=>{
+      playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));
+      if(settings.memoizedPlayer&&memoizedPlayer) return Promise.resolve(memoizedPlayer);
+      let cached;
+      const serverData=async()=>JSON.parse(JSON.stringify(settings.cloud?.read?await settings.cloud.read():settings.cloud?.data||{}));
+      const player={isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр",getUniqueID:()=>settings.accountID||"fixture-account",
+        getData:async()=>{
+          if(settings.playerDataCache&&cached) return JSON.parse(JSON.stringify(cached));
+          const result=await serverData();cached=JSON.parse(JSON.stringify(result));return result;
+        },
+        setData:async(value,flush)=>{
+          cached={...cached,...JSON.parse(JSON.stringify(value))};
+          if(settings.cloud?.write) return settings.cloud.write(value,flush);
+          if(settings.cloud) {settings.cloud.writes.push({value,flush});settings.cloud.data=JSON.parse(JSON.stringify(value));}
+        }
+      };
+      if(!settings.noFreshCloudRead) player.getPlayerData=serverData;
+      memoizedPlayer=player;return Promise.resolve(player);
+    };
     sdk.auth={openAuthDialog(){if(settings.authThrows) throw new Error("Dialog unavailable");return new Promise((resolve,reject)=>authRequests.push({resolve(){playerAuthorized=true;resolve();},reject}));}};
   }
   const ranking={writes:[],reads:[],playerReads:0,availability:[]};let remoteScore=settings.remoteScore;

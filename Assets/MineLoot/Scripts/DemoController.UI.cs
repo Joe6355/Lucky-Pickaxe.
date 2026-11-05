@@ -27,7 +27,7 @@ namespace MineLoot
         private GameObject productionSummary;
         private bool productionTab;
         private Button offlineButton, offlineClaimButton, offlineVideoButton;
-        private Text offlineButtonLabel, offlineAmountLabel, offlineStateLabel, offlineVideoLabel;
+        private Text offlineButtonLabel, offlineAmountLabel, offlineStateLabel, offlineVideoLabel, offlineDetailLabel;
         private bool offlineWindowOpen;
         private Image workshopNavMark;
         private Image experienceFill, oreFill, workshopPick;
@@ -519,10 +519,7 @@ namespace MineLoot
             offlineAmountLabel = Label(modal.transform, "", 61, 295, 358, 43, 32, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
             offlineAmountLabel.resizeTextForBestFit = true; offlineAmountLabel.resizeTextMinSize = 20; offlineAmountLabel.resizeTextMaxSize = 32;
             offlineStateLabel = Label(modal.transform, "", 61, 344, 358, 39, 16, Muted, FontStyle.Normal, TextAnchor.MiddleCenter);
-            bool pending = game.HasOfflineReward;
-            long capacity = pending ? game.Progress.offlineRewardCapacity : game.OfflineHours * 3600;
-            string detail = pending ? "Тебя не было: " + Duration(game.Progress.offlineElapsedSeconds) + "\nУчтено: " + Duration(game.Progress.offlineRewardSeconds) + " из " + capacity / 3600 + " ч. лимита\nДоход: 50% от " + Rate(game.Progress.offlineRewardRateMilli) + " монет/с" : "Офлайн-доход: 50% производства\nВремя накопления: до " + game.OfflineHours + " ч.\n" + (game.ProductionMilli > 0 ? "Производство: " + Rate(game.ProductionMilli) + " монет/с" : "Найми шахтёров в производстве");
-            Label(modal.transform, detail, 48, 419, 384, 75, 18, Ink);
+            offlineDetailLabel=Label(modal.transform,"",48,419,384,75,18,Ink);
             Label(modal.transform, "Только монеты: без опыта и жетонов.\nОбычная награда — без рекламы.\nНовая копится после получения.", 48, 506, 384, 72, 16, Muted);
             offlineClaimButton = ButtonAt(modal.transform, "Забрать", 47, 600, 386, 48, ClaimOfflineReward, Hex("d9bd80"), Ink);
             offlineClaimButton.name = "Claim offline reward";
@@ -536,6 +533,8 @@ namespace MineLoot
         private void RefreshOfflineWindow()
         {
             if (!offlineWindowOpen || modal == null) return;
+            long capacity=game.HasOfflineReward?game.Progress.offlineRewardCapacity:game.OfflineHours*3600;
+            offlineDetailLabel.text=game.Progress.offlineMerged?"Добыча с устройств объединена.\nНаграды сохранены на этом складе.\nМожно забрать обычно или за видео ×3.":game.HasOfflineReward?"Тебя не было: "+Duration(game.Progress.offlineElapsedSeconds)+"\nУчтено: "+Duration(game.Progress.offlineRewardSeconds)+" из "+capacity/3600+" ч. лимита\nДоход: 50% от "+Rate(game.Progress.offlineRewardRateMilli)+" монет/с":"Офлайн-доход: 50% производства\nВремя накопления: до "+game.OfflineHours+" ч.\n"+(game.ProductionMilli>0?"Производство: "+Rate(game.ProductionMilli)+" монет/с":"Найми шахтёров в производстве");
             offlineAmountLabel.text = game.HasOfflineReward ? "+" + game.Progress.offlineCoins.ToString("N0", interfaceCulture) + " монет" : "Пока пусто";
             offlineStateLabel.text = game.HasOfflineReward ? game.Progress.coins == MineGame.CoinLimit ? "Кошелёк заполнен\nПотрать монеты и вернись за наградой" : offlineVideoMessage ?? "Готово к получению" : "Оставь рабочим время на добычу";
             offlineClaimButton.interactable = !EconomyBusy && !RewardedVideoPending && game.CanClaimOffline;
@@ -697,7 +696,8 @@ namespace MineLoot
 
         private void CloseModal()
         {
-            if (modal == null || RewardedVideoPending || cloudWindowOpen) return;
+            if (modal == null || RewardedVideoPending) return;
+            bool resumeCloudPicks=(modal.name=="Yandex account modal" || modal.name=="Offline reward modal") && game.HasPendingRoll && !busy;
             if(settingsWindowOpen) sounds.FlushPreferences();
             settingsWindowOpen = false;shaft.Paused=applicationPaused||!roulette;
             milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = ratingWindowOpen = false; modal.SetActive(false); Destroy(modal); modal = null;
@@ -705,6 +705,7 @@ namespace MineLoot
             SetDialogScrollActive(false);
             stage.Paused=enchantingWorld.Paused=applicationPaused;
             BrowserPlatform.Gameplay(!applicationPaused);
+            if(resumeCloudPicks) EnterPickChoice();
         }
 
         private Image Card(Transform parent, string name, float x, float y, float width, float height, Color color, string sprite = "ui-card")

@@ -6,9 +6,10 @@ namespace MineLoot
 {
     public sealed partial class DemoController
     {
-        [Serializable] private sealed class CloudPayload { public string status,token,data,local; }
+        [Serializable] private sealed class CloudPayload { public string status,token,data,local,waitingFor; public bool authoritative; }
         private string cloudStatus="unavailable";
-        private bool cloudRatingReady,cloudWindowOpen;
+        private string cloudWaitingFor;
+        private bool cloudRatingReady;
         private CloudPayload pendingCloud;
         private Text cloudStatusLabel;
         private Button cloudSyncButton;
@@ -19,8 +20,10 @@ namespace MineLoot
             CloudPayload payload;try {payload=JsonUtility.FromJson<CloudPayload>(json);} catch {return;}
             if(payload==null || string.IsNullOrEmpty(payload.status)) return;
             cloudStatus=payload.status;
+            cloudWaitingFor=payload.waitingFor;
             cloudRatingReady=cloudStatus=="local" || cloudStatus=="saved" || cloudStatus=="guest";
-            if(cloudStatus=="choice" || cloudStatus=="remote") pendingCloud=payload;
+            if(cloudStatus=="merged") pendingCloud=payload;
+            else if(cloudStatus=="loading" || cloudStatus=="guest" || cloudStatus=="error") pendingCloud=null;
             RefreshCloudStatus();PumpCloudDecision();
         }
         private void RefreshCloudStatus()
@@ -29,10 +32,20 @@ namespace MineLoot
             cloudStatusLabel.text=cloudStatus=="saved"?"Облако: сохранено.\nСледующая запись — автоматически.":
                 cloudStatus=="local"?"Прогресс записан на устройстве.\nОблако обновляется каждые 30 секунд.":
                 cloudStatus=="loading" || cloudStatus=="syncing"?"Синхронизация с облаком…":
+                cloudStatus=="merged"?"Объединяем прогресс устройств…":
+                cloudStatus=="waiting"?CloudWaitingMessage():
                 cloudStatus=="error"?"Облако недоступно. Локальная копия сохранена. Повторим позже.":
                 "Для облачного сохранения войди в Яндекс.";
             cloudSyncButton.gameObject.SetActive(accountStatus=="authorized");
-            cloudSyncButton.interactable=!accountPending && cloudStatus!="loading" && cloudStatus!="syncing";
+            cloudSyncButton.interactable=!accountPending && cloudStatus!="loading" && cloudStatus!="syncing" && cloudStatus!="merged";
+        }
+        private string CloudWaitingMessage()
+        {
+            switch(cloudWaitingFor) {
+                case "local-roulette":return "Заверши оплаченную рулетку на этом устройстве.\nЗатем объединим прогресс автоматически.";
+                case "remote-roulette":return "На другом устройстве не завершена рулетка.\nОбъединим прогресс после розыгрыша.";
+                default:return "Ждём завершения оплаченной рулетки.\nЗатем объединим прогресс автоматически.";
+            }
         }
         private void RequestCloudSync()
         {
@@ -49,49 +62,34 @@ namespace MineLoot
         }
         private void PumpCloudDecision()
         {
-            if(pendingCloud==null || cloudWindowOpen || RewardedVideoPending || accountPending || browserPaused || enginePaused) return;
-            if(pendingCloud.status=="remote" && SameCloudProgress(JsonUtility.ToJson(game.Progress),pendingCloud.local)) {ChooseCloud(true);return;}
-            if(modal!=null) CloseModal();
-            holding=false;cloudWindowOpen=true;
-            modal=CreateModal("Cloud conflict modal");
-            // Include the viewport so a frozen conflict can still be scrolled on a short phone.
-            cloudInput.ignoreParentGroups=true;
-            Card(modal.transform,"Cloud conflict card",24,134,432,692,Panel);
-            Label(modal.transform,"ВЫБЕРИ СОХРАНЕНИЕ",44,156,392,44,25,Ink,FontStyle.Bold);
-            Label(modal.transform,"На устройстве и в облаке разные версии. Выбранная заменит другую. Ресурсы не складываются.",44,214,392,90,20,Muted);
-            Label(modal.transform,"ЭТО УСТРОЙСТВО\n"+CloudSummary(JsonUtility.ToJson(game.Progress)),44,318,392,112,21,Ink);
-            Label(modal.transform,"ОБЛАКО ЯНДЕКСА\n"+CloudSummary(pendingCloud.data),44,446,392,112,21,Ink);
-            ButtonAt(modal.transform,"ПРОДОЛЖИТЬ С УСТРОЙСТВА",44,596,392,56,()=>ChooseCloud(false),Hex("dfc285"),Ink).name="Use local save";
-            ButtonAt(modal.transform,"ЗАГРУЗИТЬ ИЗ ОБЛАКА",44,670,392,56,()=>ChooseCloud(true),Hex("bad5ca"),Ink).name="Use cloud save";
-            Label(modal.transform,"Перед загрузкой сохраняем резервную копию на этом устройстве.",44,742,392,58,18,Muted);
-            ApplyPlatformPause();
-        }
-        private static string CloudSummary(string json)
-        {
-            try {
-                var snapshot=new MineGame(string.IsNullOrEmpty(json)?new MineProgress():ProgressStore.Decode(json));
-                return "Шахта ур. "+snapshot.MinerLevel+" · сбросов "+snapshot.Progress.prestigeCount+"\n"+snapshot.Progress.coins.ToString("N0")+" монет · "+snapshot.Progress.tickets+" жетонов"+(snapshot.HasPendingRoll?"\nЕсть оплаченная рулетка":"");
-            } catch {return "Повреждённая версия. Выбери это устройство.";}
-        }
-        private void ChooseCloud(bool remote)
-        {
-            if(pendingCloud==null || enginePaused || browserPaused || RewardedVideoPending || accountPending) return;
+            // The account panel is a status view: it must not prevent the sync it is displaying.
+            // Other dialogs and unacknowledged paid transactions still defer replacement.
+            bool keepAccount=modal!=null && modal.name=="Yandex account modal";
+            bool keepWarehouse=modal!=null && modal.name=="Offline reward modal";
+            if(pendingCloud==null || RewardedVideoPending || accountPending || browserPaused || enginePaused || holding || !pendingCloud.authoritative && (busy || game.ActionsLocked) || modal!=null && !keepAccount && !keepWarehouse) return;
             var decision=pendingCloud;
-            MineProgress snapshot=null;
-            if(remote) {
-                try {snapshot=string.IsNullOrEmpty(decision.data)?new MineProgress():ProgressStore.Decode(decision.data);}
-                catch {cloudStatus="error";return;}
+            Flush(true);
+            if(!SameCloudProgress(JsonUtility.ToJson(game.Progress),decision.local)) {
+                // The SDK read can finish after another click or production tick. Rebase those
+                // changes before installing the merged ledger instead of overwriting them.
+                pendingCloud=null;skipEconomyFrame=true;BrowserPlatform.ResolveCloud(decision.token,false);return;
             }
-            // Keep a separate durable backup; never add wallets, XP, draw or reward counters together.
+            MineGame merged;
+            try {merged=new MineGame(ProgressStore.Decode(decision.data));}
+            catch {pendingCloud=null;cloudStatus="error";RefreshCloudStatus();return;}
             if(!SmokeMode) ProgressStore.Save(game,ProgressStore.Key+".before-cloud");
-            cloudWindowOpen=false;cloudInput.ignoreParentGroups=false;pendingCloud=null;
-            if(modal!=null) CloseModal();
-            if(remote) {
-                StopAllCoroutines();if(miningGain!=null) {Destroy(miningGain.gameObject);miningGain=null;}
-                game=new MineGame(snapshot);game.PrepareOffline(SessionUtc);RestorePresentation();
+            int page=selectedPage,section=workshopSection;bool production=productionTab;
+            pendingCloud=null;
+            // Commit the ledger before journaling Unity's normalized snapshot, so its new wallet
+            // is acknowledged as imported progress rather than counted as another local reward.
+            BrowserPlatform.ResolveCloud(decision.token,true);
+            StopAllCoroutines();if(miningGain!=null) {Destroy(miningGain.gameObject);miningGain=null;}
+            game=merged;game.PrepareOffline(SessionUtc);RestorePresentation(keepAccount||keepWarehouse);
+            if(!game.ActionsLocked) {
+                selectedPage=page;workshopSection=section;productionTab=production;ApplyPageVisibility();
             }
             game.RecordSession(SessionUtc);Persist();Flush(true);
-            BrowserPlatform.ResolveCloud(decision.token,remote);ApplyPlatformPause();Refresh();
+            ApplyPlatformPause();Refresh();if(keepAccount) RefreshAccount();if(keepWarehouse)RefreshOfflineWindow();
         }
     }
 }

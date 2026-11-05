@@ -90,16 +90,20 @@ namespace MineLoot
             if (SmokeMode) gameObject.AddComponent<DemoSmokeCheck>();
         }
 
-        private void RestorePresentation()
+        private void RestorePresentation(bool keepStatusDialog = false)
         {
+            bool keepWarehouse=keepStatusDialog && modal!=null && modal.name=="Offline reward modal";
             holding = holdRepeated = false;
             busy = false; selectedPick = -1; RollPhase = "idle";
             if(settingsWindowOpen) sounds.FlushPreferences();settingsWindowOpen=false;
-            if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
-            if (dialogShade != null) dialogShade.SetActive(false);
-            SetDialogScrollActive(false);
-            milestoneBookOpen = offlineWindowOpen = prestigeWindowOpen = abandonConfirmationOpen = false;
-            offlineNoticeQueued = game.HasOfflineReward;
+            if(!keepStatusDialog) {
+                if (modal != null) { modal.SetActive(false); Destroy(modal); modal = null; }
+                if (dialogShade != null) dialogShade.SetActive(false);
+                SetDialogScrollActive(false);
+            }
+            milestoneBookOpen = prestigeWindowOpen = abandonConfirmationOpen = false;
+            offlineWindowOpen=keepWarehouse;
+            offlineNoticeQueued = game.HasOfflineReward && !keepWarehouse;
             productionTab = false; workshopSection = 0; purchaseAmount = 1; batchVisual = game.Progress.pendingBatch;
             noticeTime = 0; noticeGroup.alpha = 0;
             mineStatus.text = "Нажимай или удерживай блок";
@@ -108,7 +112,7 @@ namespace MineLoot
             Array.Copy(game.Progress.lostColumns, shownLost, 5);
             stage.SetDevelopment(game.PickTier, game.Progress.forgeLevel, false);
             DrawBoard(); Refresh(); selectedPage = game.HasPendingRoll || game.Progress.batchActive ? 1 : 0; ApplyPageVisibility();
-            if (game.HasPendingRoll) EnterPickChoice();
+            if (game.HasPendingRoll && !keepStatusDialog) EnterPickChoice();
         }
 
         internal void RestoreForSmoke(MineProgress progress, bool showGuide = false)
@@ -236,9 +240,10 @@ namespace MineLoot
         public void ClaimOfflineReward()
         {
             if (applicationPaused || EconomyBusy || !offlineWindowOpen) return;
-            long before = game.Progress.coins;
+            long before = game.Progress.coins, beforeWarehouse = game.Progress.offlineCoins;
             if (!game.ClaimOffline()) return;
             long credit = game.Progress.coins - before;
+            BrowserPlatform.OfflineClaim(beforeWarehouse-game.Progress.offlineCoins,credit);
             Persist(); Flush(); CloseModal(); sounds.Play("reward");
             Notice("СКЛАД РАЗГРУЖЕН", "+" + ShortAmount(credit) + " монет" + (game.HasOfflineReward ? "\nОстаток сохранён на складе" : ""));
         }

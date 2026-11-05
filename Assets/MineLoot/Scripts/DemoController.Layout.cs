@@ -83,7 +83,7 @@ namespace MineLoot
             if(dialogScroll==null) return;
             dialogViewport.GetComponent<Image>().raycastTarget=active;
             dialogScroll.enabled=active&&mobileLandscape;
-            if(landscapeDialogClose!=null) landscapeDialogClose.gameObject.SetActive(active&&mobileLandscape&&!cloudWindowOpen);
+            if(landscapeDialogClose!=null) landscapeDialogClose.gameObject.SetActive(active&&mobileLandscape);
         }
 
         private RectTransform GroupRegion(Transform parent, string name, Rect area)

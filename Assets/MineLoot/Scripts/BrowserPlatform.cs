@@ -12,6 +12,7 @@ namespace MineLoot
         [DllImport("__Internal")] private static extern void LP_CloudStart(string json, int existed);
         [DllImport("__Internal")] private static extern void LP_CloudSync();
         [DllImport("__Internal")] private static extern void LP_CloudResolve(string token, int remote);
+        [DllImport("__Internal")] private static extern void LP_CloudOfflineClaim(string json);
         [DllImport("__Internal")] private static extern int LP_SubmitRating(string json);
         [DllImport("__Internal")] private static extern int LP_RequestRating();
         [DllImport("__Internal")] private static extern void LP_LanguageReady(string language);
@@ -42,6 +43,12 @@ namespace MineLoot
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             LP_CloudResolve(token, remote ? 1 : 0);
+#endif
+        }
+        public static void OfflineClaim(long baseCoins,long credit)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LP_CloudOfflineClaim("{\"base\":"+baseCoins.ToString(System.Globalization.CultureInfo.InvariantCulture)+",\"credit\":"+credit.ToString(System.Globalization.CultureInfo.InvariantCulture)+"}");
 #endif
         }
         public static void Ready()

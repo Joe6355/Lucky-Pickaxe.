@@ -44,6 +44,7 @@ namespace MineLoot
         public long lastSeenUtc, offlineRateMilli, totalOfflineCoins;
         public long offlineCoins, offlineRewardSeconds, offlineElapsedSeconds, offlineRewardRateMilli;
         public int offlineRewardCapacity;
+        public bool offlineMerged;
         public int prestigeCount, crystals, totalCrystals, prestigeUpgrades;
         public int experienceCarry;
         public long[] milestoneBest = new long[16];
@@ -276,7 +277,7 @@ namespace MineLoot
             if (HasOfflineReward)
             {
                 long maximum = Progress.offlineRewardRateMilli * Progress.offlineRewardSeconds / 2000 + 1;
-                if (Progress.offlineRewardSeconds == 0 || Progress.offlineRewardSeconds > Progress.offlineRewardCapacity || Progress.offlineElapsedSeconds < Progress.offlineRewardSeconds || Progress.offlineRewardRateMilli == 0 || Progress.offlineCoins > maximum) throw new FormatException("Invalid offline reward");
+                if (Progress.offlineRewardSeconds == 0 || Progress.offlineRewardSeconds > Progress.offlineRewardCapacity || Progress.offlineElapsedSeconds < Progress.offlineRewardSeconds || Progress.offlineRewardRateMilli == 0 || !Progress.offlineMerged && Progress.offlineCoins > maximum) throw new FormatException("Invalid offline reward");
             }
             else ClearOfflineReward();
             Progress.workerCount = Math.Max(0, Math.Min(100, Progress.workerCount));
@@ -526,6 +527,7 @@ namespace MineLoot
             long coins = numerator / 2000; // Half normal production; keep fractional coins across absences.
             if (coins == 0) return false;
             Progress.offlineCoins = coins; Progress.offlineRewardSeconds = seconds;
+            Progress.offlineMerged = false;
             Progress.offlineElapsedSeconds = elapsed; Progress.offlineRewardRateMilli = rate;
             Progress.offlineRewardCapacity = capacity;
             return true;
@@ -544,6 +546,7 @@ namespace MineLoot
 
         private void ClearOfflineReward()
         {
+            Progress.offlineMerged = false;
             Progress.offlineCoins = Progress.offlineRewardSeconds = Progress.offlineElapsedSeconds = Progress.offlineRewardRateMilli = 0;
             Progress.offlineRewardCapacity = 0;
         }
