@@ -74,11 +74,14 @@ function rewardedFixture() {
       async setScore(name,score,extra){ranking.writes.push({name,score,extra});remoteScore=score;}
     };
     const cloud=window.cloudFixture={writes:[],reads:0};
-    const player = { isAuthorized: () => authorized, getName: () => authorized ? "Тестовый шахтёр" : "",
-      getUniqueID:()=>"isolated-browser-account",
-      async getData(){cloud.reads++;return window.fixtureCloudRead?window.fixtureCloudRead():JSON.parse(localStorage.getItem("fixture-cloud-data")||"{}");},
-      async getPlayerData(){return this.getData();},
-      async setData(value,flush){cloud.writes.push({value,flush});if(window.fixtureCloudWrite) await window.fixtureCloudWrite(value);else localStorage.setItem("fixture-cloud-data",JSON.stringify(value));}
+    let player,playerUntil=0;
+    const getPlayer=async()=>{
+      if(player && Date.now()<playerUntil) return player;
+      let cached;
+      player={isAuthorized:()=>authorized,getName:()=>authorized?"Тестовый шахтёр":"",getUniqueID:()=>"isolated-browser-account",
+        async getData(){if(cached===undefined){cloud.reads++;cached=window.fixtureCloudRead?await window.fixtureCloudRead():JSON.parse(localStorage.getItem("fixture-cloud-data")||"{}");}return JSON.parse(JSON.stringify(cached));},
+        async setData(value,flush){cached=JSON.parse(JSON.stringify(value));cloud.writes.push({value,flush});if(window.fixtureCloudWrite)await window.fixtureCloudWrite(value);else localStorage.setItem("fixture-cloud-data",JSON.stringify(value));}
+      };playerUntil=Date.now()+300000;return player;
     };
     const auth = new Proxy(sdk.auth || {}, { get(target, property) {
       if (property === "openAuthDialog") return () => {
@@ -100,7 +103,7 @@ function rewardedFixture() {
       if (property === "adv") return adv;
       if (property === "screen") return screen;
       if (property === "auth") return auth;
-      if (property === "getPlayer") return async () => player;
+      if (property === "getPlayer") return getPlayer;
       if (property === "leaderboards") return leaderboards;
       if (property === "isAvailableMethod") return async () => true;
       if (property === "environment" && fixtureLanguage) return { ...target.environment, i18n: { lang: fixtureLanguage } };
@@ -124,7 +127,7 @@ async function run() {
   if(process.argv.includes("--cloud-only")) {
     const startupChecks=checks;await context.close();await verifyCloudDevices(fresh);await verifyWarehouseCloud(fresh);
     check(errors.length===0,"Cloud suite has no unexpected JavaScript or browser errors: "+errors.join("; "));
-    fs.writeFileSync(path.join(logs,"web-browser-cloud-check.json"),JSON.stringify({result:"PASS",checks:checks-startupChecks,startupChecks,browser:browserVersion,scope:"Two isolated profiles, actual Unity cloud merge, paid draw transfer and completion, phone reload",realDevice:false,browserErrors:errors},null,2));
+    fs.writeFileSync(path.join(logs,"web-browser-cloud-check.json"),JSON.stringify({result:"PASS",checks:checks-startupChecks,startupChecks,browser:browserVersion,scope:"Two isolated profiles, actual Unity cloud merge, paid draw transfer and completion, phone reload",clock:"Playwright virtual clock; cached public Player methods; five-minute boundaries",realDevice:false,browserErrors:errors},null,2));
     console.log("LUCKY_PICKAXE_WEB_CLOUD: PASS ("+(checks-startupChecks)+" checks)");return;
   }
   if(process.argv.includes("--phones-only")) {
@@ -463,26 +466,32 @@ async function run() {
 function cloudBrowserFixture(){
   const shared={data:{}};
   shared.prepare=async(ctx,tab)=>{
+    // Only these isolated profiles use a virtual clock. The owner and shipped bundle are untouched.
+    await tab.clock.install();
     await ctx.exposeBinding("fixtureCloudRead",async()=>JSON.parse(JSON.stringify(shared.data)));
     await ctx.exposeBinding("fixtureCloudWrite",async(source,value)=>{shared.data=JSON.parse(JSON.stringify(value));});
     await tab.addInitScript(()=>sessionStorage.setItem("test-cloud-auth","1"));
     await tab.route("**/sdk.js",async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+"\n("+rewardedFixture.toString()+")();\n"});});
   };return shared;
 }
+async function cloudCycle(){
+  await page.clock.fastForward(300001);
+  await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved",null,{timeout:15000});
+}
 async function verifyCloudDevices(fresh){
   const shared=cloudBrowserFixture(),prepareCloud=shared.prepare;
   const first=fs.mkdtempSync(path.join(root,"_test-concept/web-cloud-a-")),second=fs.mkdtempSync(path.join(root,"_test-concept/web-cloud-b-"));
-  await open(first,{},prepareCloud);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="local");
+  await open(first,{},prepareCloud);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
   await seed({...fresh,coins:1234,tickets:1,swapLevel:1,guideStep:5,lastSeenUtc:Math.floor(Date.now()/1000)});
   await tap(292,916);await tap(240,740);await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).rollPending,key);
   const paid=await read();await page.waitForTimeout(3000);
-  await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
+  await tap(190,72);await cloudCycle();
   check(JSON.parse(shared.data.luckyPickaxeSave.data).rollPending && JSON.parse(shared.data.luckyPickaxeSave.data).tickets===0,"First browser saves the already-paid roulette to the controlled cloud");
   await shot("webgl-v0320-cloud-saved");await context.close();
   await open(second,{},prepareCloud);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
   let data=await read();check(data.rollPending && data.tickets===paid.tickets && data.coins===paid.coins && JSON.stringify(data.pendingTypes)===JSON.stringify(paid.pendingTypes),"A fresh second browser automatically restores the exact cloud picks and wallet");
   await shot("webgl-v0320-cloud-second-device");await tap(240,740);await page.waitForFunction(key=>!JSON.parse(localStorage.getItem(key)).rollPending,key);
-  await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved");
+  await tap(190,72);await cloudCycle();
   const completed=JSON.parse(shared.data.luckyPickaxeSave.data);check(completed.totalRolls===1 && !completed.rollPending && completed.tickets===0,"Second browser completes and saves the original paid draw exactly once");
   await context.close();await open(first,{userAgent:"Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",viewport:{width:844,height:390},isMobile:true},prepareCloud);
   await playPhone();
@@ -494,15 +503,16 @@ async function verifyCloudDevices(fresh){
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(350);
   await phoneTap(85,916);await phoneTap(215,380);await page.waitForTimeout(3200);const localAdvance=await read();
   check(localAdvance.totalClicks===data.totalClicks+1,"Touch mining works immediately after automatic cloud reconciliation");
-  await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved",null,{timeout:65000});
+  await cloudCycle();
   await page.reload();await waitReady();await playPhone();await page.waitForTimeout(400);
   data=await read();check(data.coins===localAdvance.coins && data.coins>=sharedCoins && data.totalClicks===localAdvance.totalClicks,"Reload after automatic merge does not add the imported wallet or lose new phone progress");
   await phoneTap(190,72);await shot("webgl-v0331-account-before-sync");
   const accountContext=context,accountPage=page;
   await open(second,{},prepareCloud);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved",null,{timeout:65000});
   await tap(215,380);await page.waitForTimeout(3200);
-  await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved",null,{timeout:65000});
+  await tap(190,72);await cloudCycle();
   const changedElsewhere=await read();await context.close();context=accountContext;page=accountPage;
+  await cloudCycle();
   await page.waitForFunction(({key,expected})=>{const p=JSON.parse(localStorage.getItem(key));return p.coins===expected.coins&&p.totalClicks===expected.totalClicks;},{key,expected:changedElsewhere},{timeout:65000});
   check((await read()).totalClicks===changedElsewhere.totalClicks,"The account status panel stays open while receiving the other device's new progress");
   await shot("webgl-v0331-account-after-sync");await phoneTap(240,726);const beforeReturn=await read();await phoneTap(215,380);await page.waitForTimeout(3200);
@@ -513,15 +523,16 @@ async function verifyWarehouseCloud(fresh){
   const shared=cloudBrowserFixture(),first=fs.mkdtempSync(path.join(root,"_test-concept/web-warehouse-a-")),second=fs.mkdtempSync(path.join(root,"_test-concept/web-warehouse-b-"));
   await open(first,{},shared.prepare);
   await seed({...fresh,coins:1234,guideStep:5,workerCount:0,offlineCoins:120,offlineRewardSeconds:60,offlineElapsedSeconds:60,offlineRewardRateMilli:4000,offlineRewardCapacity:14400,lastSeenUtc:Math.floor(Date.now()/1000)});
-  await tap(240,744);await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved",null,{timeout:65000});await tap(240,726);
+  await tap(240,744);await tap(190,72);await cloudCycle();await tap(240,726);
   await tap(392,916);await tap(240,580);await page.waitForTimeout(250);
   const pending=await read();check(pending.offlineCoins===120,"A real warehouse UI keeps its unclaimed reward while the cloud is saved");
   const warehouseContext=context,warehousePage=page;await shot("webgl-v0331-warehouse-open");
   await open(second,{},shared.prepare);await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).offlineCoins===120,key);await page.waitForTimeout(350);
   await tap(240,624);await page.waitForTimeout(3200);
   const claimed=await read();check(claimed.offlineCoins===0 && claimed.coins===pending.coins+120,"The second browser collects the transferred warehouse through the actual Unity button");
-  await tap(190,72);await tap(240,584);await page.waitForFunction(()=>LuckyPickaxe.status().cloudStatus==="saved",null,{timeout:65000});
+  await tap(190,72);await cloudCycle();
   await context.close();context=warehouseContext;page=warehousePage;
+  await cloudCycle();
   await page.waitForFunction(({key,coins})=>{const p=JSON.parse(localStorage.getItem(key));return p.offlineCoins===0&&p.coins===coins;},{key,coins:claimed.coins},{timeout:65000});
   check((await read()).coins===claimed.coins,"The first browser's open warehouse receives the claim without needing to close its window");
   await shot("webgl-v0331-warehouse-settled");await tap(240,624);await page.waitForTimeout(300);
@@ -625,8 +636,14 @@ async function verifyPhones(fresh) {
     await context.close();
   }
 }
-run().catch(error => {
-  fs.writeFileSync(path.join(logs, "web-browser-check.json"), JSON.stringify({ result: "FAIL", checks, error: error.message,browserErrors:errors }, null, 2));
+run().catch(async error => {
+  const failureReport=process.argv.includes("--cloud-only")?"web-browser-cloud-check.json":process.argv.includes("--phones-only")?"web-browser-phones-check.json":"web-browser-check.json";
+  fs.writeFileSync(path.join(logs, failureReport), JSON.stringify({ result: "FAIL", checks, error: error.message,browserErrors:errors }, null, 2));
+  if(page && !page.isClosed()) {
+    const detail=await page.evaluate(key=>({status:window.LuckyPickaxe?.status(),cloud:window.cloudFixture,progress:localStorage.getItem(key)}),key).catch(()=>null);
+    fs.writeFileSync(path.join(logs,"web-browser-failure.json"),JSON.stringify(detail,null,2));
+    await page.screenshot({path:path.join(logs,"web-browser-failure.png")}).catch(()=>{});
+  }
   console.error(error); process.exitCode = 1;
 }).finally(async () => {
   fs.writeFileSync(path.join(logs, "web-browser-console.json"), JSON.stringify(consoleLogs, null, 2));

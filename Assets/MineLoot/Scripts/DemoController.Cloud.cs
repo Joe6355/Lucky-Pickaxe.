@@ -6,10 +6,11 @@ namespace MineLoot
 {
     public sealed partial class DemoController
     {
-        [Serializable] private sealed class CloudPayload { public string status,token,data,local,waitingFor; public bool authoritative; }
+        [Serializable] private sealed class CloudPayload { public string status,token,data,local,waitingFor; public bool authoritative; public long nextSyncUtc; }
         private string cloudStatus="unavailable";
         private string cloudWaitingFor;
         private bool cloudRatingReady;
+        private long cloudNextSyncUtc;
         private CloudPayload pendingCloud;
         private Text cloudStatusLabel;
         private Button cloudSyncButton;
@@ -20,6 +21,7 @@ namespace MineLoot
             CloudPayload payload;try {payload=JsonUtility.FromJson<CloudPayload>(json);} catch {return;}
             if(payload==null || string.IsNullOrEmpty(payload.status)) return;
             cloudStatus=payload.status;
+            cloudNextSyncUtc=payload.nextSyncUtc;
             cloudWaitingFor=payload.waitingFor;
             cloudRatingReady=cloudStatus=="local" || cloudStatus=="saved" || cloudStatus=="guest";
             if(cloudStatus=="merged") pendingCloud=payload;
@@ -30,14 +32,16 @@ namespace MineLoot
         {
             if(modal==null || modal.name!="Yandex account modal" || cloudStatusLabel==null) return;
             cloudStatusLabel.text=cloudStatus=="saved"?"Облако: сохранено.\nСледующая запись — автоматически.":
-                cloudStatus=="local"?"Прогресс записан на устройстве.\nОблако обновляется каждые 30 секунд.":
+                cloudStatus=="local"?"Прогресс записан на устройстве.\nОблако — при запуске и примерно раз в 5 минут.":
                 cloudStatus=="loading" || cloudStatus=="syncing"?"Синхронизация с облаком…":
                 cloudStatus=="merged"?"Объединяем прогресс устройств…":
                 cloudStatus=="waiting"?CloudWaitingMessage():
                 cloudStatus=="error"?"Облако недоступно. Локальная копия сохранена. Повторим позже.":
                 "Для облачного сохранения войди в Яндекс.";
             cloudSyncButton.gameObject.SetActive(accountStatus=="authorized");
-            cloudSyncButton.interactable=!accountPending && cloudStatus!="loading" && cloudStatus!="syncing" && cloudStatus!="merged";
+            bool intervalPending=SessionUtc<cloudNextSyncUtc && (cloudStatus=="local" || cloudStatus=="saved");
+            cloudSyncButton.interactable=!accountPending && !intervalPending && cloudStatus!="loading" && cloudStatus!="syncing" && cloudStatus!="merged";
+            cloudSyncButton.GetComponentInChildren<Text>().text=intervalPending?"ОБЛАКО ОБНОВЛЯЕТСЯ АВТОМАТИЧЕСКИ":"СОХРАНИТЬ В ОБЛАКО";
         }
         private string CloudWaitingMessage()
         {

@@ -36,11 +36,11 @@ function fixture(settings = {}) {
     if (settings.adThrows) throw new Error("Video unavailable");
     if (settings.adSynchronous) { callbacks.onRewarded(); callbacks.onClose(); }
   } };
-  const authRequests=[];let playerAuthorized=!!settings.authorized,playerCalls=0,memoizedPlayer;
+  const authRequests=[];let playerAuthorized=!!settings.authorized,playerCalls=0,memoizedPlayer,memoizedUntil=0;
   if(settings.auth) {
     sdk.getPlayer=()=>{
       playerCalls++;if(settings.playerFails) return Promise.reject(new Error("Player unavailable"));
-      if(settings.memoizedPlayer&&memoizedPlayer) return Promise.resolve(memoizedPlayer);
+      if(settings.memoizedPlayer&&memoizedPlayer&&(settings.permanentPlayerCache||clock<memoizedUntil)) return Promise.resolve(memoizedPlayer);
       let cached;
       const serverData=async()=>JSON.parse(JSON.stringify(settings.cloud?.read?await settings.cloud.read():settings.cloud?.data||{}));
       const player={isAuthorized:()=>playerAuthorized,getName:()=>settings.playerName||"Тестовый шахтёр",getUniqueID:()=>settings.accountID||"fixture-account",
@@ -54,8 +54,8 @@ function fixture(settings = {}) {
           if(settings.cloud) {settings.cloud.writes.push({value,flush});settings.cloud.data=JSON.parse(JSON.stringify(value));}
         }
       };
-      if(!settings.noFreshCloudRead) player.getPlayerData=serverData;
-      memoizedPlayer=player;return Promise.resolve(player);
+      if(settings.privatePlayerTrap) Object.defineProperty(player,"getPlayerData",{get(){throw new Error("Private Player API accessed");}});
+      memoizedPlayer=player;memoizedUntil=clock+300000;return Promise.resolve(player);
     };
     sdk.auth={openAuthDialog(){if(settings.authThrows) throw new Error("Dialog unavailable");return new Promise((resolve,reject)=>authRequests.push({resolve(){playerAuthorized=true;resolve();},reject}));}};
   }

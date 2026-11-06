@@ -199,7 +199,12 @@ namespace MineLoot
             demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-2",data=JsonUtility.ToJson(merged.Progress),local=local}));yield return null;
             Check(!demo.IsPaused && demo.Game.Progress.coins==9999 && demo.Game.Progress.tickets==12 && demo.Game.Progress.workerCount==5,"An acknowledged automatic merge installs its validated resource totals");
             Check(GameObject.Find("Cloud conflict modal")==null && GameObject.Find("Workshop page")!=null,"Automatic merge retains the current page without showing a selection window");
-            Click("Yandex account");string accountLocal=JsonUtility.ToJson(demo.Game.Progress);
+            Click("Yandex account");
+            demo.OnBrowserAccount("{\"available\":true,\"status\":\"authorized\",\"name\":\"Test\"}");
+            demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="local",nextSyncUtc=DateTimeOffset.UtcNow.ToUnixTimeSeconds()+300}));yield return null;
+            bool fiveMinuteStatus=false;foreach(var text in GameObject.Find("Yandex account modal").GetComponentsInChildren<Text>())fiveMinuteStatus|=text.text.Contains("раз в 5 минут");
+            Check(!FindButton("Sync cloud save").interactable && fiveMinuteStatus && !demo.IsPaused,"The account panel explains the five-minute interval and disables cached manual writes without pausing gameplay");
+            Capture("unity-v0332-account-interval.png");string accountLocal=JsonUtility.ToJson(demo.Game.Progress);
             var accountMerged=new MineGame(new MineProgress{coins=11111,tickets=13,upgradeLevel=20,workerCount=5});
             demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-account",data=JsonUtility.ToJson(accountMerged.Progress),local=accountLocal}));yield return null;
             Check(demo.Game.Progress.coins==11111 && FindButton("Close Yandex account")!=null,"An open account status panel applies the merge without closing itself or blocking synchronization");
@@ -226,9 +231,9 @@ namespace MineLoot
             demo.OnBrowserCloud("{\"status\":\"guest\"}");Click("Close settings");
             demo.OnBrowserCloud(JsonUtility.ToJson(new CloudFixture{status="merged",token="fixture-4",data=remoteJson,local=stable}));yield return null;
             Check(demo.AwaitingPickChoice && demo.Game.Progress.coins==remote.Progress.coins && demo.Game.Progress.tickets==remote.Progress.tickets,"A transferred paid draw is restored with its exact ticket balance");
-            demo.OnBrowserCloud("{\"status\":\"guest\"}");demo.RestoreForSmoke(new MineProgress());
+            demo.OnBrowserCloud("{\"status\":\"guest\"}");demo.RestoreForSmoke(new MineProgress());demo.ConfigureAuthorizationForSmoke(null);
         }
-        [Serializable] private sealed class CloudFixture {public string status,token,data,local,waitingFor;}
+        [Serializable] private sealed class CloudFixture {public string status,token,data,local,waitingFor;public long nextSyncUtc;}
         private static string StableCloudFixture(MineProgress source)
         {
             var copy=ProgressStore.Decode(JsonUtility.ToJson(source));copy.lastSeenUtc=0;copy.milestoneBest=new long[16];

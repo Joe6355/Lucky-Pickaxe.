@@ -27,17 +27,19 @@ async function apply(f){
   f.api.writeProgress(key,pending.data);await settle();return true;
 }
 async function sync(f){
-  f.advanceClock(30001);await settle();await apply(f);
-  if(event(f).status==="local") {f.advanceClock(30001);await settle();await apply(f);}
+  f.advanceClock(300001);await settle();await apply(f);
+  if(event(f).status==="local") {f.advanceClock(300001);await settle();await apply(f);}
 }
 async function run(){
   let cloud={data:{},writes:[]};let f=await device(cloud,progress({coins:777,tickets:0,rollPending:true,pendingTypes:[4,1,2,1,1]}),true);
-  check(event(f).status==="local" && cloud.writes.length===0,"An existing local game initializes without a choice dialog or premature upload");
+  check(event(f).status==="saved" && cloud.writes.length===1,"An existing local game reads, reconciles and saves at startup without a choice dialog");
   await f.api.syncCloud();await settle();
   check(cloud.writes.length===1 && cloud.writes[0].flush===true && cloud.data[cloudKey].version===3,"Cloud commits the complete merge and reward ledger with flush=true");
   check(remote(cloud).coins===777 && remote(cloud).rollPending && remote(cloud).tickets===0,"A paid draw and its spent final ticket remain one snapshot");
-  f.api.writeProgress(key,progress({coins:778}));f.advanceClock(15000);f.api.writeProgress(key,progress({coins:779}));f.advanceClock(15000);await settle();
-  check(cloud.writes.length===2 && remote(cloud).coins===779,"Continuous play cannot postpone thirty-second autosave");
+  f.api.writeProgress(key,JSON.stringify({...read(f),lastSeenUtc:124}));
+  check(event(f).status==="saved" && cloud.writes.length===1,"Updating only last-seen time does not mark an unchanged cloud snapshot as unsaved");
+  f.api.writeProgress(key,progress({coins:778}));f.advanceClock(150000);f.api.writeProgress(key,progress({coins:779}));f.advanceClock(150001);await settle();
+  check(cloud.writes.length===2 && remote(cloud).coins===779,"Continuous play cannot postpone the five-minute cloud cycle");
   const storage=f.data;f.api.dispose();f=await device(cloud,storage.get(journal),true,storage);await apply(f);
   check(read(f).coins===779,"Reload restores the atomic journal and its merge metadata without adding the wallet again");
   const before=cloud.writes.length;await sync(f);
@@ -45,6 +47,18 @@ async function run(){
   let second=await device(cloud,progress(),false);check(event(second).status==="merged","A fresh device automatically receives the cloud snapshot");await apply(second);
   check(read(second).coins===779 && read(second).tickets===2,"A fresh device does not add another starter wallet or starter tickets");
   f.api.dispose();second.api.dispose();
+
+  cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100}),true,new Map(),{privatePlayerTrap:true});
+  check(event(f).status==="saved" && remote(cloud).coins===100,"Startup works through documented Player methods even when accessing the private transport throws");
+  f.api.writeProgress(key,progress({coins:125}));f.advanceClock(299999);await f.api.syncCloud();await settle();
+  check(remote(cloud).coins===100 && read(f).coins===125 && cloud.writes.length===1,"Manual requests cannot upload through the old cached Player before five minutes");
+  f.advanceClock(2);await settle();
+  check(remote(cloud).coins===125 && cloud.writes.length===2,"The first five-minute refresh uploads the newest local snapshot through a new Player");f.api.dispose();
+
+  cloud={data:{[cloudKey]:envelope(progress({coins:40}))},writes:[]};f=await device(cloud,progress({coins:10}),true);
+  f.advanceClock(21000);await apply(f);
+  check(read(f).coins===50 && cloud.writes.length===0,"A delayed merge preserves both wallets locally but cannot write through its expired read transaction");
+  await sync(f);check(remote(cloud).coins===50 && cloud.writes.length===1,"The next fresh Player commits that delayed merge once");f.api.dispose();
 
   cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100,tickets:1}),true);await f.api.syncCloud();await settle();
   f.api.writeProgress(key,JSON.stringify({...read(f),tickets:0,totalRolls:1,spentTickets:1,rollPending:true,pendingTypes:[1,2,1,1,1],pendingSwapLimit:1}));await sync(f);
@@ -104,7 +118,7 @@ async function run(){
   cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100}),true);await f.api.syncCloud();await settle();second=await device(cloud,progress(),false);await apply(second);
   f.api.writeProgress(key,JSON.stringify({...read(f),coins:110}));second.api.writeProgress(key,JSON.stringify({...read(second),coins:120}));
   const snapshot=JSON.parse(JSON.stringify(cloud.data)),releases=[];cloud.read=()=>new Promise(resolve=>releases.push(()=>resolve(snapshot)));
-  f.advanceClock(30001);second.advanceClock(30001);await settle();check(releases.length===2,"The race fixture holds both remote reads before either write");
+  f.advanceClock(300001);second.advanceClock(300001);await settle();check(releases.length===2,"The race fixture holds both remote reads before either write");
   releases.forEach(release=>release());await settle();delete cloud.read;await apply(f);await apply(second);
   await sync(f);await sync(second);await sync(f);
   check(read(f).coins===130 && read(second).coins===130 && remote(cloud).coins===130,"A later poll repairs concurrent last-write-wins writes without losing or duplicating either contribution");
@@ -164,8 +178,9 @@ async function run(){
   f.api.writeProgress(key,JSON.stringify({...read(f),coins:150}));const switchToken=event(f).token;f.api.resolveCloud(switchToken,false);await settle();await apply(f);await sync(f);
   check(read(f).coins===20 && remote(cloud).coins===20 && f.data.has(journal+".account-backup"),"Changing accounts archives the previous account and never donates its wallet to the new one");f.api.dispose();
 
-  cloud={data:{},writes:[]};f=await device(cloud,progress({coins:321}),true,new Map(),{noFreshCloudRead:true});await f.api.syncCloud();await settle();
-  check(event(f).status==="error" && read(f).coins===321 && cloud.writes.length===0,"If a future SDK removes fresh reads, cached data cannot blindly overwrite the cloud");f.api.dispose();
+  cloud={data:{},writes:[]};f=await device(cloud,progress({coins:321}),true,new Map(),{permanentPlayerCache:true});
+  f.api.writeProgress(key,progress({coins:400}));await sync(f);
+  check(event(f).status==="local" && read(f).coins===400 && remote(cloud).coins===321 && cloud.writes.length===1,"A longer-lived SDK cache cannot blindly overwrite the cloud or discard newer local income");f.api.dispose();
 
   let fail=true;cloud={data:{},writes:[],read:async()=>{if(fail) throw new Error("offline");return cloud.data;}};f=await device(cloud,progress({coins:321}),true);
   check(event(f).status==="error" && read(f).coins===321 && cloud.writes.length===0,"A failed cloud read retains local progress and prohibits a blind upload");
@@ -184,7 +199,7 @@ async function run(){
   f=await device(cloud,progress({coins:100}),true);const writing=f.api.syncCloud();await settle();f.api.writeProgress(key,progress({coins:110,totalClicks:1}));releaseWrite();await writing;await settle();
   check(event(f).status==="local" && read(f).coins===110,"Earnings during an in-flight cloud write remain dirty and saved locally");
   cloud.write=undefined;await sync(f);check(remote(cloud).coins===110,"The next autosave uploads those newer earnings exactly once");f.api.dispose();
-  cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100}),true,new Map(),{storageBlocked:true});f.api.writeProgress(key,progress({coins:111}));await f.api.syncCloud();await settle();
+  cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100}),true,new Map(),{storageBlocked:true});f.api.writeProgress(key,progress({coins:111}));await sync(f);
   check(remote(cloud).coins===111,"Blocked localStorage still uploads the latest in-memory snapshot");f.api.dispose();
   cloud={data:{},writes:[]};f=await device(cloud,progress(),true,new Map(),{authorized:false});check(event(f).status==="guest"&&cloud.writes.length===0,"Guests remain local without a forced login");f.api.dispose();
   fs.writeFileSync(path.join(__dirname,"../Logs/web-cloud-check.json"),JSON.stringify({result:"PASS",checks}));

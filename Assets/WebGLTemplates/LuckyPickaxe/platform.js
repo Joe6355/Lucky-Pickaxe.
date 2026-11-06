@@ -15,7 +15,8 @@
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
   const progressKey = "MineLoot.Progress.v2", cloudKey = "luckyPickaxeSave", cloudMetaKey = "LuckyPickaxe.cloud.v1";
   let playerHandle, cloudContext, latestProgress, cloudAccount = "", cloudMeta = {}, cloudState = {status:"unavailable"};
-  let cloudEpoch = 0, cloudSerial = 0, cloudTimer, cloudBusy = false, cloudDecision, cloudAfter = 0, localMerge, pendingWarehouseClaim;
+  let cloudEpoch = 0, cloudSerial = 0, cloudTimer, cloudBusy = false, cloudDecision, cloudAfter = 0, cloudRead, localMerge, pendingWarehouseClaim;
+  const cloudInterval = 300000, cloudRetryInterval = 30000, cloudReadWindow = 20000;
   const cloudReadHandles=new WeakSet();
   // Per-device cumulative deltas form an idempotent ledger. Importing a shared snapshot twice
   // never adds its wallet twice. The ledger travels atomically with the local JSON journal.
@@ -220,20 +221,17 @@
     });
   }
   function readCloudData(player) {
-    // The current SDK caches both getPlayer() (five minutes) and getData() (on Player).
-    // Its getPlayerData transport reads the server without returning that instance's last setData.
-    // It is not in the public SDK contract: feature-detect it and never blindly overwrite cloud
-    // data through a previously-read fallback Player if the SDK removes this transport.
-    if(typeof player.getPlayerData==="function") return cloudCall(player.getPlayerData());
-    if(cloudReadHandles.has(player)) return Promise.reject(new Error("Fresh cloud read unavailable"));
+    // getPlayer() and getData() cache their results. A Player is used for one read/merge/write
+    // cycle only; reusing it must never turn its old local cache into a new server snapshot.
+    if(cloudReadHandles.has(player)) {const error=new Error("Waiting for a fresh Player");error.cachedPlayer=true;return Promise.reject(error);}
     cloudReadHandles.add(player);return cloudCall(player.getData([cloudKey]));
   }
-  function cloudNotify(state) { cloudState=state;send("OnBrowserCloud",JSON.stringify(state)); }
+  function cloudNotify(state) { cloudState={...state,nextSyncUtc:Math.ceil(cloudAfter/1000)};send("OnBrowserCloud",JSON.stringify(cloudState)); }
   function saveCloudMeta() { store(cloudMetaKey,JSON.stringify(cloudMeta)); }
   function cancelCloudTimer() { if(cloudTimer!==undefined) root.clearTimeout(cloudTimer);cloudTimer=undefined; }
   function scheduleCloud() {
     if(disposed || !cloudContext || !cloudAccount || cloudBusy || cloudDecision || !["local","saved","error","waiting"].includes(cloudState.status)) return;
-    if(cloudTimer===undefined) cloudTimer=root.setTimeout(()=>{cloudTimer=undefined;syncCloud();},30000);
+    if(cloudTimer===undefined) cloudTimer=root.setTimeout(()=>{cloudTimer=undefined;syncCloud();},Math.max(100,cloudAfter-Date.now()));
   }
   function validRemote(value) {
     if(value==null) return null;
@@ -287,7 +285,7 @@
     cloudNotify({status:remote?.version===3 && containsLedger(remoteLedger,joined)?"saved":"local"});scheduleCloud();return true;
   }
   async function beginCloud() {
-    cancelCloudTimer();const epoch=++cloudEpoch;cloudBusy=false;cloudDecision=null;cloudAccount="";cloudAfter=0;
+    cancelCloudTimer();const epoch=++cloudEpoch;cloudBusy=false;cloudDecision=null;cloudRead=null;cloudAccount="";cloudAfter=0;
     if(!cloudContext) return;
     if(!playerHandle || account.status!=="authorized") {cloudNotify({status:"guest"});return;}
     try {
@@ -298,22 +296,28 @@
       cloudNotify({status:"loading"});cloudBusy=true;
       const data=await readCloudData(playerHandle);
       if(disposed || epoch!==cloudEpoch) return;
-      cloudBusy=false;reconcileCloud(validRemote(data?.[cloudKey]),true);
-    } catch(error) {if(!disposed && epoch===cloudEpoch) {cloudBusy=false;cloudNotify({status:"error"});scheduleCloud();}}
+      cloudRead={handle:playerHandle,result:data,epoch,readAt:Date.now()};cloudAfter=Date.now()+cloudInterval;
+      cloudBusy=false;if(reconcileCloud(validRemote(data?.[cloudKey]),true)) await syncCloud();
+    } catch(error) {if(!disposed && epoch===cloudEpoch) {cloudRead=null;cloudBusy=false;cloudAfter=Date.now()+cloudRetryInterval;cloudNotify({status:error.cachedPlayer?"local":"error"});scheduleCloud();}}
   }
   async function syncCloud() {
     if(disposed || !cloudAccount || cloudBusy || cloudDecision || !cloudContext || account.status!=="authorized") return false;
-    if(Date.now()<cloudAfter) {scheduleCloud();return false;}
-    cancelCloudTimer();cloudAfter=Date.now()+30000;cloudBusy=true;
+    if(cloudRead && (cloudRead.epoch!==cloudEpoch || Date.now()-cloudRead.readAt>cloudReadWindow)) cloudRead=null;
+    if(!cloudRead && Date.now()<cloudAfter) {scheduleCloud();return false;}
+    cancelCloudTimer();cloudBusy=true;
     const epoch=cloudEpoch;
     cloudNotify({status:"syncing"});
     try {
-      // Refresh account identity and use a server read even when getPlayer returns the same object.
-      const handle=await cloudCall(sdk.getPlayer());if(disposed || epoch!==cloudEpoch) return false;
-      if(accountFrom(handle).status!=="authorized" || String(handle.getUniqueID())!==cloudAccount) {readAccount();return false;}
-      const result=await readCloudData(handle);if(disposed || epoch!==cloudEpoch) return false;
+      if(!cloudRead) {
+        const handle=await cloudCall(sdk.getPlayer());if(disposed || epoch!==cloudEpoch) return false;
+        if(accountFrom(handle).status!=="authorized" || String(handle.getUniqueID())!==cloudAccount) {readAccount();return false;}
+        const result=await readCloudData(handle);if(disposed || epoch!==cloudEpoch) return false;
+        cloudRead={handle,result,epoch,readAt:Date.now()};cloudAfter=Date.now()+cloudInterval;
+      }
+      const {handle,result}=cloudRead;
       cloudBusy=false;
       if(!reconcileCloud(validRemote(result?.[cloudKey]),false)) return false;
+      cloudRead=null;
       const data=cloudLocal();
       const remote=validRemote(result?.[cloudKey]);
       if(remote?.version===3 && containsLedger(remote.ledger,localMerge.ledger)) return true;
@@ -329,7 +333,7 @@
       cloudMeta={account:cloudAccount,revision,pending:""};saveCloudMeta();cloudBusy=false;
       cloudNotify({status:meaningful(cloudLocal())===meaningful(data)?"saved":"local"});
       scheduleCloud();return true;
-    } catch(error) {if(!disposed && epoch===cloudEpoch) {cloudBusy=false;cloudNotify({status:"error"});scheduleCloud();}return false;}
+    } catch(error) {if(!disposed && epoch===cloudEpoch) {cloudRead=null;cloudBusy=false;cloudAfter=Date.now()+cloudRetryInterval;cloudNotify({status:error.cachedPlayer?"local":"error"});scheduleCloud();}return false;}
   }
   function resolveCloud(token,useCloud) {
     if(!cloudDecision || token!==cloudDecision.token) return false;
@@ -341,7 +345,9 @@
     else {localMerge.ledger=decision.ledger;localMerge.observed=progressData(decision.data);}
     latestProgress=decision.data;
     persistJournal(decision.data);
-    cloudNotify({status:"local"});scheduleCloud();return true;
+    cloudNotify({status:"local"});scheduleCloud();
+    // Run after Unity has journaled its validated/normalized snapshot, on the same fresh read.
+    Promise.resolve().then(()=>syncCloud());return true;
   }
 
   function send(method, value) {
@@ -555,7 +561,7 @@
   }
   function dispose() {
     if (disposed) return;
-    disposed = true; ready = false; engineActive = false;cancelCloudTimer();++cloudEpoch;
+    disposed = true; ready = false; engineActive = false;cloudRead=null;cancelCloudTimer();++cloudEpoch;
     if (sentPause !== true) { sentPause = true; send("OnBrowserPause", "1"); }
     syncGameplay(); rewardRequest = null;authPending=false;
     while (removers.length) {
@@ -602,10 +608,10 @@
       // Cloud must also see the newest snapshot when localStorage is blocked or full.
       if(key===progressKey) {
         try {
-          restoreMerge();latestProgress=json;
+          restoreMerge();const changed=meaningful(cloudLocal())!==meaningful(json);latestProgress=json;
           try {if(localMerge)captureProgress(json);else pendingWarehouseClaim=null;} catch(error) {cloudNotify({status:"error"});storageWarning(error);}
           const saved=persistJournal(json);
-          if(cloudState.status==="saved") cloudNotify({status:"local"});scheduleCloud();return saved;
+          if(changed && cloudState.status==="saved") cloudNotify({status:"local"});scheduleCloud();return saved;
         } catch(error) {storageWarning(error);return false;}
       }
       try { root.localStorage.setItem(journalKey(key), json);return true; }
