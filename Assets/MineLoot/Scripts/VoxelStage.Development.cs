@@ -192,7 +192,7 @@ namespace MineLoot
             Block(new Vector3(0,1.65f,-.236f),new Vector3(.58f,.16f,.025f),"metal-dark",batch:rig);
             foreach(float x in new[]{-.43f,.43f}) Block(new Vector3(x,1.65f,-.24f),Vector3.one*.07f,"metal-gold",batch:rig);
             Block(new Vector3(.12f,1.68f,-.255f),new Vector3(.09f,.06f,.025f),"mine-lamp",batch:rig);
-            drillRig = DevelopmentGroup("Automatic mine drill", rig, new Vector3(4.5f, 0, .15f));
+            drillRig = DevelopmentGroup("Automatic mine drill", rig, new Vector3(-2.45f, 0, -2.55f));
             var spindle = new Geometry();
             for (int i = 0; i < 4; i++) AddCube(spindle, new Vector3(0, -.22f * i, 0), Vector3.one * (.4f - i * .07f), 1);
             drillSpindle = MakeMesh("Turning drill spindle", spindle, GetMaterial("metal-dark")).transform;

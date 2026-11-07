@@ -18,8 +18,8 @@ namespace MineLoot
 
         private void BuildMiningWorkers()
         {
-            Vector3[] homes = { new Vector3(4.55f,0,2.3f), new Vector3(-1.6f,0,3.05f), new Vector3(-3.25f,0,2.65f) };
-            Vector3[] targets = { new Vector3(5.15f,.78f,3.1f), new Vector3(-1.7f,.78f,4.05f), new Vector3(-4.2f,.78f,2.85f) };
+            Vector3[] homes = { new Vector3(4.55f,0,1.7f), new Vector3(-1.6f,0,3.05f), new Vector3(-3.25f,0,2.65f) };
+            Vector3[] targets = { new Vector3(5.15f,.78f,2.5f), new Vector3(-1.7f,.78f,4.05f), new Vector3(-4.2f,.78f,2.85f) };
             for (int i=0;i<workers.Length;i++)
             {
                 var body=new Dictionary<string,Geometry>();
