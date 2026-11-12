@@ -79,8 +79,9 @@ namespace MineLoot
             Card(shell, "Inventory base", 12, 164, 456, 724, Hex("e0e5e2"));
             Icon(shell, "pick-wood", 23, 28, 44, 44).name="Header pickaxe";
             Label(shell, "КИРКА УДАЧИ", 78, 19, 320, 42, 32, Hex("faf1cf"), FontStyle.Bold);
-            accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,252,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
+            accountButton=ButtonAt(shell,"ВОЙТИ В ЯНДЕКС",80,61,200,24,ShowYandexAccount,Hex("355a60"),Hex("f0eadc"));accountButton.name="Yandex account";
             var accountCaption=accountButton.GetComponentInChildren<Text>();accountCaption.fontSize=16;accountCaption.resizeTextForBestFit=true;accountCaption.resizeTextMinSize=12;accountCaption.resizeTextMaxSize=16;
+            accountCaption.verticalOverflow = VerticalWrapMode.Truncate;
             soundButton = ButtonAt(shell, "", 411, 8, 45, 45, ShowSettings, Hex("b5b7ae"), Hex("222923"));
             soundButton.name = "Open settings";
             soundIcon = Icon(soundButton.transform,"sound-on",6,6,32,32);soundIcon.name="Sound icon";

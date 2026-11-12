@@ -41,10 +41,12 @@ namespace MineLoot
 
         private void BuildRatingButton(Transform header)
         {
-            var button=ButtonAt(header,"",344,56,112,32,ShowRating,Hex("d8c598"),Ink);button.name="Open rating";
-            ratingBadge=Icon(button.transform,"rank-medal-0",1,0,32,32);
-            ratingCaption=Label(button.transform,"MMR 0",37,1,72,30,16,Ink,FontStyle.Bold,TextAnchor.MiddleCenter);
-            ratingCaption.resizeTextForBestFit=true;ratingCaption.resizeTextMinSize=12;ratingCaption.resizeTextMaxSize=16;
+            var button = ButtonAt(header, "", 292, 56, 164, 32, ShowRating, Hex("d8c598"), Ink);
+            button.name = "Open rating";
+            ratingBadge = Icon(button.transform, "rank-medal-0", 1, 0, 32, 32);
+            ratingCaption = Label(button.transform, "MMR 0", 36, 1, 124, 30, 16, Ink, FontStyle.Bold, TextAnchor.MiddleCenter);
+            ratingCaption.name = "Rating caption";
+            ratingCaption.horizontalOverflow = HorizontalWrapMode.Overflow;
         }
         public void ShowRating()
         {
@@ -136,7 +138,8 @@ namespace MineLoot
         {
             if(ratingCaption==null || game==null) return;
             int score=game.Mmr,rank=MineGame.RatingRank(score);
-            ratingCaption.text="MMR "+ShortAmount(score);ratingBadge.sprite=art.Get("rank-medal-"+rank);
+            ratingCaption.text = "MMR " + (score < 1000000 ? score.ToString("N0", interfaceCulture) : ShortAmount(score));
+            ratingBadge.sprite=art.Get("rank-medal-"+rank);
             if(!ratingWindowOpen || modal==null || modal.name!="Rating modal") return;
             profileRatingBadge.sprite=art.Get("rank-medal-"+rank);profileRatingTitle.text=MineGame.RatingName(rank);profileRatingScore.text=score.ToString("N0",interfaceCulture)+" MMR";
             profileRatingNext.text=rank+1<MineGame.RatingRankCount?"До следующей медали: "+(MineGame.RatingThreshold(rank+1)-score).ToString("N0",interfaceCulture)+" MMR":"Высшая медаль шахтёра";

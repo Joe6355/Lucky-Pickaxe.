@@ -321,8 +321,26 @@ namespace MineLoot
         }
         private IEnumerator VerifyRatingUi(DemoController demo,int width)
         {
+            const string emptyRating = "{\"status\":\"ready\"}";
+            var caption = FindButton("Open rating")?.transform.Find("Rating caption")?.GetComponent<Text>();
+            var progress = demo.Game.Progress;
+            long miningBlocks = progress.miningBlocks;
+            progress.earnedCoins = 1160000000L;
+            demo.OnBrowserRating(emptyRating);
+            string exactScore = "MMR " + demo.Game.Mmr.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
+            Check(caption != null && caption.text == exactScore && caption.preferredWidth <= caption.rectTransform.rect.width,
+                "Five-digit MMR fits the header at " + width);
+            if (width == 390 || width == 1280) Capture("unity-v0335-rating-header-" + width + ".png");
+            foreach (long blocks in new[] { 99990000000L, MineGame.CoinLimit })
+            {
+                progress.miningBlocks = blocks;
+                demo.OnBrowserRating(emptyRating);
+                Check(caption != null && caption.preferredWidth <= caption.rectTransform.rect.width,
+                    "Large MMR fits the header at " + width + ": " + demo.Game.Mmr);
+            }
+            progress.miningBlocks = miningBlocks;
             demo.Game.Progress.earnedCoins=123456789;demo.ConfigureRatingForSmoke(null,()=>true);
-            demo.ShowRating();yield return null;
+            Click("Open rating");yield return null;
             Check(GameObject.Find("Rating modal")!=null,"The permanent header badge opens the MMR table at "+width);
             Check(FindButton("Rating section 0")!=null && FindButton("Rating section 1")!=null && FindButton("Rating section 2")==null,"Rating exposes only the table and medals, without the calculation tab");
             demo.OnBrowserRating("{\"status\":\"ready\",\"userRank\":6,\"entries\":[" +
