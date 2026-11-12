@@ -66,15 +66,18 @@ namespace MineLoot
                 ratingSections[i]=MakeRect(modal.transform,"Rating content "+i,0,0,480,840).gameObject;
             }
             var list=ratingSections[0].transform;
-            ratingStatus=Label(list,"",40,310,400,40,16,Muted);
+            ratingStatus=Label(list,"",40,300,400,32,16,Muted);
+            const float scoreX = 266, scoreWidth = 124;
+            Label(list,"MMR",40+scoreX,332,scoreWidth,20,16,Muted,FontStyle.Bold,TextAnchor.MiddleRight);
             for(int i=0;i<5;i++)
             {
                 var row=Card(list,"Rating row "+i,40,354+i*66,400,62,Panel);ratingRows[i]=row.gameObject;
                 ratingRowBadges[i]=Icon(row.transform,"rank-medal-0",3,3,56,56);
-                ratingRowNames[i]=Label(row.transform,"",68,4,212,26,18,Ink,FontStyle.Bold);ratingRowNames[i].supportRichText=false;
+                ratingRowNames[i]=Label(row.transform,"",68,4,190,26,18,Ink,FontStyle.Bold);ratingRowNames[i].supportRichText=false;
                 ratingRowNames[i].verticalOverflow=VerticalWrapMode.Truncate;
-                ratingRowScores[i]=Label(row.transform,"",280,4,110,26,18,Ink,FontStyle.Bold,TextAnchor.MiddleRight);
-                ratingRowScores[i].resizeTextForBestFit=true;ratingRowScores[i].resizeTextMinSize=12;ratingRowScores[i].resizeTextMaxSize=18;
+                ratingRowScores[i]=Label(row.transform,"",scoreX,4,scoreWidth,26,18,Ink,FontStyle.Bold,TextAnchor.MiddleRight);
+                ratingRowScores[i].name="Rating score";
+                ratingRowScores[i].horizontalOverflow=HorizontalWrapMode.Overflow;
                 ratingRowStats[i]=Label(row.transform,"",68,34,322,22,15,Muted);
             }
             ratingPrevious=ButtonAt(list,"<",40,704,40,30,()=>ChangeRatingPage(-1),Panel,Ink);ratingPrevious.name="Rating previous";
@@ -148,7 +151,7 @@ namespace MineLoot
                 string name=(entry.name??"").Replace('\n',' ').Replace('\r',' ').Trim();if(name.Length==0) name="Игрок";if(name.Length>23) name=name.Substring(0,22)+"…";
                 ratingRowNames[i].text=entry.rank+". "+name+(entry.me?" · ты":"");
                 ratingRowNames[i].resizeTextForBestFit=true;ratingRowNames[i].resizeTextMinSize=14;ratingRowNames[i].resizeTextMaxSize=18;
-                ratingRowScores[i].text=ShortAmount(entry.score)+" MMR";
+                ratingRowScores[i].text=entry.score.ToString("N0",interfaceCulture);
                 ratingRowStats[i].text=entry.hasStats?"Блоков: "+ShortAmount(entry.blocks)+" · Сбросов: "+entry.resets:"Статистика не предоставлена";
             }
             int pages=Mathf.Max(1,(ratingData.entries.Length+4)/5);ratingPageLabel.text=(ratingPage+1)+" / "+pages;

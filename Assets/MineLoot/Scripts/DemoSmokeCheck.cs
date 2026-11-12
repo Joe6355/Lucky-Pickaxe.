@@ -325,7 +325,21 @@ namespace MineLoot
             demo.ShowRating();yield return null;
             Check(GameObject.Find("Rating modal")!=null,"The permanent header badge opens the MMR table at "+width);
             Check(FindButton("Rating section 0")!=null && FindButton("Rating section 1")!=null && FindButton("Rating section 2")==null,"Rating exposes only the table and medals, without the calculation tab");
-            demo.OnBrowserRating("{\"status\":\"ready\",\"userRank\":6,\"entries\":[{\"rank\":1,\"score\":20000,\"name\":\"Шахтёр алмазной долины\",\"hasStats\":true,\"blocks\":12000,\"resets\":4},{\"rank\":2,\"score\":10000,\"name\":\"Игрок 2\"},{\"rank\":3,\"score\":5000,\"name\":\"Игрок 3\"},{\"rank\":4,\"score\":2500,\"name\":\"Игрок 4\"},{\"rank\":5,\"score\":1200,\"name\":\"Игрок 5\"},{\"rank\":6,\"score\":600,\"name\":\"Текущий шахтёр\",\"me\":true,\"hasStats\":true,\"blocks\":400,\"resets\":1}]}");
+            demo.OnBrowserRating("{\"status\":\"ready\",\"userRank\":6,\"entries\":[" +
+                "{\"rank\":1,\"score\":2147483647,\"name\":\"Шахтёр алмазной долины\",\"hasStats\":true,\"blocks\":24600,\"resets\":9}," +
+                "{\"rank\":2,\"score\":351300,\"name\":\"Игрок 2\"}," +
+                "{\"rank\":3,\"score\":209900,\"name\":\"Игрок 3\"}," +
+                "{\"rank\":4,\"score\":110500,\"name\":\"Игрок 4\"}," +
+                "{\"rank\":5,\"score\":74100,\"name\":\"Игрок 5\"}," +
+                "{\"rank\":6,\"score\":600,\"name\":\"Текущий шахтёр\",\"me\":true,\"hasStats\":true,\"blocks\":400,\"resets\":1}]}");
+            string[] expectedScores = { "2 147 483 647", "351 300", "209 900", "110 500", "74 100" };
+            for (int row = 0; row < expectedScores.Length; row++)
+            {
+                var scoreLabel = GameObject.Find("Rating row " + row)?.transform.Find("Rating score")?.GetComponent<Text>();
+                Check(scoreLabel != null && scoreLabel.text.Replace('\u00a0', ' ').Replace('\u202f', ' ') == expectedScores[row]
+                    && scoreLabel.preferredWidth <= scoreLabel.rectTransform.rect.width,
+                    "Full rating score fits its column at " + width + ": " + expectedScores[row]);
+            }
             CheckLayout();Capture("unity-v0311-rating-"+width+".png");Click("Rating next");CheckLayout();Capture("unity-v0311-rating-own-"+width+".png");
             Check(GameObject.Find("Rating row 0")!=null && GameObject.Find("Rating row 1")==null,"The next page shows the real nearby player rather than dummy rows");
             Click("Rating section 1");yield return null;CheckLayout();Capture("unity-v0311-medals-"+width+".png");
