@@ -9,7 +9,6 @@
   let device, sentDevice, viewportPaused = false;
   let account = { available: false, status: "unavailable", name: "" }, authPending = false, sentAccount, accountGeneration=0;
   const ratingName="mmr";
-  const ratingResetThreshold=50000, ratingResetScore=30000;
   let ratingCache, ratingLoadPending=false, ratingSendPending=false, ratingLoadAfter=0, ratingSendAfter=0, ratingLoadGeneration=-1;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
@@ -532,7 +531,7 @@
   function submitRating(json) {
     if(disposed || !ready || local || account.status!=="authorized" || authPending || ratingSendPending || Date.now()<ratingSendAfter || !sdk?.leaderboards || typeof sdk.leaderboards.setScore!=="function" || typeof sdk.leaderboards.getPlayerEntry!=="function" || typeof sdk.isAvailableMethod!=="function" || typeof json!=="string" || json.length>512) return false;
     let data;try {data=JSON.parse(json);} catch {return false;}
-    if(data?.version!==1 || !Number.isSafeInteger(data.score) || data.score<0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
+    if(data?.version!==1 || !Number.isSafeInteger(data.score) || data.score<=0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
     const owner=ratingOwner;
     if(!owner || owner!==cloudAccount || localMerge?.account!==owner || cloudDecision) return false;
     const generation=accountGeneration;ratingSendPending=true;ratingSendAfter=Date.now()+45000;
@@ -543,32 +542,21 @@
       if(!currentAccount()) throw new Error("Rating save changed");
       if(playerId(await sdk.getPlayer())!==owner) {if(currentAccount()) readAccount();return;}
       if(!currentAccount()) throw new Error("Rating save changed");
-      let previous=0,resetBase=-1,corrected=false;
+      let previous=0;
       try {
         const entry=await sdk.leaderboards.getPlayerEntry(ratingName);
         if(Number.isSafeInteger(entry?.score)&&entry.score>0) previous=entry.score;
-        let extra;try {extra=JSON.parse(entry?.extraData||"null");} catch {}
-        corrected=extra?.ratingRevision===1;
-        if(corrected && Number.isSafeInteger(extra.resetBase)&&extra.resetBase>=0&&extra.resetBase<=2147483647) resetBase=extra.resetBase;
       }
       catch(error) {if(!ratingFailure(error)) throw error;}
       if(!currentAccount()) throw new Error("Rating save changed");
-      const reset=!corrected && previous>ratingResetThreshold;
-      if(reset) resetBase=data.score;
-      const score=resetBase>=0 ? Math.min(2147483647,ratingResetScore+Math.max(0,data.score-resetBase)) : data.score;
-      if(reset || score>previous) {
+      if(data.score>previous) {
         if(playerId(await sdk.getPlayer())!==owner) {if(currentAccount()) readAccount();return;}
         if(!currentAccount()) throw new Error("Rating save changed");
-        await sdk.leaderboards.setScore(ratingName,score,JSON.stringify({...data,score,ratingRevision:1,resetBase}));
-        if(reset) {
-          const updated=await sdk.leaderboards.getPlayerEntry(ratingName);
-          if(updated?.score!==score || JSON.parse(updated.extraData||"null")?.resetBase!==resetBase)
-            throw new Error("Rating reset not confirmed");
-        }
+        await sdk.leaderboards.setScore(ratingName,data.score,JSON.stringify(data));
       }
       if(!currentAccount()) throw new Error("Rating save changed");
       ratingCache=null;ratingLoadAfter=0;
-      send("OnBrowserRatingSaved",JSON.stringify({status:"saved",score:reset?score:Math.max(score,previous),resetBase,resetApplied:resetBase>=0}));
+      send("OnBrowserRatingSaved",JSON.stringify({status:"saved",score:Math.max(data.score,previous)}));
     }).catch(()=>{if(sameSession()) send("OnBrowserRatingSaved",JSON.stringify({status:"error"}));}).finally(()=>{ratingSendPending=false;});
     return true;
   }

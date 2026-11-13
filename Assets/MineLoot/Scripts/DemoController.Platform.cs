@@ -39,8 +39,7 @@ namespace MineLoot
             {
                 cloudRatingReady=ratingSending=false;
                 nextRatingSend=nextRatingLoad=0;
-                submittedRating=-1;ratingResetBase=0;ratingReceipt="";
-                ratingResetApplied=false;
+                submittedRating=-1;
                 ratingData=new RatingPayload {status="idle",entries=new RatingEntry[0]};ratingPage=0;
             }
             bool returning=accountPending && data.status!="pending";

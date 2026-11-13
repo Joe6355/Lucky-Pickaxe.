@@ -16,8 +16,7 @@ namespace MineLoot
         [Serializable] private sealed class RatingPayload
         {
             public string status;
-            public int userRank,score,resetBase;
-            public bool resetApplied;
+            public int userRank,score;
             public RatingEntry[] entries;
         }
         [Serializable] private sealed class RatingSubmission
@@ -32,11 +31,10 @@ namespace MineLoot
         private readonly Text[] ratingRowNames=new Text[5],ratingRowScores=new Text[5],ratingRowStats=new Text[5];
         private readonly Button[] ratingTabs=new Button[2];
         private Button ratingRefresh,ratingLogin,ratingPrevious,ratingNext;
-        private bool ratingWindowOpen,ratingSending,ratingResetApplied;
-        private int ratingSection,ratingPage,submittedRating=-1,ratingResetBase,ratingScoreInFlight;
+        private bool ratingWindowOpen,ratingSending;
+        private int ratingSection,ratingPage,submittedRating=-1;
         private float nextRatingSend,nextRatingLoad,nextRatingRefresh;
         private RatingPayload ratingData=new RatingPayload {status="idle",entries=new RatingEntry[0]};
-        private string ratingReceipt="";
         private Func<string,bool> ratingSubmitForSmoke;
         private Func<bool> ratingLoadForSmoke;
 
@@ -124,24 +122,15 @@ namespace MineLoot
         {
             RatingPayload result;try {result=JsonUtility.FromJson<RatingPayload>(json);} catch {return;}
             if(result==null) return;ratingSending=false;
-            if(result.status=="saved")
-            {
-                submittedRating=ratingScoreInFlight;
-                ratingResetBase=result.resetBase;
-                ratingResetApplied=result.resetApplied;
-                ratingReceipt="Лучший результат сохранён в Яндексе.";
-            }
-            else ratingReceipt="Результат пока не отправлен. Повторим позже.";
-            RefreshRating();
+            if(result.status=="saved") submittedRating=Math.Max(submittedRating,result.score);
         }
         private void PumpRating()
         {
             if(ratingWindowOpen && Time.unscaledTime>=nextRatingRefresh) {nextRatingRefresh=Time.unscaledTime+.5f;RefreshRating();}
-            if(game==null || accountStatus!="authorized" || !SmokeMode && !cloudRatingReady || ratingSending || Time.unscaledTime<nextRatingSend || game.Mmr<=submittedRating) return;
+            if(game==null || accountStatus!="authorized" || !SmokeMode && !cloudRatingReady || ratingSending || Time.unscaledTime<nextRatingSend || game.Mmr<=Math.Max(0,submittedRating)) return;
             if(SmokeMode && ratingSubmitForSmoke==null) return;
             nextRatingSend=Time.unscaledTime+30;ratingSending=true;
-            ratingScoreInFlight=game.Mmr;
-            var data=new RatingSubmission {score=ratingScoreInFlight,blocks=game.RatingBlocks,coins=game.Progress.earnedCoins,tickets=game.Progress.spentTickets,xp=game.Progress.spentEnchantingExperience,resets=game.Progress.prestigeCount};
+            var data=new RatingSubmission {score=game.Mmr,blocks=game.RatingBlocks,coins=game.Progress.earnedCoins,tickets=game.Progress.spentTickets,xp=game.Progress.spentEnchantingExperience,resets=game.Progress.prestigeCount};
             string json=JsonUtility.ToJson(data);
             bool accepted=SmokeMode?ratingSubmitForSmoke(json):BrowserPlatform.SubmitRating(json);
             if(!accepted) ratingSending=false;
@@ -149,7 +138,7 @@ namespace MineLoot
         private void RefreshRating()
         {
             if(ratingCaption==null || game==null) return;
-            int score=ratingResetApplied ? (int)Math.Min(int.MaxValue,30000L+Math.Max(0,game.Mmr-ratingResetBase)) : game.Mmr;
+            int score=game.Mmr;
             int rank=MineGame.RatingRank(score);
             ratingCaption.text = "MMR " + (score < 1000000 ? score.ToString("N0", interfaceCulture) : ShortAmount(score));
             ratingBadge.sprite=art.Get("rank-medal-"+rank);
@@ -158,7 +147,6 @@ namespace MineLoot
             profileRatingNext.text=rank+1<MineGame.RatingRankCount?"До следующей медали: "+(MineGame.RatingThreshold(rank+1)-score).ToString("N0",interfaceCulture)+" MMR":"Высшая медаль шахтёра";
             for(int i=0;i<ratingTabs.Length;i++) {ratingSections[i].SetActive(i==ratingSection);ratingTabs[i].image.color=i==ratingSection?Hex("b6c997"):Panel;}
             ratingStatus.text=ratingData.status=="loading"?"Загружаем рейтинг Яндекса…":ratingData.status=="error"?"Не удалось загрузить таблицу. Попробуй позже.":ratingData.status=="unavailable"?"Общий рейтинг доступен в Яндекс Играх.":ratingData.entries.Length==0?"В рейтинге пока нет игроков. Стань первым!":ratingData.userRank>0?"Твоё место: "+ratingData.userRank+" · в таблице лучший результат":"Лучшие игроки и участники рядом с тобой";
-            if(ratingData.status=="ready" && ratingReceipt.Length>0 && ratingData.userRank==0) ratingStatus.text=ratingReceipt;
             for(int i=0;i<5;i++)
             {
                 int index=ratingPage*5+i;bool show=index<ratingData.entries.Length;ratingRows[i].SetActive(show);if(!show) continue;
