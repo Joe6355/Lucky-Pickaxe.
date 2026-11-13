@@ -90,6 +90,7 @@ namespace MineLoot
             yield return VerifyRollBatch(demo);
             VerifyNewRollSpeeds(demo);
             yield return VerifyGoldenChestPresentation(demo);
+            yield return VerifyVeinExpiryDuringPausedRoulette(demo, stage);
             demo.RestoreForSmoke(new MineProgress { coins = 10000, swapLevel = 1, tickets = 1 });
             demo.ShowPage(true); demo.SpinForSmoke(() => .6); yield return WaitForChoice(demo);
             Check(demo.AwaitingPickChoice && demo.Game.Progress.tickets == 0, "Paid roulette still fixes the draw and spends its last ticket once");
@@ -354,6 +355,35 @@ namespace MineLoot
             yield return FinishRoll(demo);
             Check(!marker.enabled && demo.Game.Progress.crystals == 1 &&
                 chest.sharedMaterial != otherChest.sharedMaterial, "Opening the chest credits the crystal, clears the lane marker and keeps the gold finish");
+        }
+
+        private IEnumerator VerifyVeinExpiryDuringPausedRoulette(DemoController demo, VoxelStage stage)
+        {
+            string key = "MineLoot.Runtime.Vein." + Guid.NewGuid().ToString("N");
+            demo.RestoreForSmoke(new MineProgress { prestigeUpgrades = 511, veinBoostLeft = 16, swapLevel = 1 });
+            demo.ConfigureSessionForSmoke(1700000000, key);
+            try
+            {
+                yield return null;
+                Check(!demo.Game.VeinActive && !stage.VeinVisible, "An old x4 save loses its stuck effect on the game screen");
+                demo.Game.Progress.veinOfferLeft = 20;
+                demo.ActivateRichVein();
+                demo.ShowPage(true); demo.SpinForSmoke(() => .6); yield return WaitForChoice(demo);
+                demo.ShowPage(false);
+                Check(demo.Game.HasPendingRoll && demo.Game.ManualMultiplier == 4,
+                    "The paused paid roulette leaves the active x4 boost available before its deadline");
+                demo.AdvanceSessionForSmoke(16);
+                yield return null;
+                Click("Mine rock");
+                Check(demo.Game.Progress.totalClicks == 1 && !demo.Game.LastHit.rich && demo.Game.ManualMultiplier == 1 && !stage.VeinVisible &&
+                    ProgressStore.Load(key).Progress.veinBoostEndsUtc == 0 && demo.Game.HasPendingRoll,
+                    "Expiry clears x4, the visual effect and the saved deadline during a paused paid roulette");
+            }
+            finally
+            {
+                demo.ConfigureSessionForSmoke(1700000000, null);
+                PlayerPrefs.DeleteKey(key); PlayerPrefs.DeleteKey(key + ".backup");
+            }
         }
 
         private IEnumerator VerifyRatingUi(DemoController demo,int width)

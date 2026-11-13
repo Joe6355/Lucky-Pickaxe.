@@ -89,7 +89,9 @@ namespace MineLoot
             // is acknowledged as imported progress rather than counted as another local reward.
             BrowserPlatform.ResolveCloud(decision.token,true);
             StopAllCoroutines();if(miningGain!=null) {Destroy(miningGain.gameObject);miningGain=null;}
-            game=merged;game.PrepareOffline(SessionUtc);RestorePresentation(keepAccount || keepWarehouse && !decision.accountSwitch);
+            game=merged;
+            if(!SmokeMode) game.UpdateVeinClock(SessionTimeUtc);
+            game.PrepareOffline(SessionUtc);RestorePresentation(keepAccount || keepWarehouse && !decision.accountSwitch);
             if(!game.ActionsLocked) {
                 selectedPage=page;workshopSection=section;productionTab=production;ApplyPageVisibility();
             }

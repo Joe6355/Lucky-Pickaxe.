@@ -59,7 +59,8 @@ namespace MineLoot
         private string smokeSessionKey;
         private bool localSaveExisted;
         // Session time advances from a monotonic clock; changing the wall clock while playing has no effect.
-        private long SessionUtc => sessionUtc + (long)Math.Max(0, Time.realtimeSinceStartupAsDouble - sessionRealtime);
+        private double SessionTimeUtc => sessionUtc + Math.Max(0, Time.realtimeSinceStartupAsDouble - sessionRealtime);
+        private long SessionUtc => (long)SessionTimeUtc;
         private int rollSpeedIndex = 1;
         private static readonly string[] RollSpeedLabels = { "×0,5", "×1", "×2" };
         public MineGame Game => game;
@@ -79,6 +80,7 @@ namespace MineLoot
             sessionUtc = DateTimeOffset.UtcNow.ToUnixTimeSeconds(); sessionRealtime = Time.realtimeSinceStartupAsDouble;
             if (!SmokeMode)
             {
+                game.UpdateVeinClock(SessionTimeUtc);
                 game.PrepareOffline(SessionUtc);
                 ProgressStore.Save(game); // Save the prepared crate and timestamp before exposing its claim button.
             }
@@ -127,6 +129,7 @@ namespace MineLoot
         {
             if (lastWidth != Screen.width || lastHeight != Screen.height || lastSafe != Screen.safeArea) FitScreen();
             PumpCloudDecision();
+            UpdateRichVeinClock();
             if (applicationPaused || settingsWindowOpen) return;
             PumpRating();
             float dt = PlayDelta;
@@ -177,6 +180,7 @@ namespace MineLoot
         public void Mine()
         {
             if (applicationPaused || EconomyBusy || Time.unscaledTime - lastMineTime < .075f * game.MiningDelayMultiplier || modal != null) return;
+            UpdateRichVeinClock();
             lastMineTime = Time.unscaledTime;
             game.Mine(); var hit = game.LastHit; rockPulse = 1;
             mineStatus.text = hit.ore == MineGame.ObsidianKind ? (hit.broken ? "Обсидиан расколот · износ кирки" : "Обсидиан · урон " + hit.damage) : hit.ore == MineGame.StoneKind ? "Камень · +" + hit.experience + " опыта" : hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
@@ -213,6 +217,12 @@ namespace MineLoot
             }
         }
 
+        private void UpdateRichVeinClock()
+        {
+            if ((SmokeMode && smokeSessionKey == null) || !game.UpdateVeinClock(SessionTimeUtc)) return;
+            Persist(); Flush(); Refresh();
+        }
+
         internal void AdvanceForSmoke(double seconds, bool miningActive)
         {
             if (SmokeMode && !applicationPaused) TickEconomy(seconds, miningActive, true);
@@ -234,6 +244,7 @@ namespace MineLoot
 
         private void PrepareReturn(long utc, bool keepOfflineWindow = false)
         {
+            UpdateRichVeinClock();
             game.PrepareOffline(utc); Persist(); Flush(true);
             if (offlineWindowOpen && !keepOfflineWindow) CloseModal();
             offlineNoticeQueued = game.HasOfflineReward && !offlineWindowOpen; Refresh();
@@ -252,9 +263,11 @@ namespace MineLoot
 
         public void ActivateRichVein()
         {
-            if (applicationPaused || EconomyBusy || modal != null || !game.ActivateVein()) return;
+            if (applicationPaused || EconomyBusy || modal != null) return;
+            UpdateRichVeinClock();
+            if (!game.ActivateVein()) return;
             Persist(); Flush(); Refresh(); sounds.Play("crystal");
-            Notice("БОГАТАЯ ЖИЛА · ×" + game.RichVeinMultiplier, "Монеты от ручной добычи\n" + game.RichVeinDuration + " секунд на экране шахты");
+            Notice("БОГАТАЯ ЖИЛА · ×" + game.RichVeinMultiplier, "Монеты от ручной добычи\n" + game.RichVeinDuration + " секунд с момента сбора");
         }
 
         public void BuyPrestigeUpgrade(int index)
@@ -801,7 +814,7 @@ namespace MineLoot
             ticketLabel.resizeTextForBestFit = true; ticketLabel.resizeTextMinSize = 16; ticketLabel.resizeTextMaxSize = 28;
             powerLabel.text = game.IsMiningStone ? "Только опыт" : "+" + game.ManualClickPower + " за удар";
             richVeinButton.gameObject.SetActive(game.VeinOffered);
-            richVeinTimer.text = game.VeinActive ? (game.IsMiningStone ? "Для руды · " : "×" + game.RichVeinMultiplier + " · ") + (int)Math.Ceiling(game.Progress.veinBoostLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
+            richVeinTimer.text = game.VeinActive ? (game.IsMiningStone ? "Для руды · " : "×" + game.RichVeinMultiplier + " · ") + (int)Math.Ceiling(game.VeinBoostSecondsLeft) + " сек." : game.VeinOffered ? (int)Math.Ceiling(game.Progress.veinOfferLeft) + " сек. на сбор" : "";
             progressLabel.text = game.Progress.hits + " / " + game.HitsRequired;
             levelLabel.text = "ШАХТА · УР. " + game.MinerLevel;
             stageBadge.text = game.LevelGoal == 0 ? "МАКС. УРОВЕНЬ" : game.LevelExperience + "/" + game.LevelGoal + " ОПЫТА";

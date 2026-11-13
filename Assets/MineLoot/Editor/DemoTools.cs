@@ -28,7 +28,7 @@ public static partial class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.34.4";
+        PlayerSettings.bundleVersion = "0.34.5";
         PlayerSettings.defaultScreenWidth = 1280; PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -804,6 +804,24 @@ public static partial class DemoTools
         game.Mine(); check(game.LastHit.coins == 80 && game.LastHit.experience == 1, "Permanent manual bonus combines with the vein without multiplying experience");
         game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         check(game.Progress.veinBoostLeft == 16 && game.ManualMultiplier == 4 && game.Progress.prestigeUpgrades == 511, "Reload preserves permanent upgrades and the upgraded active timer");
+        var deadline = new MineGame(new MineProgress { prestigeUpgrades = 511, veinOfferLeft = 20, swapLevel = 1 });
+        const long activation = 1700000000;
+        deadline.UpdateVeinClock(activation);
+        check(deadline.ActivateVein() && deadline.Progress.veinBoostEndsUtc == activation + 16 &&
+            deadline.BeginRoll(() => .6), "The active x4 vein records its deadline before a paid roulette");
+        deadline = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(deadline.Progress)));
+        deadline.UpdateVeinClock(activation + 5);
+        check(deadline.ManualMultiplier == 4 && deadline.VeinBoostSecondsLeft == 11,
+            "Reload counts elapsed time without restarting the boost");
+        deadline.RoulettePaused = true;
+        deadline.UpdateVeinClock(activation + 16);
+        deadline.Mine();
+        check(deadline.Progress.totalClicks == 1 && !deadline.LastHit.rich && deadline.HasPendingRoll && deadline.ManualMultiplier == 1,
+            "The paid roulette can stay paused while real mining returns to ordinary income");
+        deadline = new MineGame(new MineProgress { coins = 123, prestigeUpgrades = 511, veinBoostLeft = 16 });
+        check(deadline.UpdateVeinClock(activation) && !deadline.VeinActive &&
+            deadline.Progress.coins == 123 && deadline.Progress.prestigeUpgrades == 511,
+            "Loading an old stuck timer clears only the temporary boost");
         game.Progress.experience = MineGame.ExperienceForLevel(50); game.Progress.stratum = 71;
         check(game.Prestige(() => .25) && game.Progress.prestigeCount == 2 && game.Progress.crystals == 20 && game.Progress.totalCrystals == 50 && game.Progress.coins == 1080 && game.Progress.upgradeLevel == 2 && game.Progress.workerCount == 1 && game.ClickPower == 20 && game.ProductionMilli == 2500, "Later reset preserves purchased nodes and grants the starter kit again");
         game = new MineGame(new MineProgress { prestigeCount = 1, crystals = 1, totalCrystals = 1 });
@@ -1027,7 +1045,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.34.4";
+        PlayerSettings.bundleVersion = "0.34.5";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
@@ -1051,7 +1069,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("Use Unity 2022.3.47f1 for WebGL.");
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.WebGL, BuildTarget.WebGL)) throw new Exception("Install WebGL Build Support for Unity 2022.3.47f1.");
-        PlayerSettings.bundleVersion = "0.34.4";
+        PlayerSettings.bundleVersion = "0.34.5";
         PlayerSettings.WebGL.template = "PROJECT:LuckyPickaxe";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;

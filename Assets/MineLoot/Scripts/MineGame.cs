@@ -39,7 +39,7 @@ namespace MineLoot
         public double productionCarry;
         public long totalProduced;
         public int veinCharge;
-        public double veinOfferLeft, veinBoostLeft;
+        public double veinOfferLeft, veinBoostLeft, veinBoostEndsUtc;
         public int warehouseLevel, offlineCapacitySeconds, offlineCarry;
         public long lastSeenUtc, offlineRateMilli, totalOfflineCoins;
         public long offlineCoins, offlineRewardSeconds, offlineElapsedSeconds, offlineRewardRateMilli;
@@ -198,7 +198,11 @@ namespace MineLoot
         public int RichVeinDuration => HasPrestigeUpgrade(7) ? 16 : VeinBoostSeconds;
         public int RichVeinMultiplier => HasPrestigeUpgrade(8) ? 4 : VeinMultiplier;
         public bool VeinOffered => Progress.veinOfferLeft > 0;
-        public bool VeinActive => Progress.veinBoostLeft > 0;
+        private double veinClockUtc;
+        public double VeinBoostSecondsLeft => Progress.veinBoostEndsUtc > 0
+            ? Math.Max(0, Progress.veinBoostEndsUtc - veinClockUtc)
+            : Progress.veinBoostLeft;
+        public bool VeinActive => VeinBoostSecondsLeft > 0;
         public int ManualMultiplier => VeinActive ? RichVeinMultiplier : 1;
         public int ManualClickPower => ApplyGreed(ClickPower * ManualMultiplier);
         private int ApplyGreed(int coins) => coins * (100 - EnchantmentLevel(EnchantKind.Greed) * GreedPercentPerRank) / 100;
@@ -313,6 +317,7 @@ namespace MineLoot
             Progress.veinCharge = Math.Max(0, Math.Min(RichVeinTarget - 1, Progress.veinCharge));
             Progress.veinOfferLeft = FiniteClamp(Progress.veinOfferLeft, 0, VeinOfferSeconds);
             Progress.veinBoostLeft = FiniteClamp(Progress.veinBoostLeft, 0, RichVeinDuration);
+            Progress.veinBoostEndsUtc = FiniteClamp(Progress.veinBoostEndsUtc, 0, MaxUtcSeconds);
             if (VeinActive) Progress.veinOfferLeft = 0;
             Progress.milestoneClaims = Math.Max(0, Progress.milestoneClaims) & ((1 << MilestoneCount) - 1);
             Progress.coins = Math.Max(0, Math.Min(CoinLimit, Progress.coins));
@@ -528,7 +533,21 @@ namespace MineLoot
         public bool ActivateVein()
         {
             if (EconomyLocked || !VeinOffered || VeinActive) return false;
-            Progress.veinOfferLeft = 0; Progress.veinBoostLeft = RichVeinDuration;
+            Progress.veinOfferLeft = 0;
+            if (veinClockUtc > 0) Progress.veinBoostEndsUtc = veinClockUtc + RichVeinDuration;
+            else Progress.veinBoostLeft = RichVeinDuration;
+            return true;
+        }
+
+        public bool UpdateVeinClock(double utc)
+        {
+            veinClockUtc = Math.Max(veinClockUtc, utc);
+            // Legacy countdowns have no expiry and may have been frozen indefinitely.
+            bool changed = Progress.veinBoostLeft > 0;
+            Progress.veinBoostLeft = 0;
+            double ends = Progress.veinBoostEndsUtc;
+            if (ends == 0 || (ends > veinClockUtc && ends - veinClockUtc <= RichVeinDuration + 1)) return changed;
+            Progress.veinBoostEndsUtc = 0;
             return true;
         }
 

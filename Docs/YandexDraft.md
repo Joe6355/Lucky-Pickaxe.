@@ -2,7 +2,11 @@
 
 [Консоль](https://games.yandex.ru/console/application/639502?new=true#application-info-draft) · [Играть](https://yandex.ru/games/app/639502?draft=true&lang=ru) · [Дебаг](https://yandex.ru/games/app/639502?debug-mode=16&draft=true&lang=ru).
 
-## Сохранённое состояние 0.34.4
+## Сохранённое состояние 0.34.5
+
+Архив **14594122** обработан со статусом **«Готово»**. Запуск **0.34.5** подтверждён по ссылке «Дебаг». [Проверки](Verification.md).
+
+## История 0.34.4
 
 Архив **14594102** обработан со статусом **«Готово»**. Запуск **0.34.4** подтверждён по ссылке «Дебаг». [Проверки](Verification.md).
 
