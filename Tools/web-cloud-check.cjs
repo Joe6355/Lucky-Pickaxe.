@@ -174,9 +174,18 @@ async function run(){
   check(read(second).coins===1e12-120,"A purchase after capped duplicate receipts remains paid after synchronization");f.api.dispose();second.api.dispose();
 
   cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100}),true);await f.api.syncCloud();await settle();const otherStorage=f.data;f.api.dispose();
-  cloud={data:{[cloudKey]:envelope(progress({coins:20,tickets:1}))},writes:[]};f=await device(cloud,otherStorage.get(journal),true,otherStorage,{accountID:"other-account"});
+  const originalCloud=cloud;
+  cloud={data:{[cloudKey]:envelope(progress({coins:20,tickets:1}))},writes:[]};f=await device(cloud,otherStorage.get(journal),true,otherStorage,{accountID:"other-account",leaderboard:true});
+  const score=JSON.stringify({version:1,score:123,blocks:100,coins:20,tickets:1,xp:0,resets:0});
+  check(!f.api.submitRating(score) && event(f).accountSwitch,"The second account cannot submit the first account's ranking while loading");
   f.api.writeProgress(key,JSON.stringify({...read(f),coins:150}));const switchToken=event(f).token;f.api.resolveCloud(switchToken,false);await settle();await apply(f);await sync(f);
-  check(read(f).coins===20 && remote(cloud).coins===20 && f.data.has(journal+".account-backup"),"Changing accounts archives the previous account and never donates its wallet to the new one");f.api.dispose();
+  check(read(f).coins===20 && remote(cloud).coins===20 && f.data.has(journal+".account.fixture-account"),"Changing accounts archives the previous account and never donates its wallet to the new one");
+  const platformAccount=f.sdk.getPlayer;
+  f.sdk.getPlayer=async()=>({isAuthorized:()=>true,getUniqueID:()=>"fixture-account",getData:async()=>originalCloud.data,setData:async()=>{}});
+  f.api.submitRating(score);await settle();
+  check(f.ranking.writes.length===0 && event(f).accountSwitch,"A different SDK identity before submission prevents the write and reconciles the actual account");
+  await apply(f);check(read(f).coins===150,"Returning to the first account restores its local unsynced progress");
+  f.sdk.getPlayer=platformAccount;f.api.dispose();
 
   cloud={data:{},writes:[]};f=await device(cloud,progress({coins:321}),true,new Map(),{permanentPlayerCache:true});
   f.api.writeProgress(key,progress({coins:400}));await sync(f);
@@ -209,8 +218,8 @@ async function run(){
   second=await device(cloud,progress({upgradeLevel:25,coins:30}),true);
   await apply(second);
   const broken=read(second);
-  check(broken.version===17 && broken.upgradeLevel===18 && broken.pickBreakStreak===2 && broken.pickBreaks===2 && broken.freeLayoutUsed && broken.prestigeShieldUsed,
-    "A pre-break snapshot cannot restore the lost ranks or refill the one-use prestige perks");
+  check(broken.version===17 && broken.upgradeLevel===18 && broken.pickBreakStreak===2 && broken.pickBreaks===2 && !broken.freeLayoutUsed && broken.prestigeShieldUsed,
+    "A pre-break snapshot cannot restore the lost ranks or refill the shield; the retired perk state is discarded");
   f.api.dispose();second.api.dispose();
   fs.writeFileSync(path.join(__dirname,"../Logs/web-cloud-check.json"),JSON.stringify({result:"PASS",checks}));
 }

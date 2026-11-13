@@ -771,7 +771,7 @@ namespace MineLoot
         {
             if (applicationPaused || EconomyBusy || modal != null || !game.Abandon(() => random.NextDouble())) return;
             Array.Copy(game.Progress.depths, shownDepths, 5); Array.Copy(game.Progress.damage, shownDamage, 5); Array.Copy(game.Progress.lostColumns, shownLost, 5);
-            for (int c = 0; c < 5; c++) { picks[c].sprite = art.Get("pick1"); picks[c].color = Color.white; powers[c].text = PowerText(1 + game.PowerBonus); powers[c].color = Hex("ead9ad"); }
+            for (int c = 0; c < 5; c++) { picks[c].sprite = art.Get("pick1"); picks[c].color = Color.white; powers[c].text = PowerText(1 + game.ExpeditionPowerBonus); powers[c].color = Hex("ead9ad"); }
             rollGain.text = "НОВАЯ РАСКЛАДКА"; rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
             rollStatus.text = "-1 жетон · незабранные сундуки потеряны";
             DrawBoard(); Persist(); Flush(); Refresh();
@@ -844,7 +844,6 @@ namespace MineLoot
             spinButton.interactable = (!busy || AwaitingPickChoice) && !game.Progress.batchActive && !game.Progress.pendingBatch;
             RefreshBatchButton();
             abandonButton.interactable = !busy && game.CanAbandon;
-            abandonButton.GetComponentInChildren<Text>().text = game.FreeLayoutAvailable ? "Сменить · бесплатно" : "Сменить · 1 жетон";
             string action = AwaitingPickChoice ? "НАЧАТЬ ДОБЫЧУ" :
                 busy ? RollPhase == "reels" ? "ВЫПАДАЮТ КИРКИ…" : RollPhase == "exchange" ? "ОБМЕН КИРОК…" : "КИРКИ В РАБОТЕ…" :
                 game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КИРКИ · 1 ЖЕТОН";

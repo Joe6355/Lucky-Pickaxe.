@@ -591,7 +591,7 @@ namespace MineLoot
                 Label(modal.transform, i == 0 ? "Сундук потерян" : "Только алмаз", x + 56, 378, 124, 24, 16, Muted);
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
-            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки сбрасывает сундуки.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
+            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.ExpeditionPowerBonus) + " / " + (2 + game.ExpeditionPowerBonus) + " / " + (4 + game.ExpeditionPowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки сбрасывает сундуки.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
             ButtonAt(modal.transform, "Подсказки", 47, 783, 184, 50, StartMiningGuide, Hex("bed18b"), Ink).name = "Start guide";
             ButtonAt(modal.transform, "Понятно", 243, 783, 190, 50, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
@@ -688,7 +688,7 @@ namespace MineLoot
             Label(modal.transform, "Оставшиеся сундуки и повреждения\nбудут сброшены. Полученные монеты\nостанутся.", 48, 432, 384, 76, 18, Ink);
             Label(modal.transform, "Пласт и награды не повысятся.\nНовая раскладка тоже может быть с ловушками.", 48, 516, 384, 42, 16, Muted);
             ButtonAt(modal.transform, "ПРОДОЛЖИТЬ ЭТУ ВЫЛАЗКУ", 47, 574, 386, 44, CloseModal, Hex("b5cb8a"), Ink).name = "Cancel abandon";
-            ButtonAt(modal.transform, game.FreeLayoutAvailable ? "СМЕНИТЬ БЕСПЛАТНО" : "СМЕНИТЬ · 1 ЖЕТОН", 47, 632, 386, 44, ConfirmAbandon, Hex("d9bd80"), Ink).name = "Confirm abandon";
+            ButtonAt(modal.transform, "СМЕНИТЬ · 1 ЖЕТОН", 47, 632, 386, 44, ConfirmAbandon, Hex("d9bd80"), Ink).name = "Confirm abandon";
         }
 
         private void ConfirmAbandon()

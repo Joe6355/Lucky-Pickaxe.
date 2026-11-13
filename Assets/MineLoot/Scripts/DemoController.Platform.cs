@@ -35,14 +35,19 @@ namespace MineLoot
         {
             AccountPayload data;try { data=JsonUtility.FromJson<AccountPayload>(json); } catch { return; }
             if(data==null || string.IsNullOrEmpty(data.status)) return;
-            if(accountStatus!=data.status) cloudRatingReady=false;
+            if(accountStatus!=data.status)
+            {
+                cloudRatingReady=ratingSending=false;
+                nextRatingSend=nextRatingLoad=0;
+                submittedRating=-1;ratingResetBase=0;ratingReceipt="";
+                ratingResetApplied=false;
+                ratingData=new RatingPayload {status="idle",entries=new RatingEntry[0]};ratingPage=0;
+            }
             bool returning=accountPending && data.status!="pending";
             accountAvailable=data.available;accountStatus=data.status;accountPending=data.status=="pending";
             accountName=(data.name??"").Replace("<","").Replace(">","").Trim();if(accountName.Length>40) accountName=accountName.Substring(0,40);
             if(returning) { game.RecordSession(SessionUtc);Persist();Flush(true); }
             RefreshAccount();ApplyPlatformPause();
-            nextRatingSend=0;submittedRating=-1;
-            if(returning) nextRatingLoad=0;
         }
         private void ShowYandexAccount()
         {

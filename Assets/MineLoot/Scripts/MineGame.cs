@@ -56,7 +56,7 @@ namespace MineLoot
         public long enchantingExperience;
         public int enchantments, enchantCount, enchantSeed = 6355;
         public int pickWear, wearCarry, pickBreaks, pickBreakStreak;
-        public bool prestigeShieldUsed, freeLayoutUsed;
+        public bool prestigeShieldUsed;
         public bool batchActive, pendingBatch;
         public int batchRemaining, batchCompleted;
         public long batchReward;
@@ -76,11 +76,12 @@ namespace MineLoot
         public const long CoinLimit = 1000000000000L;
         public const int VeinOreTarget = 24, VeinOfferSeconds = 20, VeinBoostSeconds = 12, VeinMultiplier = 3;
         public const int MaxWarehouse = 4, MaxOfflineSeconds = 12 * 3600;
-        public const int PrestigeUpgradeCount = 21, MaxPrestiges = 1000000, MaxCrystals = 10000000;
+        public const int PrestigeUpgradeCount = 24, MaxPrestiges = 1000000, MaxCrystals = 10000000;
         public const int GuideStepCount = 5;
         public const int OreCount = 10, StoneKind = 9, ObsidianKind = 10, VideoTickets = 10, VideoCooldownSeconds = 180, OfflineVideoMultiplier = 3;
         public const int ObsidianWearPercent = 10;
-        private const int ShieldUpgrade = 18, ObsidianUpgrade = 19, FreeLayoutUpgrade = 20;
+        private const int ShieldUpgrade = 18, ObsidianUpgrade = 19, ExpeditionPowerUpgrade = 20;
+        private const int BlockLootUpgrade = 21, ChestLootUpgrade = 22, PerfectFloorUpgrade = 23;
         private const int OfflineDivisor = 4000;
         private const long MaxUtcSeconds = 253402300799L, MaxProductionMilli = 15512500;
         private static readonly PrestigeUpgrade[] PrestigeUpgrades = {
@@ -104,7 +105,10 @@ namespace MineLoot
             new PrestigeUpgrade("Древние чары", "+1 эффект\nпри зачаровании", "crystal", 6),
             new PrestigeUpgrade("Страховка", "Спасает кирку\nодин раз за шахту", "pick2", 4),
             new PrestigeUpgrade("Закалка", "Износ от обсидиана\nвдвое меньше", "tile-obsidian", 5),
-            new PrestigeUpgrade("Новый проход", "Одна смена раскладки\nза шахту бесплатно", "ticket", 6)
+            new PrestigeUpgrade("Усиленный спуск", "+1 к силе каждой\nкирки в рулетке", "pick4", 6),
+            new PrestigeUpgrade("Ценные породы", "+50% монет за\nблоки в рулетке", "tile-gold", 4),
+            new PrestigeUpgrade("Кладоискатель", "+25% монет\nиз сундуков", "chest", 5),
+            new PrestigeUpgrade("Чистый пласт", "Ещё 1 жетон\nза все 5 сундуков", "ticket", 6)
         };
         public static PrestigeUpgrade PrestigeUpgradeAt(int index) => PrestigeUpgrades[index];
         // IDs 0..8 belong to existing saves; stone is appended. Display order is independent of the ID.
@@ -207,10 +211,12 @@ namespace MineLoot
         public bool CanClaimRewardedOffline => CanClaimOffline && RewardedOfflineReward <= CoinLimit - Progress.coins;
         public int Hardness => Math.Min(4, 1 + (Progress.stratum - 1) / 3);
         public int Biome => ((Progress.stratum - 1) / 3) % 3;
-        public int BlockReward => 6 + 2 * Math.Min(99, Progress.stratum - 1);
-        public int ChestReward => (60 + 20 * Math.Min(99, Progress.stratum - 1)) * (100 + Progress.treasureLevel * 15) * (HasPrestigeUpgrade(2) ? 125 : 100) / 10000 * (Progress.stratum >= 20 ? 125 : 100) / 100;
+        public int BlockReward => (6 + 2 * Math.Min(99, Progress.stratum - 1)) * (HasPrestigeUpgrade(BlockLootUpgrade) ? 150 : 100) / 100;
+        public int ChestReward => (60 + 20 * Math.Min(99, Progress.stratum - 1)) * (100 + Progress.treasureLevel * 15) * (HasPrestigeUpgrade(2) ? 125 : 100) / 10000 * (Progress.stratum >= 20 ? 125 : 100) / 100 * (HasPrestigeUpgrade(ChestLootUpgrade) ? 125 : 100) / 100;
+        public int PerfectFloorTickets => HasPrestigeUpgrade(PerfectFloorUpgrade) ? 2 : 1;
         public int FloorReward => 100 + 30 * Math.Min(99, Progress.stratum - 1);
         public int PowerBonus => Progress.forgeLevel / 2;
+        public int ExpeditionPowerBonus => PowerBonus + (HasPrestigeUpgrade(ExpeditionPowerUpgrade) ? 1 : 0);
         public int DiamondChance => 10 + Progress.forgeLevel;
         public int IronChance => 35 + Progress.forgeLevel;
         public long UpgradeCost => UpgradePrice(UpgradeKind.Pickaxe);
@@ -227,10 +233,9 @@ namespace MineLoot
         }
         public bool HasPendingRoll => Progress.rollPending;
         public bool GuideActive => Progress.guideStep < GuideStepCount;
-        public bool FreeLayoutAvailable => HasPrestigeUpgrade(FreeLayoutUpgrade) && !Progress.freeLayoutUsed;
-        public bool CanAbandon => !ActionsLocked && (FreeLayoutAvailable || Progress.tickets > 0) && !IsComplete;
+        public bool CanAbandon => !ActionsLocked && Progress.tickets > 0 && !IsComplete;
         public bool IsActiveColumn(int column) => column >= 0 && column < Columns && Progress.depths[column] < Rows && !Progress.lostColumns[column];
-        public int PendingPower(int column) => HasPendingRoll && column >= 0 && column < Columns && Progress.pendingTypes[column] > 0 ? Progress.pendingTypes[column] + PowerBonus : 0;
+        public int PendingPower(int column) => HasPendingRoll && column >= 0 && column < Columns && Progress.pendingTypes[column] > 0 ? Progress.pendingTypes[column] + ExpeditionPowerBonus : 0;
         public int SwapsRemaining => HasPendingRoll ? Math.Max(0, Progress.pendingSwapLimit - Progress.pendingSwapCount) : 0;
         public bool CanSwapPicks(int first, int second) => HasPendingRoll && !Progress.pendingBatch && SwapsRemaining > 0 && first != second && IsActiveColumn(first) && IsActiveColumn(second) && Progress.pendingTypes[first] != Progress.pendingTypes[second];
         public bool CanSwap
@@ -895,12 +900,8 @@ namespace MineLoot
         {
             if (!CanAbandon) return false;
             int seed = DrawSeed(random);
-            if (FreeLayoutAvailable) Progress.freeLayoutUsed = true;
-            else
-            {
-                Progress.tickets--;
-                Progress.spentTickets = Math.Min(CoinLimit, Progress.spentTickets + 1);
-            }
+            Progress.tickets--;
+            Progress.spentTickets = Math.Min(CoinLimit, Progress.spentTickets + 1);
             NextFloor(seed, false);
             return true;
         }
@@ -1000,7 +1001,7 @@ namespace MineLoot
             {
                 result.completed = true;
                 result.perfect = IsPerfect;
-                if (result.perfect) { result.reward += FloorReward; Progress.tickets = Math.Min(1000000, Progress.tickets + 1); }
+                if (result.perfect) { result.reward += FloorReward; Progress.tickets = Math.Min(1000000, Progress.tickets + PerfectFloorTickets); }
                 else Progress.failedFloors++;
             }
             result.levelCoins = GainExperience(result.broken, out result.levelTickets, out result.experience);

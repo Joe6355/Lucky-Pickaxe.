@@ -9,12 +9,15 @@
   let device, sentDevice, viewportPaused = false;
   let account = { available: false, status: "unavailable", name: "" }, authPending = false, sentAccount, accountGeneration=0;
   const ratingName="mmr";
+  const ratingResetThreshold=50000, ratingResetScore=30000;
   let ratingCache, ratingLoadPending=false, ratingSendPending=false, ratingLoadAfter=0, ratingSendAfter=0, ratingLoadGeneration=-1;
   const removers = [];
   const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(root.location.hostname);
   const journalKey = key => "LuckyPickaxe." + key + ".journal";
   const progressKey = "MineLoot.Progress.v2", cloudKey = "luckyPickaxeSave", cloudMetaKey = "LuckyPickaxe.cloud.v1";
+  const starterProgress = '{"version":17,"coins":80,"tickets":2}';
   let playerHandle, cloudContext, latestProgress, cloudAccount = "", cloudMeta = {}, cloudState = {status:"unavailable"};
+  let mergeRestored = false, ratingOwner = "";
   let cloudEpoch = 0, cloudSerial = 0, cloudTimer, cloudBusy = false, cloudDecision, cloudAfter = 0, cloudRead, localMerge, pendingWarehouseClaim;
   const cloudInterval = 300000, cloudRetryInterval = 30000, cloudReadWindow = 20000;
   const cloudReadHandles=new WeakSet();
@@ -144,7 +147,8 @@
       ||(b.state.upgradeLevel||0)-(a.state.upgradeLevel||0)
       ||(b.toolClock??b.clock)-(a.toolClock??a.clock)||b.id.localeCompare(a.id))[0];
     if(pick) for(const field of toolFields) data[field]=clone(pick.state[field]??(field==="enchantSeed"?6355:0));
-    for(const field of ["prestigeShieldUsed","freeLayoutUsed"]) data[field]=recent.some(p=>p.state[field]);
+    data.prestigeShieldUsed=recent.some(p=>p.state.prestigeShieldUsed);
+    delete data.freeLayoutUsed;
     for(const field of boardFields) if(board?.state[field]!==undefined) data[field]=clone(board.state[field]);
     data.goldenChestMask=board?.state.goldenChestMask||0;
     if (data.version === 16 && recent.some(p=>p.state.version === 17)) {
@@ -160,12 +164,20 @@
     data.ratingHistoryPartial=ledger.parts.some(p=>p.state.ratingHistoryPartial);data.ratingTestProfile=false;
     return JSON.stringify(data);
   }
-  function restoreMerge() {
-    if(localMerge) return;
+  const accountJournal = owner => journalKey(progressKey)+".account."+encodeURIComponent(owner);
+  function readMerge(json) {
     try {
-      const journal=JSON.parse(stored(journalKey(progressKey))||"null"),meta=journal?._sync;
-      if(meta?.version===2 && typeof meta.account==="string" && /^[a-zA-Z0-9-]{1,100}$/.test(meta.device)) {localMerge={account:meta.account,device:meta.device,ledger:validLedger(warehouseLedger(meta.ledger,JSON.stringify(meta.observed||journal))),observed:meta.observed||progressData(JSON.stringify(journal))};pendingWarehouseClaim=meta.pendingWarehouseClaim;}
+      const journal=JSON.parse(json||"null"),meta=journal?._sync;
+      if(meta?.version===2 && typeof meta.account==="string" && meta.account && /^[a-zA-Z0-9-]{1,100}$/.test(meta.device))
+        return {account:meta.account,device:meta.device,ledger:validLedger(warehouseLedger(meta.ledger,JSON.stringify(meta.observed||journal))),observed:meta.observed||progressData(json),pendingWarehouseClaim:meta.pendingWarehouseClaim};
     } catch { /* The ordinary progress journal remains readable if only its sync metadata is damaged. */ }
+    return null;
+  }
+  function restoreMerge() {
+    if(mergeRestored) return;
+    mergeRestored=true;
+    localMerge=readMerge(stored(journalKey(progressKey)));
+    pendingWarehouseClaim=localMerge?.pendingWarehouseClaim;
   }
   function captureProgress(json) {
     if(!localMerge) return;
@@ -210,7 +222,9 @@
       if(meaningful(json)!==meaningful(JSON.stringify(localMerge.observed))) data._sync.observed=localMerge.observed;
       if(pendingWarehouseClaim)data._sync.pendingWarehouseClaim=pendingWarehouseClaim;
     }
-    return store(journalKey(progressKey),JSON.stringify(data));
+    const snapshot=JSON.stringify(data);
+    if(localMerge) store(accountJournal(localMerge.account),snapshot);
+    return store(journalKey(progressKey),snapshot);
   }
 
   function stored(key) { try { return root.localStorage.getItem(key); } catch (error) { storageWarning(error); return null; } }
@@ -249,14 +263,15 @@
     if(value.version>=2) validLedger(value.ledger);
     return value;
   }
-  function offerCloud(remote,ledger,replaceAccount=false) {
+  function offerCloud(remote,ledger,replacement=null) {
     const token=cloudEpoch+"-"+(++cloudSerial);
     const data=projectLedger(ledger);
-    cloudDecision={token,remote,ledger,data,replaceAccount};cancelCloudTimer();
-    const authoritative=!!remote && (replaceAccount || coversTransactions(remote.version>=2?warehouseLedger(remote.ledger,remote.data):ledgerFor(remote.data),localMerge.ledger));
-    cloudNotify({status:"merged",token,data,local:cloudLocal(),authoritative});
+    cloudDecision={token,remote,ledger,data,replacement};cancelCloudTimer();
+    const authoritative=!!replacement || !!remote && coversTransactions(remote.version>=2?warehouseLedger(remote.ledger,remote.data):ledgerFor(remote.data),localMerge.ledger);
+    cloudNotify({status:"merged",token,data,local:cloudLocal(),authoritative,accountSwitch:!!replacement});
   }
   function reconcileCloud(remote,initial) {
+    if(remote?.owner && remote.owner!==cloudAccount) throw new Error("Cloud save belongs to another account");
     const remoteLedger=remote?(remote.version>=2?warehouseLedger(remote.ledger,remote.data):ledgerFor(remote.data)):{version:1,warehouseVersion:1,parts:[]};
     const current=cloudLocal();restoreMerge();
     if(!localMerge) {
@@ -264,20 +279,23 @@
       const switched=cloudMeta.account && cloudMeta.account!==cloudAccount;
       const fresh=initial && !cloudContext.existed;
       if(switched) {
-        store(journalKey(progressKey)+".account-backup",stored(journalKey(progressKey))||current);
         localMerge={account:cloudMeta.account,device:newDeviceId(),ledger:ledgerFor(current),observed:progressData(current)};
-        offerCloud(remote,remote?remoteLedger:ledgerFor('{"version":16,"coins":80,"tickets":2}'),true);return false;
       }
-      localMerge={account:cloudAccount,device:newDeviceId(),ledger:clone(same?remoteLedger:switched||fresh&&remote?{version:1,parts:[]}:ledgerFor(current)),observed:progressData(same?remote.data:switched?'{"version":16}':fresh&&remote?cloudContext.data:current)};
-      if(!switched && !(fresh&&remote&&meaningful(current)===meaningful(cloudContext.data))) captureProgress(current);
+      else {
+        localMerge={account:cloudAccount,device:newDeviceId(),ledger:clone(same?remoteLedger:fresh&&remote?{version:1,parts:[]}:ledgerFor(current)),observed:progressData(same?remote.data:fresh&&remote?cloudContext.data:current)};
+        if(!(fresh&&remote&&meaningful(current)===meaningful(cloudContext.data))) captureProgress(current);
+      }
     }
     if(localMerge.account!==cloudAccount) {
       // Account changes never donate another person's wallet. Its entire journal is retained.
-      store(journalKey(progressKey)+".account-backup",stored(journalKey(progressKey))||current);
-      offerCloud(remote,remote?remoteLedger:ledgerFor('{"version":16,"coins":80,"tickets":2}'),true);return false;
+      persistJournal(current);
+      const saved=readMerge(stored(accountJournal(cloudAccount)));
+      const replacement=saved?.account===cloudAccount?saved:{account:cloudAccount,device:newDeviceId(),ledger:remote?remoteLedger:ledgerFor(starterProgress)};
+      offerCloud(remote,replacement.ledger,replacement);return false;
     }
     if(containsLedger(localMerge.ledger,remoteLedger)) {
       persistJournal(current);
+      ratingOwner=cloudAccount;
       cloudMeta={account:cloudAccount,revision:remote?.revision||"",pending:""};saveCloudMeta();
       cloudNotify({status:remote?.version===3&&containsLedger(remoteLedger,localMerge.ledger)?"saved":"local"});scheduleCloud();return true;
     }
@@ -289,13 +307,26 @@
     const data=projectLedger(joined);
     if(meaningful(current)!==meaningful(data)) {offerCloud(remote,joined);return false;}
     localMerge.ledger=joined;localMerge.observed=progressData(current);persistJournal(current);
+    ratingOwner=cloudAccount;
     cloudMeta={account:cloudAccount,revision:remote?.revision||"",pending:""};saveCloudMeta();
     cloudNotify({status:remote?.version===3 && containsLedger(remoteLedger,joined)?"saved":"local"});scheduleCloud();return true;
   }
   async function beginCloud() {
+    ratingOwner="";
     cancelCloudTimer();const epoch=++cloudEpoch;cloudBusy=false;cloudDecision=null;cloudRead=null;cloudAccount="";cloudAfter=0;
     if(!cloudContext) return;
-    if(!playerHandle || account.status!=="authorized") {cloudNotify({status:"guest"});return;}
+    if(!playerHandle || account.status!=="authorized") {
+      restoreMerge();
+      if(playerHandle && account.status==="guest" && localMerge?.account && !localMerge.account.startsWith("guest:")) {
+        persistJournal(cloudLocal());
+        const guest={account:"guest:device",device:newDeviceId(),ledger:ledgerFor(starterProgress)};
+        const saved=readMerge(stored(accountJournal(guest.account)));
+        const replacement=saved?.account===guest.account?saved:guest;
+        offerCloud(null,replacement.ledger,replacement);
+      }
+      else cloudNotify({status:"guest"});
+      return;
+    }
     try {
       if(typeof playerHandle.getUniqueID!=="function" || typeof playerHandle.getData!=="function" || typeof playerHandle.setData!=="function") throw new Error("Cloud methods unavailable");
       cloudAccount=String(playerHandle.getUniqueID()||"");if(!cloudAccount) throw new Error("Account ID unavailable");
@@ -328,11 +359,11 @@
       cloudRead=null;
       const data=cloudLocal();
       const remote=validRemote(result?.[cloudKey]);
-      if(remote?.version===3 && containsLedger(remote.ledger,localMerge.ledger)) return true;
+      if(remote?.version===3 && remote.owner===cloudAccount && containsLedger(remote.ledger,localMerge.ledger)) return true;
       cloudBusy=true;cancelCloudTimer();cloudNotify({status:"syncing"});
       const revision=Date.now().toString(36)+"-"+(++cloudSerial)+"-"+Math.random().toString(36).slice(2);
       const ledger=clone(localMerge.ledger);
-      const envelope={version:3,revision,parent:cloudMeta.revision,updatedAt:Date.now(),data,ledger};
+      const envelope={version:3,owner:cloudAccount,revision,parent:cloudMeta.revision,updatedAt:Date.now(),data,ledger};
       if(JSON.stringify(envelope).length>175000) throw new Error("Cloud ledger capacity exceeded");
       // Persist the in-flight revision first: a lost acknowledgement can be recovered on the next read.
       cloudMeta.pending=revision;saveCloudMeta();
@@ -349,11 +380,15 @@
     if(!useCloud) {reconcileCloud(decision.remote,false);return true;}
     store(journalKey(progressKey)+".before-merge",stored(journalKey(progressKey))||cloudLocal());
     if(decision.remote) store(journalKey(progressKey)+".remote-backup",JSON.stringify(decision.remote));
-    if(decision.replaceAccount) localMerge={account:cloudAccount,device:newDeviceId(),ledger:decision.ledger,observed:progressData(decision.data)};
+    if(decision.replacement) {
+      localMerge={...decision.replacement,observed:progressData(decision.data)};
+      pendingWarehouseClaim=null;
+    }
     else {localMerge.ledger=decision.ledger;localMerge.observed=progressData(decision.data);}
     latestProgress=decision.data;
     persistJournal(decision.data);
-    cloudNotify({status:"local"});scheduleCloud();
+    ratingOwner=cloudAccount;
+    cloudNotify({status:cloudAccount?"local":"guest"});scheduleCloud();
     // Run after Unity has journaled its validated/normalized snapshot, on the same fresh read.
     Promise.resolve().then(()=>syncCloud());return true;
   }
@@ -446,9 +481,15 @@
     const authorized=!!(player && typeof player.isAuthorized==="function" && player.isAuthorized());
     return {available:true,status:authorized?"authorized":"guest",name:authorized&&typeof player.getName==="function"?String(player.getName()||"").slice(0,40):""};
   }
+  function playerId(player) {
+    return player?.isAuthorized?.() ? String(player.getUniqueID?.() || "") : "";
+  }
   function readAccount() {
     if(!sdk || typeof sdk.getPlayer!=="function" || typeof sdk.auth?.openAuthDialog!=="function") return;
-    const generation=++accountGeneration;account={available:true,status:"checking",name:""};notify();
+    const generation=++accountGeneration;
+    ratingOwner="";ratingCache=null;ratingLoadAfter=ratingSendAfter=0;
+    cancelCloudTimer();++cloudEpoch;cloudDecision=null;cloudRead=null;
+    account={available:true,status:"checking",name:""};notify();
     Promise.resolve().then(()=>disposed?null:sdk.getPlayer()).then(player=>{if(!disposed && generation===accountGeneration){playerHandle=player;account=accountFrom(player);notify();beginCloud();}}).catch(()=>{if(!disposed && generation===accountGeneration){playerHandle=null;account={available:true,status:"guest",name:""};notify();beginCloud();}});
   }
   function authorize() {
@@ -491,19 +532,44 @@
   function submitRating(json) {
     if(disposed || !ready || local || account.status!=="authorized" || authPending || ratingSendPending || Date.now()<ratingSendAfter || !sdk?.leaderboards || typeof sdk.leaderboards.setScore!=="function" || typeof sdk.leaderboards.getPlayerEntry!=="function" || typeof sdk.isAvailableMethod!=="function" || typeof json!=="string" || json.length>512) return false;
     let data;try {data=JSON.parse(json);} catch {return false;}
-    if(data?.version!==1 || !Number.isSafeInteger(data.score) || data.score<=0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
-    const generation=accountGeneration;ratingSendPending=true;ratingSendAfter=Date.now()+30000;
+    if(data?.version!==1 || !Number.isSafeInteger(data.score) || data.score<0 || data.score>2147483647 || ![data.blocks,data.coins,data.tickets,data.xp].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e12) || !Number.isSafeInteger(data.resets) || data.resets<0 || data.resets>1e6) return false;
+    const owner=ratingOwner;
+    if(!owner || owner!==cloudAccount || localMerge?.account!==owner || cloudDecision) return false;
+    const generation=accountGeneration;ratingSendPending=true;ratingSendAfter=Date.now()+45000;
+    const sameSession=()=>!disposed && generation===accountGeneration;
+    const currentAccount=()=>sameSession() && ratingOwner===owner && !cloudDecision;
     Promise.resolve().then(async()=>{
       if(!await sdk.isAvailableMethod("leaderboards.setScore") || !await sdk.isAvailableMethod("leaderboards.getPlayerEntry")) throw new Error("Rating unavailable");
-      let previous=0;
-      try {const entry=await sdk.leaderboards.getPlayerEntry(ratingName);if(Number.isSafeInteger(entry?.score)&&entry.score>0) previous=entry.score;}
+      if(!currentAccount()) throw new Error("Rating save changed");
+      if(playerId(await sdk.getPlayer())!==owner) {if(currentAccount()) readAccount();return;}
+      if(!currentAccount()) throw new Error("Rating save changed");
+      let previous=0,resetBase=-1,corrected=false;
+      try {
+        const entry=await sdk.leaderboards.getPlayerEntry(ratingName);
+        if(Number.isSafeInteger(entry?.score)&&entry.score>0) previous=entry.score;
+        let extra;try {extra=JSON.parse(entry?.extraData||"null");} catch {}
+        corrected=extra?.ratingRevision===1;
+        if(corrected && Number.isSafeInteger(extra.resetBase)&&extra.resetBase>=0&&extra.resetBase<=2147483647) resetBase=extra.resetBase;
+      }
       catch(error) {if(!ratingFailure(error)) throw error;}
-      if(disposed || generation!==accountGeneration) return;
-      if(data.score>previous) await sdk.leaderboards.setScore(ratingName,data.score,JSON.stringify(data));
-      if(disposed || generation!==accountGeneration) return;
+      if(!currentAccount()) throw new Error("Rating save changed");
+      const reset=!corrected && previous>ratingResetThreshold;
+      if(reset) resetBase=data.score;
+      const score=resetBase>=0 ? Math.min(2147483647,ratingResetScore+Math.max(0,data.score-resetBase)) : data.score;
+      if(reset || score>previous) {
+        if(playerId(await sdk.getPlayer())!==owner) {if(currentAccount()) readAccount();return;}
+        if(!currentAccount()) throw new Error("Rating save changed");
+        await sdk.leaderboards.setScore(ratingName,score,JSON.stringify({...data,score,ratingRevision:1,resetBase}));
+        if(reset) {
+          const updated=await sdk.leaderboards.getPlayerEntry(ratingName);
+          if(updated?.score!==score || JSON.parse(updated.extraData||"null")?.resetBase!==resetBase)
+            throw new Error("Rating reset not confirmed");
+        }
+      }
+      if(!currentAccount()) throw new Error("Rating save changed");
       ratingCache=null;ratingLoadAfter=0;
-      send("OnBrowserRatingSaved",JSON.stringify({status:"saved",score:Math.max(data.score,previous)}));
-    }).catch(()=>{if(!disposed && generation===accountGeneration) send("OnBrowserRatingSaved",JSON.stringify({status:"error"}));}).finally(()=>{ratingSendPending=false;});
+      send("OnBrowserRatingSaved",JSON.stringify({status:"saved",score:reset?score:Math.max(score,previous),resetBase,resetApplied:resetBase>=0}));
+    }).catch(()=>{if(sameSession()) send("OnBrowserRatingSaved",JSON.stringify({status:"error"}));}).finally(()=>{ratingSendPending=false;});
     return true;
   }
   function finishReady() {

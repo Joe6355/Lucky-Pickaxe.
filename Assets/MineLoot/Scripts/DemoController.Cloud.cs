@@ -6,7 +6,7 @@ namespace MineLoot
 {
     public sealed partial class DemoController
     {
-        [Serializable] private sealed class CloudPayload { public string status,token,data,local,waitingFor; public bool authoritative; public long nextSyncUtc; }
+        [Serializable] private sealed class CloudPayload { public string status,token,data,local,waitingFor; public bool authoritative,accountSwitch; public long nextSyncUtc; }
         private string cloudStatus="unavailable";
         private string cloudWaitingFor;
         private bool cloudRatingReady;
@@ -23,7 +23,7 @@ namespace MineLoot
             cloudStatus=payload.status;
             cloudNextSyncUtc=payload.nextSyncUtc;
             cloudWaitingFor=payload.waitingFor;
-            cloudRatingReady=cloudStatus=="local" || cloudStatus=="saved" || cloudStatus=="guest";
+            cloudRatingReady=cloudStatus=="local" || cloudStatus=="saved";
             if(cloudStatus=="merged") pendingCloud=payload;
             else if(cloudStatus=="loading" || cloudStatus=="guest" || cloudStatus=="error") pendingCloud=null;
             RefreshCloudStatus();PumpCloudDecision();
@@ -70,7 +70,8 @@ namespace MineLoot
             // Other dialogs and unacknowledged paid transactions still defer replacement.
             bool keepAccount=modal!=null && modal.name=="Yandex account modal";
             bool keepWarehouse=modal!=null && modal.name=="Offline reward modal";
-            if(pendingCloud==null || RewardedVideoPending || accountPending || browserPaused || enginePaused || holding || !pendingCloud.authoritative && (busy || game.ActionsLocked) || modal!=null && !keepAccount && !keepWarehouse) return;
+            if(pendingCloud==null || RewardedVideoPending || accountPending || browserPaused || enginePaused ||
+                !pendingCloud.accountSwitch && (holding || !pendingCloud.authoritative && (busy || game.ActionsLocked) || modal!=null && !keepAccount && !keepWarehouse)) return;
             var decision=pendingCloud;
             Flush(true);
             if(!SameCloudProgress(JsonUtility.ToJson(game.Progress),decision.local)) {
@@ -88,7 +89,7 @@ namespace MineLoot
             // is acknowledged as imported progress rather than counted as another local reward.
             BrowserPlatform.ResolveCloud(decision.token,true);
             StopAllCoroutines();if(miningGain!=null) {Destroy(miningGain.gameObject);miningGain=null;}
-            game=merged;game.PrepareOffline(SessionUtc);RestorePresentation(keepAccount||keepWarehouse);
+            game=merged;game.PrepareOffline(SessionUtc);RestorePresentation(keepAccount || keepWarehouse && !decision.accountSwitch);
             if(!game.ActionsLocked) {
                 selectedPage=page;workshopSection=section;productionTab=production;ApplyPageVisibility();
             }

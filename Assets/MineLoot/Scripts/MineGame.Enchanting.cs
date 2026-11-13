@@ -7,6 +7,7 @@ namespace MineLoot
     public sealed partial class MineGame
     {
         public const long EnchantingExperienceLimit = 1000000000;
+        public const int CurseChance = 60, MendingChance = 2, TopEnchantChance = 10;
         private static readonly int[] PickLifetimes = { 160, 320, 640, 320, 1280, 1920 };
         public int PickLifetime => PickLifetimes[PickTier] * (HasPrestigeUpgrade(10)?150:100)/100;
         public int PickCondition => Math.Max(0, PickLifetime - Progress.pickWear);
@@ -42,8 +43,8 @@ namespace MineLoot
             int count=slot==0?1:slot==1?2:2+(int)(Next()%2);
             if(Next()%100<20) count++;
             if(HasPrestigeUpgrade(17)) count++;
-            bool mending = slot == 2 && Next() % 100 < 5;
-            bool curse = Next() % 100 < 15;
+            bool mending = slot == 2 && Next() % 100 < MendingChance;
+            bool curse = Next() % 100 < CurseChance;
             count = Math.Min(count, 3);
             if (mending && count == 3 && curse) count--;
             int[] kinds = { 0, 1, 2 };
@@ -51,10 +52,12 @@ namespace MineLoot
             for(int i=0;i<count;i++)
             {
                 int chosen=i+(int)(Next()%(uint)(kinds.Length-i));int kind=kinds[chosen];kinds[chosen]=kinds[i];kinds[i]=kind;
-                int max=EnchantmentMax((EnchantKind)kind),low=slot==2&&max>1?2:1;
-                int high=Math.Min(max,slot==0?2:slot==1?3:5);
-                if (mending && kind == (int)EnchantKind.Unbreaking) high = 2;
-                int level=low+(int)(Next()%(uint)(high-low+1));set|=level<<(kind*4);
+                int max = EnchantmentMax((EnchantKind)kind);
+                int low = slot == 2 ? 2 : 1;
+                int high = Math.Min(max - 1, slot + 2);
+                bool topAllowed = slot == 2 && !(mending && kind == (int)EnchantKind.Unbreaking);
+                int level = topAllowed && Next() % 100 < TopEnchantChance ? max : low + (int)(Next() % (uint)(high - low + 1));
+                set |= level << (kind * 4);
             }
             if (mending) set |= 1 << ((int)EnchantKind.Mending * 4);
             if (curse) set |= 1 << ((int)(Next() % 2 == 0 ? EnchantKind.Slowness : EnchantKind.Greed) * 4);

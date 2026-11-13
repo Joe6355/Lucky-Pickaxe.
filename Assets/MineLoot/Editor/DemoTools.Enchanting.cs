@@ -106,11 +106,11 @@ public static partial class DemoTools
         obstacle.Mine();
         check(obstacle.Progress.prestigeShieldUsed && obstacle.LastHit.levelsLost == 0 && obstacle.PickCondition == obstacle.PickLifetime,
             "The shield absorbs the first break in the current mine");
-        obstacle.Progress.tickets = 0;
-        check(obstacle.Abandon(() => .5) && !obstacle.FreeLayoutAvailable && !obstacle.CanAbandon && obstacle.Progress.spentTickets == 0,
-            "A free layout change spends the perk once without charging a ticket");
+        obstacle.Progress.tickets = 1;
+        check(obstacle.ExpeditionPowerBonus == 1 && obstacle.Abandon(() => .5) && !obstacle.CanAbandon && obstacle.Progress.spentTickets == 1,
+            "The old permanent purchase becomes an extra point of expedition power and layout changes cost a ticket");
 
-        int mending = 0, curses = 0;
+        int mending = 0, curses = 0, fortune = 0, topFortune = 0;
         var rng = new System.Random(6355);
         var charmed = new MineGame(new MineProgress { enchantingExperience = MineGame.EnchantingExperienceLimit });
         for (int i = 0; i < 2000; i++)
@@ -122,9 +122,12 @@ public static partial class DemoTools
                 check(charmed.EnchantmentLevel(EnchantKind.Unbreaking) < 3, "New Mending rolls exclude Unbreaking III");
             }
             if (charmed.EnchantmentLevel(EnchantKind.Slowness) > 0 || charmed.EnchantmentLevel(EnchantKind.Greed) > 0) curses++;
+            if (charmed.EnchantmentLevel(EnchantKind.Fortune) > 0) fortune++;
+            if (charmed.EnchantmentLevel(EnchantKind.Fortune) == 3) topFortune++;
         }
-        check(mending > 60 && mending < 140 && curses > 220 && curses < 380,
-            "Seeded grade III draws show rare Mending and random negative effects");
+        check(mending > 20 && mending < 65 && curses > 1100 && curses < 1300 &&
+            topFortune > fortune * .07 && topFortune < fortune * .13,
+            "Grade III draws approximate 2% Mending, 60% curses and 10% maximum Fortune when selected");
 
         int gold = 0, chests = 0;
         for (int seed = 1; seed <= 1200; seed++)
@@ -148,7 +151,14 @@ public static partial class DemoTools
             int coins=game.Progress.crystals;check(game.BuyPrestigeUpgrade(i) && game.Progress.crystals==coins-MineGame.PrestigeUpgradeAt(i).cost && !game.BuyPrestigeUpgrade(i),"Permanent bonus pays its price once: "+i);
             game=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         }
-        check(game.Progress.crystals==0 && game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All twenty-one permanent flags survive reload without free crystals");
+        check(game.Progress.crystals==0 && game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All permanent flags survive reload without free crystals");
+        var expedition = new MineGame(new MineProgress { prestigeCount = 1, prestigeUpgrades = 63 << 18,
+            depths = new[] { 4, 4, 4, 4, 4 }, tickets = 1 });
+        check(expedition.BlockReward == 9 && expedition.ChestReward == 75 && expedition.BeginRoll(() => .99) &&
+            expedition.PendingPower(0) == 5, "Expedition perks increase power and loot");
+        var payout = expedition.ResolveRoll();
+        check(payout.perfect && payout.chests == 5 && expedition.Progress.tickets == 2 && expedition.ResolveRoll() == null,
+            "Two tickets are awarded exactly once for completing all five chests");
         check(game.EnchantmentCost(0)==52 && game.EnchantmentDiscountPercent==25 && game.PickLifetime==480 && game.RareOreChance==30 && game.PrestigeExperiencePercent==140,"Tool and mining bonuses change actual prices, lifetime, rare chance and XP");
         game.Progress.pickWear=480;check(game.RepairCost==40,"Permanent workshop cuts a fully worn stone pick repair from eighty to forty coins");
         game.Progress.experience=MineGame.ExperienceForLevel(50);check(game.Prestige(()=>.6) && game.Progress.tickets==12 && game.Progress.enchantingExperience==300 && game.PickLifetime==480,"A reset grants the owned ticket and XP starter bonuses with the durable stone pick");

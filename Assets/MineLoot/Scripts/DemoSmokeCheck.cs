@@ -394,7 +394,9 @@ namespace MineLoot
         private IEnumerator VerifyNewMineAndAccount(DemoController demo,VoxelStage stage)
         {
             Screen.SetResolution(480,960,false);yield return new WaitForSecondsRealtime(.2f);
-            demo.RestoreForSmoke(new MineProgress{coins=10000,experience=MineGame.ExperienceForLevel(50),prestigeCount=1,crystals=84,totalCrystals=84,workerCount=1});
+            int perkCost = 0;
+            for (int i = 0; i < MineGame.PrestigeUpgradeCount; i++) perkCost += MineGame.PrestigeUpgradeAt(i).cost;
+            demo.RestoreForSmoke(new MineProgress{coins=10000,experience=MineGame.ExperienceForLevel(50),prestigeCount=1,crystals=perkCost,totalCrystals=perkCost,workerCount=1});
             demo.Game.RecordSession(1700000000);demo.Game.PrepareOffline(1700000600);demo.ShowWorkshop();Click("Open prestige");
             Check(FindButton("Prepare prestige").interactable && FindButton("Prepare prestige").GetComponentInChildren<Text>().text=="ОТКРЫТЬ СКЛАД","A warehouse lock names its reason and offers the required action");
             CheckLayout();Capture("unity-v0311-reset-warehouse.png");Click("Prepare prestige");yield return null;
@@ -407,7 +409,7 @@ namespace MineLoot
                 for (int index = page * 6; index < Mathf.Min(page * 6 + 6, MineGame.PrestigeUpgradeCount); index++) Click("Buy prestige " + index);
                 if (page < pages - 1) Click("Prestige next");
             }
-            Check(demo.Game.Progress.crystals==0 && demo.Game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All twenty-one visible permanent cards spend crystals once with named prerequisites");
+            Check(demo.Game.Progress.crystals==0 && demo.Game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All visible permanent cards spend crystals once with named prerequisites");
             Click("Prepare prestige");yield return null;CheckLayout();Capture("unity-v0311-reset-confirm.png");Click("Confirm prestige");yield return null;
             Check(demo.Game.Progress.prestigeCount==2 && demo.Game.Progress.tickets==12 && demo.Game.Progress.enchantingExperience==300 && stage.WorkerOreTier==2,"Actual reset applies the starter bonuses and upgrades background worker minerals visually");
             Click("Close prestige");demo.ShowPage(false);

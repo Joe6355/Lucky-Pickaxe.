@@ -183,7 +183,7 @@ namespace MineLoot
                 Label(card.transform,MineGame.EnchantmentName((EnchantKind)i),12,6,368,28,21,Ink,FontStyle.Bold);
                 Label(card.transform,rules[i],12,36,368,66,17,Ink);
             }
-            Label(modal.transform,"Починка: 5% в чарах III, без Прочности III.\nТяжесть и Скупость могут выпасть случайно.\nНовый материал снимает чары и чинит кирку.",44,629,392,127,17,Muted);
+            Label(modal.transform,"Проклятие: "+MineGame.CurseChance+"% для любой степени.\nПочинка: "+MineGame.MendingChance+"% в III, без Прочности III.\nМакс. ранг эффекта в III: "+MineGame.TopEnchantChance+"%.\nНовый материал снимает чары и чинит кирку.",44,629,392,127,17,Muted);
             ButtonAt(modal.transform,"Понятно",44,790,392,40,CloseModal,Hex("bad5ca"),Ink).name="Close enchantment guide";
         }
 

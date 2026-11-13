@@ -28,7 +28,7 @@ public static partial class DemoTools
         PlayerSettings.companyName = "MineLootDemo";
         // Keep the existing company/application identifiers so installed v0.1 saves remain reachable.
         PlayerSettings.productName = "Mine Loot";
-        PlayerSettings.bundleVersion = "0.34.0";
+        PlayerSettings.bundleVersion = "0.34.1";
         PlayerSettings.defaultScreenWidth = 1280; PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
         PlayerSettings.resizableWindow = true;
@@ -813,7 +813,7 @@ public static partial class DemoTools
         bool malformed = false;
         try { new MineGame(new MineProgress { prestigeUpgrades = 2 }); } catch (FormatException) { malformed = true; }
         check(malformed, "Malformed permanent branches are rejected for backup recovery");
-        game = new MineGame(new MineProgress { prestigeCount = int.MaxValue, totalCrystals = int.MaxValue, crystals = int.MaxValue, prestigeUpgrades = 1 << 21, milestoneBest = new[] { long.MaxValue, -1L } });
+        game = new MineGame(new MineProgress { prestigeCount = int.MaxValue, totalCrystals = int.MaxValue, crystals = int.MaxValue, prestigeUpgrades = 1 << MineGame.PrestigeUpgradeCount, milestoneBest = new[] { long.MaxValue, -1L } });
         check(game.Progress.prestigeCount == MineGame.MaxPrestiges && game.Progress.totalCrystals == MineGame.MaxCrystals && game.Progress.crystals == MineGame.MaxCrystals && game.Progress.prestigeUpgrades == 0 && game.MilestoneValue(0) == 30 && game.MilestoneValue(1) == 0 && game.Progress.milestoneBest.Length == MineGame.MilestoneCount, "Save validation clamps permanent currencies and restores goal records without unknown upgrade bits");
         game.Progress.experience = MineGame.ExperienceForLevel(50);
         check(!game.CanPrestige && !game.Prestige(() => .5), "Prestige and crystal caps cannot overflow");
@@ -982,7 +982,7 @@ public static partial class DemoTools
         }
         if (secondsTotal[1] >= secondsTotal[0]) throw new Exception("Permanent upgrades did not improve average second-run progression");
         File.WriteAllText("Logs/prestige-runs.csv", rows.ToString());
-        var doc = new System.Text.StringBuilder("# Повторное прохождение и престиж 0.34\n\n100 воспроизводимых последовательностей, seed 6355–6454, по четыре шахты до уровня 50. Модель: 6 ударов в секунду вне рулетки, 3 секунды на розыгрыш, без времени на размышление. Бот покупает снаряжение и производство по правилам основной симуляции, забирает контракты и цели, использует раскрытый обсидиан и богатые жилы. Офлайн-доход в этой проверке не используется.\n\nПосле каждого достижения уровня 50 подтверждается один престиж. Каждая новая шахта даёт +15% опыта, максимум +75%; поток опыта добавляет ещё +25%. Дробный опыт переносится между начислениями. Приоритет постоянных покупок: запас монет, каменный старт, верный удар, мастер чар, запас прочности, поток опыта, рудная удача; затем остальные доступные узлы из 21. Награда за сброс — 8–20 кристаллов, все узлы стоят 84 кристалла. Цели и контракты сохраняются между шахтами; старые разовые награды не повторяются. После сброса и покупок выполняется JSON-загрузка, проверяются кристаллы и постоянные узлы.\n\n| Шахта | Среднее время, мин | Минимум, сек | Максимум, сек | Кристаллов за новую шахту | Куплено узлов всего |\n|---|---:|---:|---:|---:|---:|\n");
+        var doc = new System.Text.StringBuilder("# Повторное прохождение и престиж 0.34\n\n100 воспроизводимых последовательностей, seed 6355–6454, по четыре шахты до уровня 50. Модель: 6 ударов в секунду вне рулетки, 3 секунды на розыгрыш, без времени на размышление. Бот покупает снаряжение и производство по правилам основной симуляции, забирает контракты и цели, использует раскрытый обсидиан и богатые жилы. Офлайн-доход в этой проверке не используется.\n\nПосле каждого достижения уровня 50 подтверждается один престиж. Каждая новая шахта даёт +15% опыта, максимум +75%; поток опыта добавляет ещё +25%. Дробный опыт переносится между начислениями. Приоритет постоянных покупок: запас монет, каменный старт, верный удар, мастер чар, запас прочности, поток опыта, рудная удача; затем остальные доступные узлы. Награда за сброс зависит от числа пройденных шахт. Цели и контракты сохраняются между шахтами; старые разовые награды не повторяются. После сброса и покупок выполняется JSON-загрузка, проверяются кристаллы и постоянные узлы.\n\n| Шахта | Среднее время, мин | Минимум, сек | Максимум, сек | Кристаллов за новую шахту | Куплено узлов всего |\n|---|---:|---:|---:|---:|---:|\n");
         for (int i = 0; i < cycles; i++) doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "| {0} | {1:F2} | {2} | {3} | {4:F2} | {5:F2} |", i + 1, secondsTotal[i] / runs / 60, fastest[i], slowest[i], crystalsTotal[i] / runs, nodesTotal[i] / runs));
         doc.AppendLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "\nСреднее второе прохождение быстрее первого на {0:F1}%. Это результат заданного поведения бота, не обещание темпа для реального игрока. Сырые результаты: `Logs/prestige-runs.csv` после сборки или меню Simulate balance.", (1 - secondsTotal[1] / secondsTotal[0]) * 100));
         File.WriteAllText("Docs/PrestigeBalance.md", doc.ToString().Replace("\r\n", "\n"));
@@ -1027,7 +1027,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("This demo targets Unity 2022.3.47f1; current: " + Application.unityVersion);
         if (!File.Exists(ScenePath)) Prepare();
-        PlayerSettings.bundleVersion = "0.34.0";
+        PlayerSettings.bundleVersion = "0.34.1";
         VerifyRules();
         SimulateBalance();
         Directory.CreateDirectory("Builds/Windows");
@@ -1051,7 +1051,7 @@ public static partial class DemoTools
     {
         if (Application.unityVersion != "2022.3.47f1") throw new Exception("Use Unity 2022.3.47f1 for WebGL.");
         if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.WebGL, BuildTarget.WebGL)) throw new Exception("Install WebGL Build Support for Unity 2022.3.47f1.");
-        PlayerSettings.bundleVersion = "0.34.0";
+        PlayerSettings.bundleVersion = "0.34.1";
         PlayerSettings.WebGL.template = "PROJECT:LuckyPickaxe";
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Gzip;
         PlayerSettings.WebGL.decompressionFallback = true;
