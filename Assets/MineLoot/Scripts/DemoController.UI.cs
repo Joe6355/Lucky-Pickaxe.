@@ -37,6 +37,7 @@ namespace MineLoot
         private readonly Image[,] reelSymbols = new Image[5, 3];
         private readonly Button[] reelButtons = new Button[5];
         private readonly Image[] pickBorders = new Image[5];
+        private readonly Image[] goldenChestMarkers = new Image[5];
         private Text rollGain, boardText;
         private RectTransform noticeRect;
         private CanvasGroup noticeGroup;
@@ -247,6 +248,8 @@ namespace MineLoot
                     reelSymbols[column, symbol].enabled = symbol == 1;
                 }
                 picks[column] = reelSymbols[column, 1];
+                goldenChestMarkers[column] = Icon(reels[column].transform, "crystal", 48, 3, 23, 23);
+                goldenChestMarkers[column].name = "Golden chest marker " + column;
                 powers[column] = Label(page, "1 СИЛА", x, 136, 74, 20, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
             }
             boardText = Label(page, "", 41, 462, 398, 22, 16, Hex("ead9ad"), FontStyle.Normal, TextAnchor.MiddleCenter);
@@ -591,7 +594,7 @@ namespace MineLoot
                 Label(modal.transform, i == 0 ? "Сундук потерян" : "Только алмаз", x + 56, 378, 124, 24, 16, Muted);
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
-            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.ExpeditionPowerBonus) + " / " + (2 + game.ExpeditionPowerBonus) + " / " + (4 + game.ExpeditionPowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки сбрасывает сундуки.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
+            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.ExpeditionPowerBonus) + " / " + (2 + game.ExpeditionPowerBonus) + " / " + (4 + game.ExpeditionPowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан.\nПосле престижа: 1% на золотой сундук,\nесли нет неоткрытого золотого сундука.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки сбрасывает сундуки.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
             ButtonAt(modal.transform, "Подсказки", 47, 783, 184, 50, StartMiningGuide, Hex("bed18b"), Ink).name = "Start guide";
             ButtonAt(modal.transform, "Понятно", 243, 783, 190, 50, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }

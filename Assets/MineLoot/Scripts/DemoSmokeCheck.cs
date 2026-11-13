@@ -89,6 +89,7 @@ namespace MineLoot
             yield return VerifyStoneUi(demo);
             yield return VerifyRollBatch(demo);
             VerifyNewRollSpeeds(demo);
+            yield return VerifyGoldenChestPresentation(demo);
             demo.RestoreForSmoke(new MineProgress { coins = 10000, swapLevel = 1, tickets = 1 });
             demo.ShowPage(true); demo.SpinForSmoke(() => .6); yield return WaitForChoice(demo);
             Check(demo.AwaitingPickChoice && demo.Game.Progress.tickets == 0, "Paid roulette still fixes the draw and spends its last ticket once");
@@ -333,6 +334,26 @@ namespace MineLoot
             }
             Check(speed.text == original && seen.SetEquals(new[] { "×0,5", "×1", "×2" }),
                 "The roulette speed button cycles through all three settings and returns to its starting value");
+        }
+
+        private IEnumerator VerifyGoldenChestPresentation(DemoController demo)
+        {
+            const double goldenSample = 99.5 / (int.MaxValue - 1);
+            demo.RestoreForSmoke(new MineProgress { prestigeCount = 1, swapLevel = 1, tickets = 1,
+                depths = new[] { 4, 4, 4, 4, 4 } });
+            demo.ShowPage(true);
+            int draws = 0;
+            demo.SpinForSmoke(() => ++draws == 6 ? goldenSample : .99);
+            yield return null;
+            var marker = GameObject.Find("Golden chest marker 1").GetComponent<Image>();
+            var chest = GameObject.Find("Treasure chest 1").GetComponent<MeshRenderer>();
+            var otherChest = GameObject.Find("Treasure chest 0").GetComponent<MeshRenderer>();
+            Check(demo.RollPhase == "reels" && marker.enabled && chest.sharedMaterial != otherChest.sharedMaterial &&
+                demo.Game.Progress.crystals == 0, "Gold and its lane marker are visible while the reels spin, before the chest opens");
+            Capture("unity-v0344-golden-chest.png");
+            yield return FinishRoll(demo);
+            Check(!marker.enabled && demo.Game.Progress.crystals == 1 &&
+                chest.sharedMaterial != otherChest.sharedMaterial, "Opening the chest credits the crystal, clears the lane marker and keeps the gold finish");
         }
 
         private IEnumerator VerifyRatingUi(DemoController demo,int width)

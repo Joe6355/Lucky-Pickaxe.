@@ -544,7 +544,7 @@ namespace MineLoot
             RollPhase = "reels"; SettledReels = 0;
             Refresh();
             rollGain.text = "КАКИЕ КИРКИ ВЫПАДУТ?";
-            rollStatus.text = "Дерево · железо · алмаз";
+            rollStatus.text = game.HasWaitingGoldenChest ? "Золотой сундук отмечен кристаллом" : "Дерево · железо · алмаз";
             rollGain.color = Hex("f5d88d"); rollRewardIcon.sprite = art.Get("coin");
             var stopped = new bool[5];
             for (int c = 0; c < 5; c++)
@@ -784,6 +784,7 @@ namespace MineLoot
             {
                 if (shownDepths[c] == 5) opened++;
                 if (shownLost[c]) lost++;
+                goldenChestMarkers[c].enabled = !shownLost[c] && shownDepths[c] < MineGame.Rows && game.IsGoldenChest(c);
                 progress += shownLost[c] ? 5 : shownDepths[c];
             }
             shaft.SetBoard(game, shownDepths, shownDamage, shownLost);

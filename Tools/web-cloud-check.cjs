@@ -61,8 +61,9 @@ async function run(){
   await sync(f);check(remote(cloud).coins===50 && cloud.writes.length===1,"The next fresh Player commits that delayed merge once");f.api.dispose();
 
   cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100,tickets:1}),true);await f.api.syncCloud();await settle();
-  f.api.writeProgress(key,JSON.stringify({...read(f),tickets:0,totalRolls:1,spentTickets:1,rollPending:true,pendingTypes:[1,2,1,1,1],pendingSwapLimit:1}));await sync(f);
+  f.api.writeProgress(key,JSON.stringify({...read(f),tickets:0,totalRolls:1,spentTickets:1,rollPending:true,pendingTypes:[1,2,1,1,1],pendingSwapLimit:1,goldenChestColumn:2}));await sync(f);
   second=await device(cloud,progress(),false);await apply(second);
+  check(read(second).rollPending && read(second).goldenChestColumn===2,"The visible golden chest travels with the same paid board");
   second.api.writeProgress(key,JSON.stringify({...read(second),coins:130,earnedCoins:30,rollPending:false,pendingTypes:[0,0,0,0,0],pendingSwapLimit:0,depths:[1,2,1,1,1]}));await sync(second);
   f.api.writeProgress(key,JSON.stringify({...read(f),milestoneBest:[0,0,1]}));await sync(f);
   check(!read(f).rollPending && read(f).coins===130 && read(f).tickets===0,"Achievement observation in a stale tab cannot resurrect a draw completed on another device");

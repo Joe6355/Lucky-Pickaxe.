@@ -157,21 +157,36 @@ public static partial class DemoTools
         check(topFortune > fortune * .07 && topFortune < fortune * .13,
             "Grade III draws retain the 10% chance of maximum Fortune when selected");
 
-        int gold = 0, chests = 0;
-        for (int seed = 1; seed <= 1200; seed++)
+        const double goldenSample = 99.5 / (int.MaxValue - 1);
+        var treasure = new MineGame(new MineProgress { prestigeCount = 1, tickets = 2,
+            depths = new[] { 4, 4, 4, 4, 4 } });
+        int draws = 0;
+        check(treasure.BeginRoll(() => ++draws == 6 ? goldenSample : .99) &&
+            treasure.HasWaitingGoldenChest && treasure.IsGoldenChest(1) && treasure.Progress.crystals == 0,
+            "A paid roll reveals the golden chest in an active lane before any rewards are paid");
+        treasure = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(treasure.Progress)));
+        check(treasure.HasPendingRoll && treasure.HasWaitingGoldenChest && treasure.IsGoldenChest(1),
+            "The pending draw keeps the same visible golden chest after reload");
+        var goldenResult = treasure.ResolveRoll();
+        check(goldenResult.crystals == 1 && goldenResult.goldenChests[1] && treasure.Progress.crystals == 1 &&
+            treasure.IsGoldenChest(1) && treasure.ResolveRoll() == null,
+            "The marked chest stays gold after opening and credits its crystal once");
+
+        int gold = 0;
+        for (int i = 0; i < 20000; i++)
         {
-            var treasure = new MineGame(new MineProgress { prestigeCount = 1, boardSeed = seed, tickets = 1,
-                depths = new[] { 4, 4, 4, 4, 4 } });
-            treasure.BeginRoll(() => .99);
-            treasure = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(treasure.Progress)));
-            var result = treasure.ResolveRoll();
-            gold += result.crystals;
-            chests += result.chests;
-            if (result.crystals > 0)
-                check(treasure.Progress.crystals == result.crystals && treasure.ResolveRoll() == null,
-                    "Golden chest rewards survive a paid draw reload and credit once");
+            var eligible = new MineGame(new MineProgress { prestigeCount = 1, tickets = 1 });
+            eligible.BeginRoll(rng.NextDouble);
+            if (eligible.HasWaitingGoldenChest) gold++;
         }
-        check(chests > 5000 && gold > 10 && gold < 52, "Golden chests are rare across fixed boards");
+        check(gold > 155 && gold < 245, "Golden chests appear on about 1% of eligible paid draws");
+        var occupied = new MineGame(new MineProgress { prestigeCount = 1, tickets = 2, goldenChestColumn = 3 });
+        draws = 0;
+        occupied.BeginRoll(() => { draws++; return 0; });
+        occupied.ResolveRoll();
+        check(draws == 5 && occupied.HasWaitingGoldenChest && occupied.IsGoldenChest(2) &&
+            occupied.Abandon(() => .5) && !occupied.HasWaitingGoldenChest,
+            "Further rolls keep the visible chest in its lane and a layout change clears it");
         int total=0;for(int i=0;i<MineGame.PrestigeUpgradeCount;i++) total+=MineGame.PrestigeUpgradeAt(i).cost;
         var game=new MineGame(new MineProgress{prestigeCount=1,crystals=total,totalCrystals=total});
         for(int i=0;i<MineGame.PrestigeUpgradeCount;i++)

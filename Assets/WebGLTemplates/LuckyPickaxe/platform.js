@@ -24,7 +24,7 @@
   // never adds its wallet twice. The ledger travels atomically with the local JSON journal.
   const sumFields = "coins tickets totalBlocks totalClicks totalRolls oresMined miningBlocks totalProduced totalOfflineCoins prestigeCount crystals totalCrystals videoTicketClaims enchantingExperience earnedCoins spentTickets spentEnchantingExperience".split(" ");
   const maxFields = "upgradeLevel forgeLevel swapLevel efficiencyLevel pressLevel treasureLevel workerCount drillCount cartCount railLevel warehouseLevel fortuneLevel hasteLevel".split(" ");
-  const boardFields="stratum depths damage boardSeed lostColumns failedFloors goldenChestMask rollPending pendingTypes pendingSwapUsed pendingNewStratum pendingSwapLimit pendingSwapCount batchActive pendingBatch batchRemaining batchCompleted batchReward".split(" ");
+  const boardFields="stratum depths damage boardSeed lostColumns failedFloors goldenChestMask goldenChestColumn rollPending pendingTypes pendingSwapUsed pendingNewStratum pendingSwapLimit pendingSwapCount batchActive pendingBatch batchRemaining batchCompleted batchReward".split(" ");
   const toolFields="upgradeLevel enchantments enchantCount enchantSeed pickWear wearCarry pickBreaks pickBreakStreak".split(" ");
   const warehouseFields=["offlineRewardSeconds","offlineElapsedSeconds","offlineRewardRateMilli","offlineRewardCapacity"];
   const warehouseMeta=data=>Object.fromEntries(warehouseFields.map(field=>[field,data[field]||1]));
@@ -150,6 +150,7 @@
     delete data.freeLayoutUsed;
     for(const field of boardFields) if(board?.state[field]!==undefined) data[field]=clone(board.state[field]);
     data.goldenChestMask=board?.state.goldenChestMask||0;
+    data.goldenChestColumn=board?.state.goldenChestColumn||0;
     if (data.version === 16 && recent.some(p=>p.state.version === 17)) {
       data.version = 17;
       data.offlineCarry = Math.max(0, Math.min(1999, data.offlineCarry || 0)) * 2;

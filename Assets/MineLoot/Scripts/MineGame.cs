@@ -27,7 +27,7 @@ namespace MineLoot
         public int oreDamage;
         public int boardSeed;
         public bool[] lostColumns = new bool[5];
-        public int failedFloors, goldenChestMask;
+        public int failedFloors, goldenChestMask, goldenChestColumn;
         public bool rollPending;
         public int[] pendingTypes = new int[5];
         public bool pendingSwapUsed; // Read only when importing v5; v6 uses the counter below.
@@ -80,6 +80,7 @@ namespace MineLoot
         public const int GuideStepCount = 5;
         public const int OreCount = 10, StoneKind = 9, ObsidianKind = 10, VideoTickets = 10, VideoCooldownSeconds = 180, OfflineVideoMultiplier = 3;
         public const int ObsidianWearPercent = 10;
+        public const int GoldenChestRollChance = 1;
         private const int ShieldUpgrade = 18, ObsidianUpgrade = 19, ExpeditionPowerUpgrade = 20;
         private const int BlockLootUpgrade = 21, ChestLootUpgrade = 22, PerfectFloorUpgrade = 23;
         private const int OfflineDivisor = 4000;
@@ -232,6 +233,8 @@ namespace MineLoot
             get { for (int c = 0; c < Columns; c++) if (Progress.depths[c] < Rows && !Progress.lostColumns[c]) return false; return true; }
         }
         public bool HasPendingRoll => Progress.rollPending;
+        public bool HasWaitingGoldenChest => Progress.goldenChestColumn > 0 && IsActiveColumn(Progress.goldenChestColumn - 1);
+        public bool IsGoldenChest(int column) => Progress.goldenChestColumn == column + 1 || (Progress.goldenChestMask & (1 << column)) != 0;
         public bool GuideActive => Progress.guideStep < GuideStepCount;
         public bool CanAbandon => !ActionsLocked && Progress.tickets > 0 && !IsComplete;
         public bool IsActiveColumn(int column) => column >= 0 && column < Columns && Progress.depths[column] < Rows && !Progress.lostColumns[column];
@@ -334,6 +337,7 @@ namespace MineLoot
                 Progress.damage[i] = Progress.depths[i] == Rows || BlockAt(i, Progress.depths[i]) == BlockKind.Bedrock ? 0 : Math.Max(0, Math.Min(BlockHardness(i, Progress.depths[i]) - 1, Progress.damage[i]));
             }
             Progress.goldenChestMask &= (1 << Columns) - 1;
+            if (Progress.goldenChestColumn < 1 || Progress.goldenChestColumn > Columns) Progress.goldenChestColumn = 0;
             for (int i = 0; i < Columns; i++)
                 if (Progress.depths[i] != Rows) Progress.goldenChestMask &= ~(1 << i);
             Progress.failedFloors = Math.Max(0, Math.Min(Progress.stratum - 1 + (IsComplete ? 1 : 0), Progress.failedFloors));
@@ -885,6 +889,7 @@ namespace MineLoot
             if (advance) Progress.stratum = Math.Min(1000000, Progress.stratum + 1);
             Progress.boardSeed = seed;
             Progress.goldenChestMask = 0;
+            Progress.goldenChestColumn = 0;
         }
 
         private static uint LootHash(uint value)
@@ -918,11 +923,14 @@ namespace MineLoot
             // Obtain all draws before mutating progress, including failures of an injected random source.
             for (int i = 0; i < Columns; i++) types[i] = PickPower(random(), Progress.forgeLevel);
             int seed = nextFloor ? DrawSeed(random) : Progress.boardSeed;
+            int goldenDraw = Progress.prestigeCount > 0 && Progress.totalCrystals < MaxCrystals &&
+                (nextFloor || !HasWaitingGoldenChest) ? DrawSeed(random) : 0;
             if (nextFloor) NextFloor(seed);
             Progress.tickets--;
             Progress.spentTickets=Math.Min(CoinLimit,Progress.spentTickets+1);
             Progress.totalRolls = Math.Min(10000000, Progress.totalRolls + 1);
             for (int c = 0; c < Columns; c++) if (!IsActiveColumn(c)) types[c] = 0;
+            if (goldenDraw > 0 && goldenDraw % 100 < GoldenChestRollChance) PlaceGoldenChest(goldenDraw / 100);
             Progress.pendingTypes = types;
             Progress.pendingSwapUsed = false;
             Progress.pendingSwapCount = 0;
@@ -930,6 +938,21 @@ namespace MineLoot
             Progress.pendingNewStratum = nextFloor;
             Progress.rollPending = true;
             return true;
+        }
+
+        private void PlaceGoldenChest(int draw)
+        {
+            int[] candidates = new int[Columns];
+            int count = 0;
+            for (int column = 0; column < Columns; column++)
+            {
+                if (!IsActiveColumn(column)) continue;
+                bool reachable = true;
+                for (int row = Progress.depths[column]; row < Rows; row++)
+                    if (BlockAt(column, row) == BlockKind.Bedrock) { reachable = false; break; }
+                if (reachable) candidates[count++] = column;
+            }
+            if (count > 0) Progress.goldenChestColumn = candidates[draw % count] + 1;
         }
 
         public bool SwapPicks(int first, int second)
@@ -981,8 +1004,7 @@ namespace MineLoot
                 {
                     result.chests++;
                     result.reward += result.chestReward;
-                    uint chest = unchecked((uint)Progress.boardSeed + (uint)Progress.stratum * 0x85ebca6bu + (uint)i * 0x9e3779b9u);
-                    if (Progress.prestigeCount > 0 && Progress.totalCrystals < MaxCrystals && LootHash(chest) % 200 == 0)
+                    if (Progress.goldenChestColumn == i + 1 && Progress.totalCrystals < MaxCrystals)
                     {
                         Progress.totalCrystals++;
                         Progress.crystals++;
