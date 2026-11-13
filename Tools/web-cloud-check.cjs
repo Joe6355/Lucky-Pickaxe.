@@ -202,6 +202,16 @@ async function run(){
   cloud={data:{},writes:[]};f=await device(cloud,progress({coins:100}),true,new Map(),{storageBlocked:true});f.api.writeProgress(key,progress({coins:111}));await sync(f);
   check(remote(cloud).coins===111,"Blocked localStorage still uploads the latest in-memory snapshot");f.api.dispose();
   cloud={data:{},writes:[]};f=await device(cloud,progress(),true,new Map(),{authorized:false});check(event(f).status==="guest"&&cloud.writes.length===0,"Guests remain local without a forced login");f.api.dispose();
+  cloud={data:{},writes:[]};
+  f=await device(cloud,progress({upgradeLevel:20,coins:100}),true);
+  f.api.writeProgress(key,progress({version:17,upgradeLevel:18,pickBreaks:2,pickBreakStreak:2,prestigeShieldUsed:true,freeLayoutUsed:true,coins:100}));
+  await sync(f);
+  second=await device(cloud,progress({upgradeLevel:25,coins:30}),true);
+  await apply(second);
+  const broken=read(second);
+  check(broken.version===17 && broken.upgradeLevel===18 && broken.pickBreakStreak===2 && broken.pickBreaks===2 && broken.freeLayoutUsed && broken.prestigeShieldUsed,
+    "A pre-break snapshot cannot restore the lost ranks or refill the one-use prestige perks");
+  f.api.dispose();second.api.dispose();
   fs.writeFileSync(path.join(__dirname,"../Logs/web-cloud-check.json"),JSON.stringify({result:"PASS",checks}));
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

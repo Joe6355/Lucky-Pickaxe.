@@ -2,7 +2,7 @@ using System;
 
 namespace MineLoot
 {
-    public enum EnchantKind { Efficiency, Unbreaking, Fortune, Mending }
+    public enum EnchantKind { Efficiency, Unbreaking, Fortune, Mending, Slowness, Greed }
 
     public sealed partial class MineGame
     {
@@ -12,11 +12,12 @@ namespace MineLoot
         public int PickCondition => Math.Max(0, PickLifetime - Progress.pickWear);
         public long RepairCost => Math.Max(1, (30L + PickTier * 50) * Progress.pickWear / PickLifetime * (HasPrestigeUpgrade(11)?50:100)/100);
         public bool CanRepair => !EconomyLocked && Progress.pickWear > 0 && Progress.coins >= RepairCost;
+        public float MiningDelayMultiplier => EnchantmentLevel(EnchantKind.Slowness) > 0 ? 1.25f : 1;
         public bool IsEnchanted => Progress.enchantments != 0;
         public int EnchantmentLevel(EnchantKind kind) => EnchantmentLevel(Progress.enchantments, kind);
         public static int EnchantmentLevel(int set, EnchantKind kind) => (set >> ((int)kind * 4)) & 15;
-        public static int EnchantmentMax(EnchantKind kind) => kind == EnchantKind.Efficiency ? 5 : kind == EnchantKind.Mending ? 1 : 3;
-        public static string EnchantmentName(EnchantKind kind) => new[] { "Эффективность", "Прочность", "Удача", "Починка" }[(int)kind];
+        public static int EnchantmentMax(EnchantKind kind) => kind == EnchantKind.Efficiency ? 5 : kind >= EnchantKind.Mending ? 1 : 3;
+        public static string EnchantmentName(EnchantKind kind) => new[] { "Эффективность", "Прочность", "Удача", "Починка", "Тяжесть", "Скупость" }[(int)kind];
 
         private void SanitizeEnchanting(bool legacy)
         {
@@ -27,6 +28,8 @@ namespace MineLoot
             foreach (EnchantKind kind in Enum.GetValues(typeof(EnchantKind)))
                 set |= Math.Min(EnchantmentMax(kind), EnchantmentLevel(Math.Max(0, Progress.enchantments), kind)) << ((int)kind * 4);
             Progress.enchantments = set;
+            Progress.pickBreaks = Math.Max(0, Math.Min(1000000000, Progress.pickBreaks));
+            Progress.pickBreakStreak = Math.Max(0, Math.Min(MaxUpgrade, Progress.pickBreakStreak));
             Progress.pickWear = Math.Max(0, Math.Min(PickLifetime, Progress.pickWear));
             Progress.wearCarry = Math.Max(0, Math.Min(EnchantmentLevel(EnchantKind.Unbreaking), Progress.wearCarry));
         }
@@ -39,21 +42,29 @@ namespace MineLoot
             int count=slot==0?1:slot==1?2:2+(int)(Next()%2);
             if(Next()%100<20) count++;
             if(HasPrestigeUpgrade(17)) count++;
-            int[] kinds=slot==2?new[]{0,1,2,3}:new[]{0,1,2};
-            count=Math.Min(count,kinds.Length); int set=0;
+            bool mending = slot == 2 && Next() % 100 < 5;
+            bool curse = Next() % 100 < 15;
+            count = Math.Min(count, 3);
+            if (mending && count == 3 && curse) count--;
+            int[] kinds = { 0, 1, 2 };
+            int set = 0;
             for(int i=0;i<count;i++)
             {
                 int chosen=i+(int)(Next()%(uint)(kinds.Length-i));int kind=kinds[chosen];kinds[chosen]=kinds[i];kinds[i]=kind;
                 int max=EnchantmentMax((EnchantKind)kind),low=slot==2&&max>1?2:1;
                 int high=Math.Min(max,slot==0?2:slot==1?3:5);
+                if (mending && kind == (int)EnchantKind.Unbreaking) high = 2;
                 int level=low+(int)(Next()%(uint)(high-low+1));set|=level<<(kind*4);
             }
+            if (mending) set |= 1 << ((int)EnchantKind.Mending * 4);
+            if (curse) set |= 1 << ((int)(Next() % 2 == 0 ? EnchantKind.Slowness : EnchantKind.Greed) * 4);
             return set;
         }
-        private void ReplacePickMaterial(int oldTier)
+        private void ReplacePickMaterial(int oldTier, bool newTool = true)
         {
             if(PickTier==oldTier) return;
             Progress.pickWear=Progress.wearCarry=Progress.enchantments=Progress.enchantCount=0;
+            if (newTool) Progress.pickBreakStreak = 0;
         }
 
         public long EnchantmentCost(int slot)
@@ -77,20 +88,47 @@ namespace MineLoot
         public bool RepairPick()
         {
             if (!CanRepair) return false;
-            Progress.coins -= RepairCost; Progress.pickWear = Progress.wearCarry = 0;
+            Progress.coins -= RepairCost; Progress.pickWear = Progress.wearCarry = Progress.pickBreakStreak = 0;
             return true;
         }
-        private void WearPick()
+        private int WearPick(bool brokeObsidian)
         {
+            int wear = 0;
             if (++Progress.wearCarry >= EnchantmentLevel(EnchantKind.Unbreaking) + 1)
             {
-                Progress.wearCarry = 0; Progress.pickWear = Math.Min(PickLifetime, Progress.pickWear + 1);
+                Progress.wearCarry = 0;
+                wear++;
             }
+            if (brokeObsidian)
+            {
+                int percent = HasPrestigeUpgrade(ObsidianUpgrade) ? ObsidianWearPercent / 2 : ObsidianWearPercent;
+                wear += (PickLifetime * percent + 99) / 100;
+            }
+
+            bool wasExhausted = PickCondition == 0;
+            Progress.pickWear = Math.Min(PickLifetime, Progress.pickWear + wear);
+            if (wasExhausted || PickCondition > 0) return 0;
+            if (HasPrestigeUpgrade(ShieldUpgrade) && !Progress.prestigeShieldUsed)
+            {
+                Progress.prestigeShieldUsed = true;
+                Progress.pickWear = Progress.wearCarry = 0;
+                return 0;
+            }
+
+            int oldTier = PickTier;
+            Progress.pickBreaks = Math.Min(1000000000, Progress.pickBreaks + 1);
+            Progress.pickBreakStreak = Math.Min(MaxUpgrade, Progress.pickBreakStreak + 1);
+            int lost = Math.Min(Progress.upgradeLevel, Progress.pickBreakStreak);
+            Progress.upgradeLevel -= lost;
+            ReplacePickMaterial(oldTier, false);
+            Progress.pickWear = Progress.wearCarry = 0;
+            return lost;
         }
         private void CreditEnchantingExperience(int amount)
         {
             int repairXp = EnchantmentLevel(EnchantKind.Mending) > 0 ? Math.Min(amount, (Progress.pickWear + 1) / 2) : 0;
             Progress.pickWear = Math.Max(0, Progress.pickWear - repairXp * 2);
+            if (repairXp > 0 && Progress.pickWear == 0) Progress.pickBreakStreak = 0;
             Progress.enchantingExperience = Math.Min(EnchantingExperienceLimit, Progress.enchantingExperience + amount - repairXp);
         }
     }

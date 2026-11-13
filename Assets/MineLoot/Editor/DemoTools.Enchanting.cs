@@ -7,7 +7,7 @@ public static partial class DemoTools
     private static void VerifyEnchantingAndBatches(Action<bool,string> check)
     {
         var game = new MineGame(ProgressStore.Decode("{\"version\":12,\"coins\":745,\"tickets\":400,\"hits\":7,\"pressLevel\":2,\"experience\":700,\"upgradeLevel\":20,\"oreDamage\":12}"));
-        check(game.Progress.version == 16 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
+        check(game.Progress.version == 17 && game.Progress.tickets == 400 && game.Progress.hits == 35 && game.HitsRequired == 50 && game.Progress.enchantingExperience == 700, "v12 preserves the ticket stock, counter fraction and level while importing earned enchanting XP once");
         game = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         check(game.Progress.hits == 35 && game.Progress.enchantingExperience == 700, "v13 reload neither multiplies the counter nor grants old XP again");
         game = new MineGame(new MineProgress { enchantingExperience = 10000, coins = 100000, experience = 700 });
@@ -82,6 +82,65 @@ public static partial class DemoTools
 
     private static void VerifyMetaExpansion(Action<bool,string> check)
     {
+        var fragile = new MineGame(new MineProgress { upgradeLevel = 13, pickWear = 319 });
+        fragile.Mine();
+        check(fragile.Progress.upgradeLevel == 12 && fragile.LastHit.levelsLost == 1 && fragile.PickCondition == fragile.PickLifetime,
+            "First exhausted pick loses one level and starts a new durability cycle");
+        fragile = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(fragile.Progress)));
+        fragile.Progress.pickWear = fragile.PickLifetime - 1;
+        fragile.Mine();
+        check(fragile.Progress.upgradeLevel == 10 && fragile.LastHit.levelsLost == 2 && fragile.Progress.pickBreaks == 2 &&
+            fragile.Progress.pickBreakStreak == 2, "The second consecutive break loses two levels across reload and material boundaries");
+        fragile.Progress.pickWear = fragile.PickLifetime - 1;
+        fragile.Mine();
+        check(fragile.LastHit.levelsLost == 3 && fragile.Progress.upgradeLevel == 7, "The third break loses three levels");
+
+        var obstacle = new MineGame(new MineProgress { prestigeCount = 1, experience = MineGame.ExperienceForLevel(40),
+            oreKind = MineGame.ObsidianKind, oreDamage = 1919, upgradeLevel = 20 });
+        obstacle.Mine();
+        check(obstacle.LastHit.broken && obstacle.LastHit.coins == 0 && obstacle.LastHit.experience == 0 &&
+            obstacle.LastHit.tickets == 0 && obstacle.Progress.miningBlocks == 0 && obstacle.Progress.pickWear == 129,
+            "Obsidian consumes ordinary and extra wear without coins, XP, tickets or rating blocks");
+        obstacle.Progress.prestigeUpgrades = 7 << 18;
+        obstacle.Progress.pickWear = obstacle.PickLifetime - 1;
+        obstacle.Mine();
+        check(obstacle.Progress.prestigeShieldUsed && obstacle.LastHit.levelsLost == 0 && obstacle.PickCondition == obstacle.PickLifetime,
+            "The shield absorbs the first break in the current mine");
+        obstacle.Progress.tickets = 0;
+        check(obstacle.Abandon(() => .5) && !obstacle.FreeLayoutAvailable && !obstacle.CanAbandon && obstacle.Progress.spentTickets == 0,
+            "A free layout change spends the perk once without charging a ticket");
+
+        int mending = 0, curses = 0;
+        var rng = new System.Random(6355);
+        var charmed = new MineGame(new MineProgress { enchantingExperience = MineGame.EnchantingExperienceLimit });
+        for (int i = 0; i < 2000; i++)
+        {
+            charmed.Enchant(2, rng.NextDouble);
+            if (charmed.EnchantmentLevel(EnchantKind.Mending) > 0)
+            {
+                mending++;
+                check(charmed.EnchantmentLevel(EnchantKind.Unbreaking) < 3, "New Mending rolls exclude Unbreaking III");
+            }
+            if (charmed.EnchantmentLevel(EnchantKind.Slowness) > 0 || charmed.EnchantmentLevel(EnchantKind.Greed) > 0) curses++;
+        }
+        check(mending > 60 && mending < 140 && curses > 220 && curses < 380,
+            "Seeded grade III draws show rare Mending and random negative effects");
+
+        int gold = 0, chests = 0;
+        for (int seed = 1; seed <= 1200; seed++)
+        {
+            var treasure = new MineGame(new MineProgress { prestigeCount = 1, boardSeed = seed, tickets = 1,
+                depths = new[] { 4, 4, 4, 4, 4 } });
+            treasure.BeginRoll(() => .99);
+            treasure = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(treasure.Progress)));
+            var result = treasure.ResolveRoll();
+            gold += result.crystals;
+            chests += result.chests;
+            if (result.crystals > 0)
+                check(treasure.Progress.crystals == result.crystals && treasure.ResolveRoll() == null,
+                    "Golden chest rewards survive a paid draw reload and credit once");
+        }
+        check(chests > 5000 && gold > 10 && gold < 52, "Golden chests are rare across fixed boards");
         int total=0;for(int i=0;i<MineGame.PrestigeUpgradeCount;i++) total+=MineGame.PrestigeUpgradeAt(i).cost;
         var game=new MineGame(new MineProgress{prestigeCount=1,crystals=total,totalCrystals=total});
         for(int i=0;i<MineGame.PrestigeUpgradeCount;i++)
@@ -89,13 +148,13 @@ public static partial class DemoTools
             int coins=game.Progress.crystals;check(game.BuyPrestigeUpgrade(i) && game.Progress.crystals==coins-MineGame.PrestigeUpgradeAt(i).cost && !game.BuyPrestigeUpgrade(i),"Permanent bonus pays its price once: "+i);
             game=new MineGame(ProgressStore.Decode(JsonUtility.ToJson(game.Progress)));
         }
-        check(game.Progress.crystals==0 && game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All eighteen permanent flags survive reload without free crystals");
+        check(game.Progress.crystals==0 && game.Progress.prestigeUpgrades==(1<<MineGame.PrestigeUpgradeCount)-1,"All twenty-one permanent flags survive reload without free crystals");
         check(game.EnchantmentCost(0)==52 && game.EnchantmentDiscountPercent==25 && game.PickLifetime==480 && game.RareOreChance==30 && game.PrestigeExperiencePercent==140,"Tool and mining bonuses change actual prices, lifetime, rare chance and XP");
         game.Progress.pickWear=480;check(game.RepairCost==40,"Permanent workshop cuts a fully worn stone pick repair from eighty to forty coins");
         game.Progress.experience=MineGame.ExperienceForLevel(50);check(game.Prestige(()=>.6) && game.Progress.tickets==12 && game.Progress.enchantingExperience==300 && game.PickLifetime==480,"A reset grants the owned ticket and XP starter bonuses with the durable stone pick");
         var legacy=new MineGame(new MineProgress{version=14,prestigeCount=1,prestigeUpgrades=511,coins=745,tickets=4,enchantments=3,enchantCount=2,enchantingExperience=700});
-        check(legacy.Progress.version==16 && legacy.Progress.prestigeUpgrades==511 && legacy.Progress.coins==745 && legacy.Progress.tickets==4 && legacy.Progress.enchantments==3 && legacy.Progress.enchantingExperience==700,"v14 migration keeps owned perks, money and current enchantments until an actual material replacement");
-        var normal=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50)});
+        check(legacy.Progress.version == 17 && legacy.Progress.prestigeUpgrades==511 && legacy.Progress.coins==745 && legacy.Progress.tickets==4 && legacy.Progress.enchantments==3 && legacy.Progress.enchantingExperience==700,"v14 migration keeps owned perks, money and current enchantments until an actual material replacement");
+        var normal=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50),prestigeCount=1});
         var lucky=new MineGame(new MineProgress{experience=MineGame.ExperienceForLevel(50),prestigeCount=1,prestigeUpgrades=(1<<12)|(1<<13)});
         int normalRare=0,luckyRare=0;
         for(int block=0;block<800;block++)

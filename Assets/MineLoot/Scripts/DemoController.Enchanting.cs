@@ -87,7 +87,7 @@ namespace MineLoot
             {
                 int level = MineGame.EnchantmentLevel(set, kind); if (level == 0) continue;
                 if (text.Length > 0) text.Append(" · ");
-                text.Append(compact ? new[] { "Эфф.", "Прочн.", "Удача", "Починка" }[(int)kind] : MineGame.EnchantmentName(kind));
+                text.Append(compact ? new[] { "Эфф.", "Прочн.", "Удача", "Починка", "Тяжесть", "Скупость" }[(int)kind] : MineGame.EnchantmentName(kind));
                 text.Append(' ').Append(roman[level]);
             }
             return text.Length == 0 ? "Без зачарований" : text.ToString();
@@ -150,6 +150,8 @@ namespace MineLoot
                 case EnchantKind.Efficiency:return "+"+(level*25)+"% к урону по камню и руде";
                 case EnchantKind.Unbreaking:return "Тратит прочность раз в "+(level+1)+" удара";
                 case EnchantKind.Fortune:return "+"+(level*20)+"% монет за разбитую руду";
+                case EnchantKind.Slowness: return "Интервал между ударами дольше на 25%";
+                case EnchantKind.Greed: return "На 15% меньше монет при добыче";
                 default:return "1 опыт чинит 2 ед. прочности кирки";
             }
         }
@@ -162,7 +164,7 @@ namespace MineLoot
             foreach(EnchantKind kind in Enum.GetValues(typeof(EnchantKind)))
             {
                 int level=game.EnchantmentLevel(kind);if(level==0) continue;
-                var card=Card(modal.transform,"Enchantment revealed "+kind,44,284+row++*82,392,74,Hex("ded3eb"));
+                var card=Card(modal.transform,"Enchantment revealed "+kind,44,284+row++*82,392,74,Hex(kind >= EnchantKind.Slowness ? "e8c9c3" : "ded3eb"));
                 Label(card.transform,MineGame.EnchantmentName(kind)+" "+new[]{"","I","II","III","IV","V"}[level],12,6,368,27,21,Ink,FontStyle.Bold);
                 Label(card.transform,EnchantmentEffect(kind,level),12,35,368,32,17,Ink);
             }
@@ -177,11 +179,11 @@ namespace MineLoot
             string[] rules={"Каждый уровень добавляет 25% к урону главной кирки. Максимум V. Быстрее ломает камень и руду.","Уровень I расходует прочность раз в 2 удара, II — раз в 3, III — раз в 4. Урон не меняется.","Каждый уровень добавляет 20% монет за разрушенный блок руды. Максимум III. Камень даёт только опыт.","Часть полученного опыта ремонтирует кирку: 1 опыт восстанавливает 2 прочности. Этот опыт не копится на новые чары."};
             for(int i=0;i<4;i++)
             {
-                var card=Card(modal.transform,"Enchantment rule "+i,44,176+i*136,392,126,Hex("ded3eb"));
+                var card=Card(modal.transform,"Enchantment rule "+i,44,172+i*112,392,106,Hex("ded3eb"));
                 Label(card.transform,MineGame.EnchantmentName((EnchantKind)i),12,6,368,28,21,Ink,FontStyle.Bold);
-                Label(card.transform,rules[i],12,40,368,78,18,Ink);
+                Label(card.transform,rules[i],12,36,368,66,17,Ink);
             }
-            Label(modal.transform,"Новый материал кирки снимает все чары.",44,730,392,28,17,Muted);
+            Label(modal.transform,"Починка: 5% в чарах III, без Прочности III.\nТяжесть и Скупость могут выпасть случайно.\nНовый материал снимает чары и чинит кирку.",44,629,392,127,17,Muted);
             ButtonAt(modal.transform,"Понятно",44,790,392,40,CloseModal,Hex("bad5ca"),Ink).name="Close enchantment guide";
         }
 

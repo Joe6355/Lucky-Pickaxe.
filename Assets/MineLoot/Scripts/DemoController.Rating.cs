@@ -89,10 +89,14 @@ namespace MineLoot
             ratingLogin=ButtonAt(list,"ВОЙТИ В ЯНДЕКС ДЛЯ УЧАСТИЯ",40,802,400,36,()=>{CloseModal();ShowYandexAccount();},Hex("bad5ca"),Ink);ratingLogin.name="Rating sign in";ratingLogin.GetComponentInChildren<Text>().fontSize=17;
             for(int i=0;i<MineGame.RatingRankCount;i++)
             {
-                var medal=Card(ratingSections[1].transform,"Rating medal "+i,40+i%2*204,318+i/2*86,196,80,Hex(i%2==1?"ded3eb":"d7dfd1"));
-                Icon(medal.transform,"rank-medal-"+i,4,8,64,64);
-                Label(medal.transform,MineGame.RatingName(i),74,4,116,44,16,Ink,FontStyle.Bold);
-                Label(medal.transform,"От "+MineGame.RatingThreshold(i).ToString("N0",interfaceCulture)+" MMR",74,50,116,24,16,Muted);
+                var medal=Card(ratingSections[1].transform,"Rating medal "+i,40+i%2*204,306+i/2*78,196,74,Hex(i%2==1?"ded3eb":"d7dfd1"));
+                Icon(medal.transform,"rank-medal-"+i,4,5,64,64);
+                var title = Label(medal.transform, MineGame.RatingName(i), 74, 4, 116, 46, 16, Ink, FontStyle.Bold);
+                title.verticalOverflow = VerticalWrapMode.Truncate;
+                title.resizeTextForBestFit = true;
+                title.resizeTextMinSize = 13;
+                title.resizeTextMaxSize = 16;
+                Label(medal.transform, MineGame.RatingThreshold(i).ToString("N0", interfaceCulture) + " MMR", 74, 49, 116, 22, 16, Muted);
             }
             ButtonAt(modal.transform,"Вернуться в игру",40,858,400,38,CloseModal,Panel,Ink).name="Close rating";
             RefreshRating();RequestRating();

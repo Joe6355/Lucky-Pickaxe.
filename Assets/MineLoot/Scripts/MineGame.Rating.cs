@@ -4,9 +4,9 @@ namespace MineLoot
 {
     public sealed partial class MineGame
     {
-        private static readonly int[] RatingThresholds={0,10,30,75,150,300,600,1200,2500,5000,10000,20000};
-        private static readonly string[] RatingMaterials={"Деревянная","Каменная","Железная","Золотая","Алмазная","Незеритовая"};
-        public const int RatingRankCount=12;
+        private static readonly int[] RatingThresholds={0,10,30,75,150,300,600,1200,2500,5000,10000,20000,50000,100000};
+        private static readonly string[] RatingMaterials={"Деревянная","Каменная","Железная","Золотая","Алмазная","Незеритовая","Божественная кирка"};
+        public const int RatingRankCount=14;
         public long RatingBlocks=>Math.Min(CoinLimit,Progress.miningBlocks+Progress.totalBlocks);
         public int Mmr=>RatingScore(RatingBlocks,Progress.earnedCoins,Progress.spentTickets,Progress.spentEnchantingExperience,Progress.prestigeCount);
         public static int RatingScore(long blocks,long coins,long tickets,long xp,int resets)
@@ -21,7 +21,7 @@ namespace MineLoot
             int rank=0;while(rank+1<RatingRankCount && score>=RatingThresholds[rank+1]) rank++;return rank;
         }
         public static int RatingThreshold(int rank)=>RatingThresholds[Math.Max(0,Math.Min(RatingRankCount-1,rank))];
-        public static string RatingName(int rank)=>(rank&1)==1?"Зачарованная "+RatingMaterials[Math.Max(0,Math.Min(5,rank/2))].ToLowerInvariant():RatingMaterials[Math.Max(0,Math.Min(5,rank/2))];
+        public static string RatingName(int rank)=>(rank&1)==1?"Зачарованная "+RatingMaterials[Math.Max(0,Math.Min(6,rank/2))].ToLowerInvariant():RatingMaterials[Math.Max(0,Math.Min(6,rank/2))];
         private void SanitizeRating(bool legacy)
         {
             if(legacy)

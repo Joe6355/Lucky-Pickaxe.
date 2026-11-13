@@ -22,8 +22,8 @@
   // never adds its wallet twice. The ledger travels atomically with the local JSON journal.
   const sumFields = "coins tickets totalBlocks totalClicks totalRolls oresMined miningBlocks totalProduced totalOfflineCoins prestigeCount crystals totalCrystals videoTicketClaims enchantingExperience earnedCoins spentTickets spentEnchantingExperience".split(" ");
   const maxFields = "upgradeLevel forgeLevel swapLevel efficiencyLevel pressLevel treasureLevel workerCount drillCount cartCount railLevel warehouseLevel fortuneLevel hasteLevel".split(" ");
-  const boardFields="stratum depths damage boardSeed lostColumns failedFloors rollPending pendingTypes pendingSwapUsed pendingNewStratum pendingSwapLimit pendingSwapCount batchActive pendingBatch batchRemaining batchCompleted batchReward".split(" ");
-  const toolFields="upgradeLevel enchantments enchantCount enchantSeed pickWear wearCarry".split(" ");
+  const boardFields="stratum depths damage boardSeed lostColumns failedFloors goldenChestMask rollPending pendingTypes pendingSwapUsed pendingNewStratum pendingSwapLimit pendingSwapCount batchActive pendingBatch batchRemaining batchCompleted batchReward".split(" ");
+  const toolFields="upgradeLevel enchantments enchantCount enchantSeed pickWear wearCarry pickBreaks pickBreakStreak".split(" ");
   const warehouseFields=["offlineRewardSeconds","offlineElapsedSeconds","offlineRewardRateMilli","offlineRewardCapacity"];
   const warehouseMeta=data=>Object.fromEntries(warehouseFields.map(field=>[field,data[field]||1]));
   const limits = {tickets:1000000,totalBlocks:25000000,totalRolls:10000000,prestigeCount:1000000,crystals:10000000,totalCrystals:10000000,videoTicketClaims:1000000,enchantingExperience:1000000000};
@@ -75,7 +75,7 @@
     for(const part of value.parts) {
       if(!part || !/^[a-zA-Z0-9-]{1,100}$/.test(part.id) || ids.has(part.id) || !Number.isSafeInteger(part.clock) || part.clock<0 || !part.totals || !part.state || !part.run || !Number.isSafeInteger(part.run.rank) || part.run.rank<0 || !/^[a-zA-Z0-9-]{1,100}$/.test(part.run.key) || !Number.isSafeInteger(part.xp) || Math.abs(part.xp)>1e12) throw new Error("Invalid merge component");
       for(const field of sumFields) if(!Number.isSafeInteger(part.totals[field]) || Math.abs(part.totals[field])>1e13) throw new Error("Invalid merge counter");
-      if(part.state.version!==16) throw new Error("Unsupported merge snapshot");
+      if(part.state.version!==16 && part.state.version!==17) throw new Error("Unsupported merge snapshot");
       for(const field of ["boardClock","toolClock"]) if(part[field]!==undefined && (!Number.isSafeInteger(part[field]) || part[field]<0 || part[field]>part.clock)) throw new Error("Invalid merge domain clock");
       for(const field of ["warehouseEarned","warehouseCredited"]) if(part[field]!==undefined&&(!Number.isSafeInteger(part[field])||part[field]<0||part[field]>1e13))throw new Error("Invalid warehouse counter");
       if(value.warehouseVersion===1&&(!Number.isSafeInteger(part.warehouseEarned)||!Number.isSafeInteger(part.warehouseCredited)||!Array.isArray(part.warehouseClaims)))throw new Error("Missing warehouse ledger");
@@ -139,10 +139,18 @@
     for(const field of ["milestoneClaims","prestigeUpgrades","oreUnlocks"]) data[field]=ledger.parts.reduce((n,p)=>n|(p.state[field]||0),0);
     data.milestoneBest=Array.from({length:16},(_,i)=>Math.max(0,...ledger.parts.map(p=>p.state.milestoneBest?.[i]||0)));
     for(const field of ["guideStep","claimedContracts","videoTicketsReadyUtc","lastSeenUtc"]) data[field]=Math.max(0,...ledger.parts.map(p=>p.state[field]||0));
-    // A pick keeps the enchantments of its own material; a weaker inherited pick cannot lend it charms.
-    const pick=recent.filter(p=>(p.state.upgradeLevel||0)===data.upgradeLevel).sort((a,b)=>(b.toolClock??b.clock)-(a.toolClock??a.clock)||b.id.localeCompare(a.id))[0]||recent[0];
-    for(const field of ["enchantments","enchantCount","enchantSeed","pickWear","wearCarry"]) if(pick?.state[field]!==undefined) data[field]=clone(pick.state[field]);
+    // A stale device cannot restore a pick to the rank it had before a recorded break.
+    const pick=[...recent].sort((a,b)=>(b.state.pickBreaks||0)-(a.state.pickBreaks||0)
+      ||(b.state.upgradeLevel||0)-(a.state.upgradeLevel||0)
+      ||(b.toolClock??b.clock)-(a.toolClock??a.clock)||b.id.localeCompare(a.id))[0];
+    if(pick) for(const field of toolFields) data[field]=clone(pick.state[field]??(field==="enchantSeed"?6355:0));
+    for(const field of ["prestigeShieldUsed","freeLayoutUsed"]) data[field]=recent.some(p=>p.state[field]);
     for(const field of boardFields) if(board?.state[field]!==undefined) data[field]=clone(board.state[field]);
+    data.goldenChestMask=board?.state.goldenChestMask||0;
+    if (data.version === 16 && recent.some(p=>p.state.version === 17)) {
+      data.version = 17;
+      data.offlineCarry = Math.max(0, Math.min(1999, data.offlineCarry || 0)) * 2;
+    }
     data.offlineCoins=Math.min(1e12,warehouse.pending);data.offlineMerged=false;
     if(data.offlineCoins>0) {
       const outstanding=warehouse.origins.filter(o=>o.part.warehouseEarned>o.claimed),states=outstanding.map(o=>o.part.warehouseMeta||o.part.state);
@@ -237,7 +245,7 @@
     if(value==null) return null;
     if(![1,2,3].includes(value.version) || typeof value.revision!=="string" || !/^[a-zA-Z0-9-]{1,100}$/.test(value.revision) || typeof value.data!=="string" || value.data.length>180000) throw new Error("Invalid cloud save");
     const data=JSON.parse(value.data);
-    if(!data || !Number.isInteger(data.version) || data.version<1 || data.version>16) throw new Error("Unsupported cloud save");
+    if(!data || !Number.isInteger(data.version) || data.version<1 || data.version>17) throw new Error("Unsupported cloud save");
     if(value.version>=2) validLedger(value.ledger);
     return value;
   }

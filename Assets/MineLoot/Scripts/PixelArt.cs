@@ -51,7 +51,7 @@ namespace MineLoot
             }
             else if (tile)
             {
-                string body = kind == "brick" ? "#9d7664" : kind == "roof" ? "#915747" : kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
+                string body = kind == "worker-diamond" ? "#53e7dc" : kind == "brick" ? "#9d7664" : kind == "roof" ? "#915747" : kind == "slate" ? "#485158" : kind == "beam" ? "#765137" : kind == "metal-dark" ? "#66717a" : kind == "metal-gold" ? "#edc36b" : kind == "grass-top" || kind == "leaves" ? "#67a344" : kind == "grass" || kind == "dirt" ? "#976646" : kind == "planks" || kind == "wood" ? "#b1834e" : kind == "water" ? "#428bce" : kind == "sand" ? "#d8c994" : kind == "ember" ? "#555563" : "#92969a";
                 ColorUtility.TryParseHtmlString(body, out var baseColor);
                 if (mining)
                     ColorUtility.TryParseHtmlString(kind == "floor" ? "#465760" : kind == "wall" ? "#374a55" : kind == "timber" ? "#936742" : kind == "steel" ? "#69838b" : kind == "skin" ? "#e6b590" : kind == "uniform" ? "#385d76" : kind == "cloth" ? "#418c91" : kind == "lamp" ? "#ffe2a0" : kind == "ancient" ? "#75616a" : "#7d8b95", out baseColor);
@@ -184,7 +184,7 @@ namespace MineLoot
             }
             else if (name.StartsWith("rank-medal-"))
             {
-                int.TryParse(name.Substring(11),out int rank);rank=Mathf.Clamp(rank,0,11);
+                int.TryParse(name.Substring(11),out int rank);rank=Mathf.Clamp(rank,0,MineGame.RatingRankCount-1);
                 bool enchanted=(rank&1)==1;
                 // Keep the complete 32px pick inside a broad medallion; never resample it.
                 R(12,0,10,16,enchanted?"#69438f":"#285664");R(26,0,10,16,enchanted?"#69438f":"#285664");
@@ -193,7 +193,7 @@ namespace MineLoot
                 R(10,11,28,34,enchanted?"#b993d5":"#d7b363");R(7,15,34,26,enchanted?"#b993d5":"#d7b363");R(4,19,40,18,enchanted?"#b993d5":"#d7b363");
                 R(11,14,26,28,enchanted?"#473650":"#2e4548");R(8,17,32,22,enchanted?"#473650":"#2e4548");R(6,20,36,16,enchanted?"#473650":"#2e4548");
                 R(11,11,26,2,enchanted?"#ecdaff":"#fff0b9");R(4,20,2,15,enchanted?"#d9b7f1":"#efd18b");
-                string[] picks={"pick-wood","pick-stone","pick2","pick-gold","pick4","pick-netherite"};
+                string[] picks={"pick-wood","pick-stone","pick2","pick-gold","pick4","pick-netherite","pick-divine"};
                 var pick=Get(picks[rank/2]).texture;
                 for(int y=0;y<pick.height;y++)for(int x=0;x<pick.width;x++)
                 {
@@ -243,7 +243,7 @@ namespace MineLoot
             }
             else if (name.StartsWith("pick"))
             {
-                string metal = name.EndsWith("4") ? "#53e7dc" : name == "pick-gold" ? "#f4cd57" : name.EndsWith("2") ? "#e1e5e8" : name == "pick-stone" ? "#a2abb2" : "#bf985b";
+                string metal = name == "pick-divine" ? "#fff197" : name.EndsWith("4") ? "#53e7dc" : name == "pick-gold" ? "#f4cd57" : name.EndsWith("2") ? "#e1e5e8" : name == "pick-stone" ? "#a2abb2" : "#bf985b";
                 if (!name.StartsWith("pick-head")) for (int k = 0; k < 19; k++) { R(25-k, 6+k, 4, 5, "#423025"); R(25-k, 6+k, 2, 3, "#b77b40"); }
                 R(4, 2, 18, 5, "#263c40"); R(10, 6, 17, 5, "#263c40"); R(22, 10, 7, 9, "#263c40"); R(26, 17, 4, 5, "#263c40");
                 R(4, 2, 16, 3, metal); R(10, 5, 15, 4, metal); R(22, 9, 5, 7, metal); R(26, 16, 2, 5, metal); R(7, 2, 12, 1, "#edfff5");

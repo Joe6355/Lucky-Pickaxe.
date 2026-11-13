@@ -130,6 +130,8 @@ namespace MineLoot
                 bool open = depths[c] == 5;
                 if (open && !chestTargets[c]) EmitChips(new Vector3((c - 2) * 1.8f, -3.3f, -.5f), art.Texture("tex-metal-gold"), 8, true);
                 chestTargets[c] = open;
+                var chestMaterial = GetMaterial(open && (game.Progress.goldenChestMask & (1 << c)) != 0 ? "metal-gold" : "planks");
+                chestParts[c, 0].sharedMaterial = chestParts[c, 2].sharedMaterial = chestMaterial;
                 shaftCracks[c].gameObject.SetActive(!open && damage[c] > 0);
                 if (!open)
                 {

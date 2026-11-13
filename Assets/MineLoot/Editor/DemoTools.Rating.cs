@@ -26,7 +26,7 @@ public static partial class DemoTools
         game=new MineGame(new MineProgress{coins=MineGame.CoinLimit-1,workerCount=1});game.AdvanceTime(10,false);
         check(game.Progress.coins==MineGame.CoinLimit && game.Progress.earnedCoins==1,"Gross income excludes coins rejected by a full wallet");
         game=new MineGame(new MineProgress{workerCount=1});game.AdvanceTime(10,false);game.RecordSession(1700000000);game.PrepareOffline(1700000010);game.ClaimOffline(true);
-        check(game.Progress.earnedCoins==50 && !game.ClaimOffline(true) && game.Progress.earnedCoins==50,"Production and a tripled warehouse count actual credits without replay");
+        check(game.Progress.earnedCoins==35 && !game.ClaimOffline(true) && game.Progress.earnedCoins==35,"Production and a tripled warehouse count actual credits without replay");
         game=new MineGame(new MineProgress{coins=1000,enchantingExperience=1000});game.Enchant(0,()=>.2);game.Enchant(0,()=>.3);
         check(game.Progress.spentEnchantingExperience==100,"Enchanting records both paid XP prices, including a more expensive reroll");
         game.BuyUpgrade(UpgradeKind.Pickaxe,2);
@@ -41,7 +41,7 @@ public static partial class DemoTools
         while(game.Progress.batchActive) {if(game.HasPendingRoll)game.ResolveRoll();else game.ContinueBatch(()=>.1);}
         check(game.Progress.spentTickets==10,"A complete ten-roll series records exactly ten paid tickets");
         var old=new MineGame(new MineProgress{version=15,coins=100000080,enchantingExperience=888,miningBlocks=111,totalBlocks=222,totalRolls=27});
-        check(old.Progress.version==16 && old.Progress.coins==100000080 && old.Progress.enchantingExperience==888 && old.RatingBlocks==333 && old.Progress.spentTickets==27,"v15 migration keeps the wallet, XP, real blocks and known paid draws");
+        check(old.Progress.version == 17 && old.Progress.coins==100000080 && old.Progress.enchantingExperience==888 && old.RatingBlocks==333 && old.Progress.spentTickets==27,"v15 migration keeps the wallet, XP, real blocks and known paid draws");
         check(old.Progress.earnedCoins==0 && old.Progress.spentEnchantingExperience==0 && old.Progress.ratingHistoryPartial,"A legacy wallet or available XP cannot invent lifetime ranked earnings or expenditure");
         var marked=new MineGame(new MineProgress{earnedCoins=12600000,prestigeCount=2,ratingTestProfile=true});
         check(!marked.Progress.ratingTestProfile && marked.Mmr==378 && marked.Progress.earnedCoins==12600000,"A previously excluded v16 save keeps its 378 MMR and loses only the obsolete marker");

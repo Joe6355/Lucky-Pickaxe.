@@ -205,7 +205,7 @@ namespace MineLoot
             }
         }
 
-        public void SetProduction(int workerCount, int drillCount, int carts, bool richVein,int finishedMines=0)
+        public void SetProduction(int workerCount, int drillCount, int carts, bool richVein,int finishedMines=0, int workerPickTier=0)
         {
             if (IsExpedition) return;
             for (int i = 0; i < workers.Length; i++)
@@ -214,6 +214,7 @@ namespace MineLoot
                 workers[i].gameObject.SetActive(visible); workerRocks[i].gameObject.SetActive(visible);
             }
             SetWorkerOreTier(finishedMines);
+            SetWorkerPickTier(workerPickTier);
             drillRig.gameObject.SetActive(drillCount > 0);
             if (carts > 0 && !cart.gameObject.activeSelf) { cart.gameObject.SetActive(true); mineBuildTime[0] = 1; cart.localScale = Vector3.one; }
             for (int i = 0; i < veinSparks.Length; i++) veinSparks[i].gameObject.SetActive(richVein);

@@ -205,10 +205,12 @@ namespace MineLoot
             }
         }
 
+        private string OreTextureKey => desiredOre == "obsidian" ? "tex-obsidian" : "tex-mine-" + desiredOre;
+
         public void SetOre(string key, float damage)
         {
             desiredOre = key; damageFraction = Mathf.Clamp01(damage);
-            if (replacement < 0 || replacement >= .08f) oreMaterial.mainTexture = art.Texture("tex-mine-" + desiredOre);
+            if (replacement < 0 || replacement >= .08f) oreMaterial.mainTexture = art.Texture(OreTextureKey);
             crackMaterial.mainTexture = art.Texture("crack" + Mathf.Clamp(1 + Mathf.FloorToInt(damageFraction * 6), 1, 6));
             crackRenderer.enabled = damageFraction > 0 && replacement < 0;
         }
@@ -216,7 +218,7 @@ namespace MineLoot
         public void Hit(bool broken)
         {
             // Finish the prior replacement if a stronger pick already breaks the next block.
-            if (replacement >= 0) { oreMaterial.mainTexture = art.Texture("tex-mine-" + desiredOre); replacement = -1; }
+            if (replacement >= 0) { oreMaterial.mainTexture = art.Texture(OreTextureKey); replacement = -1; }
             hit = flash = 1;
             EmitDust(broken);
             EmitChips(ore.localPosition + (broken ? Vector3.up * .2f : new Vector3(.55f, .1f, -.8f)), oreMaterial.mainTexture, broken ? 44 : 7, broken);
@@ -273,7 +275,7 @@ namespace MineLoot
                     if (replacement < .08f) scale = 1 - replacement / .08f;
                     else
                     {
-                        oreMaterial.mainTexture = art.Texture("tex-mine-" + desiredOre);
+                        oreMaterial.mainTexture = art.Texture(OreTextureKey);
                         float t = Mathf.Clamp01((replacement - .08f) / .16f) - 1;
                         scale = 1 + 2.70158f * t * t * t + 1.70158f * t * t;
                     }

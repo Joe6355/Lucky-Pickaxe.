@@ -16,6 +16,24 @@ namespace MineLoot
         public int WorkerOreTier=>Mathf.Max(0,workerOreTier);
         public int WorkerStrikeCount => workerImpacts[0] + workerImpacts[1] + workerImpacts[2];
 
+        private readonly MeshRenderer[,] workerPickHeads = new MeshRenderer[3, 2];
+        private int visibleWorkerPickTier = -1;
+        private static readonly string[] WorkerPickMaterials = { "planks", "stone", "mine-steel", "worker-diamond" };
+
+        private void SetWorkerPickTier(int tier)
+        {
+            if (visibleWorkerPickTier == tier) return;
+            visibleWorkerPickTier = tier;
+            var material = GetMaterial(WorkerPickMaterials[tier]);
+            for (int i = 0; i < workers.Length; i++)
+            {
+                var head = workerPickHeads[i, 0];
+                head.sharedMaterial = material;
+                head.transform.localScale = new Vector3(1 + .12f * tier, 1, 1);
+                workerPickHeads[i, 1].sharedMaterial = material;
+            }
+        }
+
         private void BuildMiningWorkers()
         {
             Vector3[] homes = { new Vector3(4.55f,0,1.7f), new Vector3(-1.6f,0,3.05f), new Vector3(-3.25f,0,2.65f) };
@@ -62,7 +80,9 @@ namespace MineLoot
                 // Point and crossbar lie in the YZ swing plane, outside the head and torso.
                 workerTools[i]=DevelopmentGroup("Mining swing "+i,tool,Vector3.zero);
                 workerTools[i].SetParent(workers[i],false); workerTools[i].localPosition=WorkerGrip; workerTools[i].gameObject.SetActive(true);
-                MakeMesh("Pickaxe tapered point "+i,point,GetMaterial("mine-steel")).transform.SetParent(workerTools[i],false);
+                workerPickHeads[i, 0] = workerTools[i].Find("Mining swing " + i + " mine-steel").GetComponent<MeshRenderer>();
+                workerPickHeads[i, 1] = MakeMesh("Pickaxe tapered point " + i, point, GetMaterial("mine-steel")).GetComponent<MeshRenderer>();
+                workerPickHeads[i, 1].transform.SetParent(workerTools[i], false);
                 var tip=new GameObject("Pick striking point"); tip.layer=Layer; tip.transform.SetParent(workerTools[i],false); tip.transform.localPosition=WorkerTip;
                 for(int limb=0;limb<6;limb++)
                 {

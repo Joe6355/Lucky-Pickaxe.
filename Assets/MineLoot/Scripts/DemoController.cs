@@ -9,7 +9,7 @@ namespace MineLoot
     public sealed partial class DemoController : MonoBehaviour
     {
         private static readonly Color Back = Hex("172631"), Panel = Hex("f0eadc"), Muted = Hex("596975"), Ink = Hex("243541");
-        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд", "Медь", "Лазурит", "Редстоун", "Древние обломки", "Камень" };
+        private static readonly string[] OreNames = { "Уголь", "Железо", "Золото", "Алмаз", "Изумруд", "Медь", "Лазурит", "Редстоун", "Древние обломки", "Камень", "Обсидиан" };
         private static readonly string[] PickNames = { "Деревянная", "Каменная", "Железная", "Золотая", "Алмазная", "Незеритовая" };
         private static readonly string[] PickSprites = { "pick-wood", "pick-stone", "pick2", "pick-gold", "pick4", "pick-netherite" };
         private static readonly string[] CampNames = { "ПЕРВАЯ ШАХТА", "КАМЕННЫЙ ЗАБОЙ", "ЖЕЛЕЗНЫЙ РУДНИК", "ЗОЛОТОЙ ПРИИСК", "АЛМАЗНАЯ ШАХТА", "ДРЕВНИЕ ГЛУБИНЫ" };
@@ -60,7 +60,8 @@ namespace MineLoot
         private bool localSaveExisted;
         // Session time advances from a monotonic clock; changing the wall clock while playing has no effect.
         private long SessionUtc => sessionUtc + (long)Math.Max(0, Time.realtimeSinceStartupAsDouble - sessionRealtime);
-        public bool FastRoll { get; private set; }
+        private int rollSpeedIndex = 1;
+        private static readonly string[] RollSpeedLabels = { "×0,5", "×1", "×2" };
         public MineGame Game => game;
         public bool IsBusy => busy;
         public bool IsRoulettePaused => !roulette && (busy || game.Progress.batchActive);
@@ -175,27 +176,28 @@ namespace MineLoot
 
         public void Mine()
         {
-            if (applicationPaused || EconomyBusy || Time.unscaledTime - lastMineTime < .075f || modal != null) return;
+            if (applicationPaused || EconomyBusy || Time.unscaledTime - lastMineTime < .075f * game.MiningDelayMultiplier || modal != null) return;
             lastMineTime = Time.unscaledTime;
             game.Mine(); var hit = game.LastHit; rockPulse = 1;
-            mineStatus.text = hit.ore == MineGame.StoneKind ? "Камень · +" + hit.experience + " опыта" : hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
+            mineStatus.text = hit.ore == MineGame.ObsidianKind ? (hit.broken ? "Обсидиан расколот · износ кирки" : "Обсидиан · урон " + hit.damage) : hit.ore == MineGame.StoneKind ? "Камень · +" + hit.experience + " опыта" : hit.broken ? "Блок добыт · +" + hit.experience + " опыта" : "Урон " + hit.damage + " · +" + hit.coins + " монет";
             if (hit.tickets > 0) mineStatus.text += " · +" + hit.tickets + " жетон";
             stage.Hit(hit.broken);
             sounds.Play(hit.levels > 0 ? "level" : hit.broken ? "stone-break" : "stone-hit",GameAudio.Channel.Mining);
-            if (miningGain == null)
+            if (miningGain == null && (hit.coins > 0 || hit.experience > 0))
             {
                 gainCoins = hit.coins; gainExperience = hit.experience;
                 Vector3 point = minePage.transform.InverseTransformPoint(rock.position);
                 StartCoroutine(FloatReward(minePage.transform, point.x - 90, -point.y));
             }
-            else { gainCoins += hit.coins; gainExperience += hit.experience; }
-            if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel, hit.ore != MineGame.StoneKind);
+            else if (miningGain != null) { gainCoins += hit.coins; gainExperience += hit.experience; }
+            if (hit.levelsLost > 0) Notice("КИРКА СЛОМАЛАСЬ", "Потеряно уровней: " + hit.levelsLost);
+            else if (hit.levels > 0) LevelNotice(game.MinerLevel - hit.levels, game.MinerLevel, hit.ore != MineGame.StoneKind);
             else if (hit.veinFound) Notice("БОГАТАЯ ЖИЛА", "Нажми золотую кнопку рядом с рудой\nВременное усиление ручной добычи");
             if (game.Progress.hits == 0) visualTicket = 0;
             Persist();
             // The WebGL journal is synchronous even between the less frequent PlayerPrefs flushes.
             if (!SmokeMode) BrowserPlatform.WriteProgress(ProgressStore.Key, JsonUtility.ToJson(game.Progress));
-            if (hit.broken || hit.levels > 0) Flush(); Refresh();
+            if (hit.broken || hit.levels > 0 || hit.levelsLost > 0) Flush(); Refresh();
         }
 
         private void TickEconomy(double seconds, bool miningActive, bool forceRefresh = false)
@@ -335,7 +337,7 @@ namespace MineLoot
         private void LevelNotice(int before, int after, bool payLevelRewards = true)
         {
             string unlock = ""; int coins = 0;
-            for (int i = 1; i < OreNames.Length; i++) if (MineGame.OreUnlockLevel(i) > before && MineGame.OreUnlockLevel(i) <= after) unlock = "Открыто: " + OreNames[i] + "\n";
+            for (int i = 1; i < OreNames.Length; i++) if (game.IsOreUnlocked(i) && MineGame.OreUnlockLevel(i) > before && MineGame.OreUnlockLevel(i) <= after) unlock = "Открыто: " + OreNames[i] + "\n";
             for (int level = before + 1; level <= after; level++) coins += level * 40;
             int tickets = after / 5 - before / 5;
             string reward = payLevelRewards ? "+" + coins + " монет" + (tickets > 0 ? " · +" + tickets + " жетон" : "") : "Камень даёт только опыт";
@@ -345,9 +347,9 @@ namespace MineLoot
         public void ToggleSpeed()
         {
             if (applicationPaused) return;
-            FastRoll = !FastRoll;
+            rollSpeedIndex = (rollSpeedIndex + 1) % RollSpeedLabels.Length;
             foreach (var button in rollPage.GetComponentsInChildren<Button>())
-                    if (button.name == "Toggle speed") button.GetComponentInChildren<Text>().text = "×" + (FastRoll ? "2" : "1");
+                    if (button.name == "Toggle speed") button.GetComponentInChildren<Text>().text = RollSpeedLabels[rollSpeedIndex];
         }
 
 
@@ -493,7 +495,7 @@ namespace MineLoot
             float t = 0;
             while (t < 1)
             {
-                t = Mathf.Min(1, t + PlayDelta / (FastRoll ? .22f : .36f));
+                t = Mathf.Min(1, t + PlayDelta / (.36f * RollSpeedDuration));
                 float ease = t * t * (3 - 2 * t), arc = Mathf.Sin(t * Mathf.PI) * 24;
                 picks[first].rectTransform.anchoredPosition = Vector2.Lerp(start, end, ease) + Vector2.up * arc;
                 picks[second].rectTransform.anchoredPosition = Vector2.Lerp(end, start, ease) - Vector2.up * arc;
@@ -646,7 +648,7 @@ namespace MineLoot
                     }
                     yield return null;
                 }
-                bool chest = false, failed = false; BlockKind obstacle = BlockKind.Ore;
+                bool chest = false, golden = false, failed = false; BlockKind obstacle = BlockKind.Ore;
                 for (int c = 0; c < 5; c++)
                 {
                     if (step >= result.usedPower[c] || shownDepths[c] >= 5 || shownLost[c]) continue;
@@ -670,7 +672,12 @@ namespace MineLoot
                         if (broken)
                         {
                             shownDamage[c] = 0; shownDepths[c]++; earned += result.blockReward;
-                            if (shownDepths[c] == 5) { earned += result.chestReward; chest = true; }
+                            if (shownDepths[c] == 5)
+                            {
+                                earned += result.chestReward;
+                                chest = true;
+                                golden |= result.goldenChests[c];
+                            }
                         }
                         powers[c].text = PowerText(result.powers[c] - step - 1);
                     }
@@ -678,6 +685,11 @@ namespace MineLoot
                 DrawBoard(); sounds.Play(failed ? "shatter" : chest ? "chest" : "break",GameAudio.Channel.Roulette);
                 rollGain.text = failed ? "КИРКА СЛОМАЛАСЬ!" : earned > 0 ? "+ " + ShortAmount(earned) + " МОНЕТ" : "ПОРОДА ТРЕСКАЕТСЯ";
                 rollStatus.text = failed ? obstacle == BlockKind.Bedrock ? "Бедрок · сундук этого прохода потерян" : "Обсидиан · нужна алмазная кирка" : chest ? "Сундук открыт! Сокровища твои" : "Ещё один удар — ещё глубже";
+                if (golden)
+                {
+                    rollRewardIcon.sprite = art.Get("crystal");
+                    rollStatus.text = "Золотой сундук · кристалл престижа";
+                }
                 coinLabel.text = game.Progress.coins.ToString("N0", interfaceCulture);
                 phase = 0;
                 while (phase < 1)
@@ -724,11 +736,12 @@ namespace MineLoot
             bool miss = result.reward == 0 && result.brokenPicks > 0;
             rollGain.text = miss ? "НЕУДАЧА · 0 МОНЕТ" : result.reward == 0 ? "БЕЗ ДОБЫЧИ" : "+ " + ShortAmount(result.reward) + " МОНЕТ";
             rollGain.color = miss ? Hex("f18b7a") : Hex("f5d88d");
-            rollRewardIcon.sprite = art.Get(miss ? "pick-broken" : "coin");
+            rollRewardIcon.sprite = art.Get(result.crystals > 0 ? "crystal" : miss ? "pick-broken" : "coin");
             rollStatus.text = "Сундуки: +" + result.chests + " · потеряно: " + result.lostChests + " · сломано: " + result.brokenPicks;
             sounds.Play(miss ? "shatter" : result.chests > 0 || result.perfect ? "reward" : "hit",GameAudio.Channel.Roulette);
             if (result.levelAfter > result.levelBefore && game.MinerLevel == result.levelAfter) { sounds.Play("level",GameAudio.Channel.Roulette); LevelNotice(result.levelBefore, result.levelAfter); }
             else if (result.completed) Notice(result.perfect ? "ПЛАСТ ПРОЙДЕН!" : "ВЫЛАЗКА ЗАВЕРШЕНА", result.perfect ? "+" + result.reward + " монет · +1 жетон" : "Часть сундуков потеряна\nБонус пласта не получен");
+            if (result.crystals > 0) Notice("ЗОЛОТОЙ СУНДУК", "Кристаллы престижа: +" + result.crystals);
             busy = false; RollPhase = "result";
             if (batchVisual && !game.Progress.batchActive)
             {
@@ -831,6 +844,7 @@ namespace MineLoot
             spinButton.interactable = (!busy || AwaitingPickChoice) && !game.Progress.batchActive && !game.Progress.pendingBatch;
             RefreshBatchButton();
             abandonButton.interactable = !busy && game.CanAbandon;
+            abandonButton.GetComponentInChildren<Text>().text = game.FreeLayoutAvailable ? "Сменить · бесплатно" : "Сменить · 1 жетон";
             string action = AwaitingPickChoice ? "НАЧАТЬ ДОБЫЧУ" :
                 busy ? RollPhase == "reels" ? "ВЫПАДАЮТ КИРКИ…" : RollPhase == "exchange" ? "ОБМЕН КИРОК…" : "КИРКИ В РАБОТЕ…" :
                 game.Progress.tickets == 0 ? "В ШАХТУ ЗА ЖЕТОНАМИ" : game.IsComplete ? "НОВЫЙ ПЛАСТ · 1 ЖЕТОН" : "КИРКИ · 1 ЖЕТОН";
@@ -863,7 +877,7 @@ namespace MineLoot
             floorHint.text = "Прочность " + game.Hardness;
             stage.SetBiome(game.Biome);
             stage.SetDevelopment(game.PickTier, game.Progress.forgeLevel);
-            stage.SetProduction(game.Progress.workerCount, game.Progress.drillCount, game.Progress.cartCount, game.VeinOffered || game.VeinActive, game.Progress.prestigeCount);
+            stage.SetProduction(game.Progress.workerCount, game.Progress.drillCount, game.Progress.cartCount, game.VeinOffered || game.VeinActive, game.Progress.prestigeCount, game.WorkerPickTier);
             stage.SetOre(game.OreKey, game.Progress.oreDamage / (float)game.OreHealth);
             clickPick.sprite = workshopPick.sprite = art.Get(PickSprites[game.PickTier]);
             RefreshGuide();

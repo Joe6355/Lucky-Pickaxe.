@@ -58,6 +58,7 @@ namespace MineLoot
         private bool prestigeWindowOpen;
         private readonly Image[] prestigeNodes = new Image[MineGame.PrestigeUpgradeCount];
         private readonly Text[] prestigeRequirements = new Text[MineGame.PrestigeUpgradeCount];
+        private static readonly string[] WorkerPickNames = { "дерево", "камень", "железо", "алмаз" };
         private int prestigePage; private Text prestigePageLabel,prestigeFooter; private Button prestigePrevious,prestigeNext;
         private readonly Button[] prestigeBuyButtons = new Button[MineGame.PrestigeUpgradeCount];
 
@@ -339,11 +340,11 @@ namespace MineLoot
                 case UpgradeKind.Haste: return "Удары: +" + Value(rank * 8, target * 8) + "% скорости\nПри удержании блока";
                 case UpgradeKind.Press: return "Ударов: " + Value(game.HitsRequired, MineGame.HitsPerTicket - target * 5) + "\nПо руде за один жетон";
                 case UpgradeKind.Treasure: return "Сундук: +" + Value(rank * 15, target * 15) + "%\nНаграды в рулетке";
-                case UpgradeKind.Worker: return "По " + Rate(game.WorkerProductionMilli) + " монеты/с\nШахтёры: " + Value(rank, target);
+                case UpgradeKind.Worker: return "По " + Rate(game.WorkerProductionMilli) + " монеты/с\nКирка: " + WorkerPickNames[game.WorkerPickTier];
                 case UpgradeKind.Drill: return "По " + Rate(game.DrillProductionMilli) + " монет/с\nКузница: +" + game.DrillBonus + "%";
                 case UpgradeKind.Cart: return "+" + (10 + 2 * game.Progress.railLevel) + "% каждая\nК общей добыче";
                 case UpgradeKind.Rails: return "Бонус: " + Value(10 + 2 * rank, 10 + 2 * target) + "%\nКаждой вагонетке";
-                default: return "Часов: " + Value(game.OfflineHours, 4 + target * 2) + "\nОфлайн: 50% дохода";
+                default: return "Часов: " + Value(game.OfflineHours, 4 + target * 2) + "\nОфлайн: 25% дохода";
             }
         }
 
@@ -414,11 +415,11 @@ namespace MineLoot
                 case UpgradeKind.Swap: return "Позволяет обменять две выпавшие кирки местами перед добычей в рулетке. Число обменов зависит от уровня. В автоматической серии ×10 обменов нет.";
                 case UpgradeKind.Treasure: return "Каждый уровень добавляет 15% монет из сундуков рулетки. На обычные блоки рулетки и ручную добычу не влияет.";
                 case UpgradeKind.Press: return "Каждый уровень уменьшает путь к жетону на 5 ударов по руде: с 60 до 30. Удары по обычному камню не заполняют эту шкалу.";
-                case UpgradeKind.Worker: return "Рабочий добывает монеты сам: базово 2 монеты в секунду. Доход усиливают вагонетки и постоянные бонусы новой шахты.";
+                case UpgradeKind.Worker: return "Шахтёр начинает с 2 монет/с. На уровнях шахты 12, 25 и 40 бригада получает новые кирки и ещё по 0,2 монеты/с на шахтёра.";
                 case UpgradeKind.Drill: return "Бур добывает базово 12 монет в секунду. Каждый уровень кузницы усиливает его на 10%. Вагонетки и постоянные бонусы тоже повышают доход.";
                 case UpgradeKind.Cart: return "Каждая вагонетка добавляет 10% к общему доходу шахтёров и буров. Уровень рельсов повышает этот процент. Бонусы вагонеток складываются.";
                 case UpgradeKind.Rails: return "Каждый уровень добавляет 2 процентных пункта к бонусу каждой вагонетки. Для покупки нужна хотя бы одна вагонетка.";
-                default: return "Расширяет склад на 2 часа за уровень: от 4 до 12 часов. Пока игра закрыта, шахта получает 50% дохода производства. Видео утраивает уже накопленный запас.";
+                default: return "Расширяет склад на 2 часа за уровень: от 4 до 12 часов. Пока игра закрыта, шахта получает 25% дохода производства. Видео утраивает уже накопленный запас.";
             }
         }
 
@@ -488,8 +489,9 @@ namespace MineLoot
             prestigeReward.text="За новую шахту: +"+game.PrestigeReward+" кристаллов";
             prestigeResetButton.interactable=!EconomyBusy && (game.CanPrestige || game.MinerLevel<MineGame.MaxMinerLevel || game.HasOfflineReward || game.ActionsLocked);
             prestigeResetButton.GetComponentInChildren<Text>().text=game.MinerLevel<MineGame.MaxMinerLevel?"ПРОДОЛЖИТЬ ДОБЫЧУ":game.HasOfflineReward?"ОТКРЫТЬ СКЛАД":game.ActionsLocked?"ВЕРНУТЬСЯ К РУЛЕТКЕ":game.CanPrestige?"НОВАЯ ШАХТА · +"+game.PrestigeReward+" КР.":"НАГРАДЫ ПОЛУЧЕНЫ";
-            string[] pages={"1/3 · ДОХОД / СТАРТ","2/3 · ЖИЛЫ / КИРКА","3/3 · НАХОДКИ / ЗНАНИЯ"};prestigePageLabel.text=pages[prestigePage];
-            prestigePrevious.interactable=prestigePage>0;prestigeNext.interactable=prestigePage<2;
+            string[] pages = { "ДОХОД / СТАРТ", "ЖИЛЫ / КИРКА", "НАХОДКИ / ЗНАНИЯ", "ЗАЩИТА / ВЫЛАЗКА" };
+            prestigePageLabel.text = (prestigePage + 1) + "/" + pages.Length + " · " + pages[prestigePage];
+            prestigePrevious.interactable=prestigePage>0;prestigeNext.interactable=prestigePage<pages.Length-1;
             for(int i=0;i<MineGame.PrestigeUpgradeCount;i++)
             {
                 prestigeNodes[i].gameObject.SetActive(i/6==prestigePage);
@@ -535,7 +537,7 @@ namespace MineLoot
         {
             if (!offlineWindowOpen || modal == null) return;
             long capacity=game.HasOfflineReward?game.Progress.offlineRewardCapacity:game.OfflineHours*3600;
-            offlineDetailLabel.text=game.Progress.offlineMerged?"Добыча с устройств объединена.\nНаграды сохранены на этом складе.\nМожно забрать обычно или за видео ×3.":game.HasOfflineReward?"Тебя не было: "+Duration(game.Progress.offlineElapsedSeconds)+"\nУчтено: "+Duration(game.Progress.offlineRewardSeconds)+" из "+capacity/3600+" ч. лимита\nДоход: 50% от "+Rate(game.Progress.offlineRewardRateMilli)+" монет/с":"Офлайн-доход: 50% производства\nВремя накопления: до "+game.OfflineHours+" ч.\n"+(game.ProductionMilli>0?"Производство: "+Rate(game.ProductionMilli)+" монет/с":"Найми шахтёров в производстве");
+            offlineDetailLabel.text=game.Progress.offlineMerged?"Добыча с устройств объединена.\nНаграды сохранены на этом складе.\nМожно забрать обычно или за видео ×3.":game.HasOfflineReward?"Тебя не было: "+Duration(game.Progress.offlineElapsedSeconds)+"\nУчтено: "+Duration(game.Progress.offlineRewardSeconds)+" из "+capacity/3600+" ч. лимита\nВыработка при выходе: "+Rate(game.Progress.offlineRewardRateMilli)+" монет/с":"Офлайн-доход: 25% производства\nВремя накопления: до "+game.OfflineHours+" ч.\n"+(game.ProductionMilli>0?"Производство: "+Rate(game.ProductionMilli)+" монет/с":"Найми шахтёров в производстве");
             offlineAmountLabel.text = game.HasOfflineReward ? "+" + game.Progress.offlineCoins.ToString("N0", interfaceCulture) + " монет" : "Пока пусто";
             offlineStateLabel.text = game.HasOfflineReward ? game.Progress.coins == MineGame.CoinLimit ? "Кошелёк заполнен\nПотрать монеты и вернись за наградой" : offlineVideoMessage ?? "Готово к получению" : "Оставь рабочим время на добычу";
             offlineClaimButton.interactable = !EconomyBusy && !RewardedVideoPending && game.CanClaimOffline;
@@ -589,7 +591,7 @@ namespace MineLoot
                 Label(modal.transform, i == 0 ? "Сундук потерян" : "Только алмаз", x + 56, 378, 124, 24, 16, Muted);
             }
             string migration = game.Progress.boardSeed == 0 ? "Текущий старый пласт без ловушек.\n" : "";
-            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки: 1 жетон, сундуки теряются.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
+            Label(modal.transform, migration + "Кирки выпадают за 1 жетон.\nПерестановка: " + game.Progress.swapLevel + " / 3 уровня.\nОбмен открывается покупкой с уровня 3.\nРанги дают 1 / 2 / 3 обмена за бросок.\nОбмены сохраняются при выходе.\nДерево / железо / алмаз: " + (1 + game.PowerBonus) + " / " + (2 + game.PowerBonus) + " / " + (4 + game.PowerBonus) + " силы.\nОбсидиан: " + (game.Hardness + 2) + " прочности, только алмаз.\nДерево и железо ломаются без урона.\nБедрок закрывает проход этой вылазки.\nНа проход: 18% бедрок, 30% обсидиан,\n52% без препятствия. Слой заранее скрыт.\nПустые проходы дают 0. Жетон можно проиграть.\nБонус пласта — только за все 5 сундуков.\nСмена раскладки сбрасывает сундуки.\nБлок: " + game.BlockReward + " · сундук: " + game.ChestReward + " · пласт: " + game.FloorReward + " монет.\n" + game.HitsRequired + " ударов в шахте дают новый жетон.", 48, 425, 384, 342, 16, Ink);
             ButtonAt(modal.transform, "Подсказки", 47, 783, 184, 50, StartMiningGuide, Hex("bed18b"), Ink).name = "Start guide";
             ButtonAt(modal.transform, "Понятно", 243, 783, 190, 50, CloseModal, Hex("e7c78d"), Hex("362b1b")).name = "ПОНЯТНО";
         }
@@ -686,7 +688,7 @@ namespace MineLoot
             Label(modal.transform, "Оставшиеся сундуки и повреждения\nбудут сброшены. Полученные монеты\nостанутся.", 48, 432, 384, 76, 18, Ink);
             Label(modal.transform, "Пласт и награды не повысятся.\nНовая раскладка тоже может быть с ловушками.", 48, 516, 384, 42, 16, Muted);
             ButtonAt(modal.transform, "ПРОДОЛЖИТЬ ЭТУ ВЫЛАЗКУ", 47, 574, 386, 44, CloseModal, Hex("b5cb8a"), Ink).name = "Cancel abandon";
-            ButtonAt(modal.transform, "СМЕНИТЬ · 1 ЖЕТОН", 47, 632, 386, 44, ConfirmAbandon, Hex("d9bd80"), Ink).name = "Confirm abandon";
+            ButtonAt(modal.transform, game.FreeLayoutAvailable ? "СМЕНИТЬ БЕСПЛАТНО" : "СМЕНИТЬ · 1 ЖЕТОН", 47, 632, 386, 44, ConfirmAbandon, Hex("d9bd80"), Ink).name = "Confirm abandon";
         }
 
         private void ConfirmAbandon()

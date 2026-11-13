@@ -7,7 +7,8 @@ namespace MineLoot
     {
         private Button batchButton;
         private bool batchVisual;
-        private float RollAnimationScale => batchVisual ? .3f : FastRoll ? .5f : 1;
+        private float RollSpeedDuration => rollSpeedIndex == 0 ? 2f : rollSpeedIndex == 2 ? .5f : 1f;
+        private float RollAnimationScale => (batchVisual ? .3f : 1f) * RollSpeedDuration;
         public void SpinBatch()
         {
             if (applicationPaused || !roulette || modal != null) return;
