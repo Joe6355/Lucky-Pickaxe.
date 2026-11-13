@@ -7,17 +7,18 @@ namespace MineLoot
     public sealed partial class MineGame
     {
         public const long EnchantingExperienceLimit = 1000000000;
-        public const int CurseChance = 60, MendingChance = 2, TopEnchantChance = 10;
+        public const int CurseChance = 80, MendingChancePerThousand = 1, TopEnchantChance = 10;
+        public const int SlownessPercentPerRank = 25, GreedPercentPerRank = 15;
         private static readonly int[] PickLifetimes = { 160, 320, 640, 320, 1280, 1920 };
         public int PickLifetime => PickLifetimes[PickTier] * (HasPrestigeUpgrade(10)?150:100)/100;
         public int PickCondition => Math.Max(0, PickLifetime - Progress.pickWear);
         public long RepairCost => Math.Max(1, (30L + PickTier * 50) * Progress.pickWear / PickLifetime * (HasPrestigeUpgrade(11)?50:100)/100);
         public bool CanRepair => !EconomyLocked && Progress.pickWear > 0 && Progress.coins >= RepairCost;
-        public float MiningDelayMultiplier => EnchantmentLevel(EnchantKind.Slowness) > 0 ? 1.25f : 1;
+        public float MiningDelayMultiplier => 1 + EnchantmentLevel(EnchantKind.Slowness) * SlownessPercentPerRank / 100f;
         public bool IsEnchanted => Progress.enchantments != 0;
         public int EnchantmentLevel(EnchantKind kind) => EnchantmentLevel(Progress.enchantments, kind);
         public static int EnchantmentLevel(int set, EnchantKind kind) => (set >> ((int)kind * 4)) & 15;
-        public static int EnchantmentMax(EnchantKind kind) => kind == EnchantKind.Efficiency ? 5 : kind >= EnchantKind.Mending ? 1 : 3;
+        public static int EnchantmentMax(EnchantKind kind) => kind == EnchantKind.Efficiency || kind >= EnchantKind.Slowness ? 5 : kind == EnchantKind.Mending ? 1 : 3;
         public static string EnchantmentName(EnchantKind kind) => new[] { "Эффективность", "Прочность", "Удача", "Починка", "Тяжесть", "Скупость" }[(int)kind];
 
         private void SanitizeEnchanting(bool legacy)
@@ -43,7 +44,7 @@ namespace MineLoot
             int count=slot==0?1:slot==1?2:2+(int)(Next()%2);
             if(Next()%100<20) count++;
             if(HasPrestigeUpgrade(17)) count++;
-            bool mending = slot == 2 && Next() % 100 < MendingChance;
+            bool mending = slot == 2 && Next() % 1000 < MendingChancePerThousand;
             bool curse = Next() % 100 < CurseChance;
             count = Math.Min(count, 3);
             if (mending && count == 3 && curse) count--;
@@ -60,7 +61,12 @@ namespace MineLoot
                 set |= level << (kind * 4);
             }
             if (mending) set |= 1 << ((int)EnchantKind.Mending * 4);
-            if (curse) set |= 1 << ((int)(Next() % 2 == 0 ? EnchantKind.Slowness : EnchantKind.Greed) * 4);
+            if (curse)
+            {
+                var kind = Next() % 2 == 0 ? EnchantKind.Slowness : EnchantKind.Greed;
+                int rank = (Next() % 100) switch { < 40 => 1, < 68 => 2, < 85 => 3, < 95 => 4, _ => 5 };
+                set |= rank << ((int)kind * 4);
+            }
             return set;
         }
         private void ReplacePickMaterial(int oldTier, bool newTool = true)

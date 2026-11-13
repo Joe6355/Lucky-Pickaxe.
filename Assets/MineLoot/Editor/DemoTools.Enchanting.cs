@@ -110,24 +110,52 @@ public static partial class DemoTools
         check(obstacle.ExpeditionPowerBonus == 1 && obstacle.Abandon(() => .5) && !obstacle.CanAbandon && obstacle.Progress.spentTickets == 1,
             "The old permanent purchase becomes an extra point of expedition power and layout changes cost a ticket");
 
-        int mending = 0, curses = 0, fortune = 0, topFortune = 0;
-        var rng = new System.Random(6355);
-        var charmed = new MineGame(new MineProgress { enchantingExperience = MineGame.EnchantingExperienceLimit });
-        for (int i = 0; i < 2000; i++)
+        for (int rank = 1; rank <= 5; rank++)
         {
-            charmed.Enchant(2, rng.NextDouble);
-            if (charmed.EnchantmentLevel(EnchantKind.Mending) > 0)
-            {
-                mending++;
-                check(charmed.EnchantmentLevel(EnchantKind.Unbreaking) < 3, "New Mending rolls exclude Unbreaking III");
-            }
-            if (charmed.EnchantmentLevel(EnchantKind.Slowness) > 0 || charmed.EnchantmentLevel(EnchantKind.Greed) > 0) curses++;
-            if (charmed.EnchantmentLevel(EnchantKind.Fortune) > 0) fortune++;
-            if (charmed.EnchantmentLevel(EnchantKind.Fortune) == 3) topFortune++;
+            int set = (rank << ((int)EnchantKind.Slowness * 4)) | (rank << ((int)EnchantKind.Greed * 4));
+            var pick = new MineGame(ProgressStore.Decode(JsonUtility.ToJson(new MineProgress { enchantments = set })));
+            check(pick.Progress.enchantments == set && Math.Abs(pick.MiningDelayMultiplier - (1 + .25f * rank)) < .0001f &&
+                pick.ManualClickPower == pick.ClickPower * (100 - 15 * rank) / 100,
+                "Negative enchantment rank survives reload and changes real mining: " + rank);
         }
-        check(mending > 20 && mending < 65 && curses > 1100 && curses < 1300 &&
-            topFortune > fortune * .07 && topFortune < fortune * .13,
-            "Grade III draws approximate 2% Mending, 60% curses and 10% maximum Fortune when selected");
+
+        int fortune = 0, topFortune = 0;
+        var rng = new System.Random(6355);
+        var charmed = new MineGame();
+        const int rollsPerGrade = 100000;
+        for (int grade = 0; grade < 3; grade++)
+        {
+            int mending = 0, curses = 0;
+            var slownessRanks = new int[6];
+            var greedRanks = new int[6];
+            for (int i = 0; i < rollsPerGrade; i++)
+            {
+                charmed.Progress.enchantingExperience = MineGame.EnchantingExperienceLimit;
+                charmed.Enchant(grade, rng.NextDouble);
+                if (charmed.EnchantmentLevel(EnchantKind.Mending) > 0)
+                {
+                    mending++;
+                    check(charmed.EnchantmentLevel(EnchantKind.Unbreaking) < 3, "Mending still excludes Unbreaking III");
+                }
+                int slowness = charmed.EnchantmentLevel(EnchantKind.Slowness);
+                int greed = charmed.EnchantmentLevel(EnchantKind.Greed);
+                slownessRanks[slowness]++;
+                greedRanks[greed]++;
+                if (slowness > 0 || greed > 0) curses++;
+                if (grade == 2 && charmed.EnchantmentLevel(EnchantKind.Fortune) > 0) fortune++;
+                if (grade == 2 && charmed.EnchantmentLevel(EnchantKind.Fortune) == 3) topFortune++;
+            }
+            check(grade == 2 ? mending > 65 && mending < 135 : mending == 0,
+                "Mending appears in about 0.1% of grade III rolls and never in lower grades");
+            check(curses > 79000 && curses < 81000 && curses == 2 * rollsPerGrade - slownessRanks[0] - greedRanks[0],
+                "Each grade yields at most one curse with an 80% probability");
+            for (int rank = 1; rank <= 5; rank++)
+                check(slownessRanks[rank] > 0 && greedRanks[rank] > 0 &&
+                    (rank == 1 || slownessRanks[rank] < slownessRanks[rank - 1] && greedRanks[rank] < greedRanks[rank - 1]),
+                    "Each curse can reach rank " + rank + " with rarer higher ranks");
+        }
+        check(topFortune > fortune * .07 && topFortune < fortune * .13,
+            "Grade III draws retain the 10% chance of maximum Fortune when selected");
 
         int gold = 0, chests = 0;
         for (int seed = 1; seed <= 1200; seed++)

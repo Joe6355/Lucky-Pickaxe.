@@ -200,7 +200,7 @@ namespace MineLoot
         public bool VeinActive => Progress.veinBoostLeft > 0;
         public int ManualMultiplier => VeinActive ? RichVeinMultiplier : 1;
         public int ManualClickPower => ApplyGreed(ClickPower * ManualMultiplier);
-        private int ApplyGreed(int coins) => coins * (EnchantmentLevel(EnchantKind.Greed) > 0 ? 85 : 100) / 100;
+        private int ApplyGreed(int coins) => coins * (100 - EnchantmentLevel(EnchantKind.Greed) * GreedPercentPerRank) / 100;
         public int CartBonus => Progress.cartCount * (10 + 2 * Progress.railLevel);
         public int DrillBonus => Progress.forgeLevel * 10;
         public long ProductionMilli => (Progress.workerCount * WorkerBaseMilli + Progress.drillCount * 12000L * (10 + Progress.forgeLevel) / 10) * (100 + CartBonus) / 100 * (HasPrestigeUpgrade(1) ? 125 : 100) / 100;

@@ -150,8 +150,8 @@ namespace MineLoot
                 case EnchantKind.Efficiency:return "+"+(level*25)+"% к урону по камню и руде";
                 case EnchantKind.Unbreaking:return "Тратит прочность раз в "+(level+1)+" удара";
                 case EnchantKind.Fortune:return "+"+(level*20)+"% монет за разбитую руду";
-                case EnchantKind.Slowness: return "Интервал между ударами дольше на 25%";
-                case EnchantKind.Greed: return "На 15% меньше монет при добыче";
+                case EnchantKind.Slowness: return "Интервал между ударами дольше на "+(level*MineGame.SlownessPercentPerRank)+"%";
+                case EnchantKind.Greed: return "На "+(level*MineGame.GreedPercentPerRank)+"% меньше монет при добыче";
                 default:return "1 опыт чинит 2 ед. прочности кирки";
             }
         }
@@ -176,14 +176,21 @@ namespace MineLoot
             if(applicationPaused || modal!=null) return;
             modal=CreateModal("Enchantment guide modal");Card(modal.transform,"Enchantment guide card",24,105,432,750,Panel);
             Label(modal.transform,"КАК РАБОТАЮТ ЧАРЫ",44,120,392,40,24,Ink,FontStyle.Bold);
-            string[] rules={"Каждый уровень добавляет 25% к урону главной кирки. Максимум V. Быстрее ломает камень и руду.","Уровень I расходует прочность раз в 2 удара, II — раз в 3, III — раз в 4. Урон не меняется.","Каждый уровень добавляет 20% монет за разрушенный блок руды. Максимум III. Камень даёт только опыт.","Часть полученного опыта ремонтирует кирку: 1 опыт восстанавливает 2 прочности. Этот опыт не копится на новые чары."};
+            string[] rules={"+25% урона по камню и руде за ранг. Максимум V.","Износ раз в 2 удара на I, в 3 на II, в 4 на III.","+20% монет за разбитую руду за ранг. Максимум III.","1 ед. опыта на чары чинит 2 ед. прочности."};
             for(int i=0;i<4;i++)
             {
-                var card=Card(modal.transform,"Enchantment rule "+i,44,172+i*112,392,106,Hex("ded3eb"));
+                var card=Card(modal.transform,"Enchantment rule "+i,44,170+i*100,392,94,Hex("ded3eb"));
                 Label(card.transform,MineGame.EnchantmentName((EnchantKind)i),12,6,368,28,21,Ink,FontStyle.Bold);
-                Label(card.transform,rules[i],12,36,368,66,17,Ink);
+                Label(card.transform,rules[i],12,34,368,58,17,Ink);
             }
-            Label(modal.transform,"Проклятие: "+MineGame.CurseChance+"% для любой степени.\nПочинка: "+MineGame.MendingChance+"% в III, без Прочности III.\nМакс. ранг эффекта в III: "+MineGame.TopEnchantChance+"%.\nНовый материал снимает чары и чинит кирку.",44,629,392,127,17,Muted);
+            var slowness=Card(modal.transform,"Slowness rule",44,572,190,100,Hex("e8c9c3"));
+            Label(slowness.transform,"Тяжесть I–V",12,6,166,28,21,Ink,FontStyle.Bold);
+            Label(slowness.transform,"+"+MineGame.SlownessPercentPerRank+"% к паузе между ударами за ранг.",12,34,166,64,17,Ink);
+            var greed=Card(modal.transform,"Greed rule",246,572,190,100,Hex("e8c9c3"));
+            Label(greed.transform,"Скупость I–V",12,6,166,28,21,Ink,FontStyle.Bold);
+            Label(greed.transform,"−"+MineGame.GreedPercentPerRank+"% монет при добыче за ранг.",12,34,166,60,17,Ink);
+            string mendingChance=(MineGame.MendingChancePerThousand/1000m).ToString("0.#%",interfaceCulture);
+            Label(modal.transform,"Проклятие: "+MineGame.CurseChance+"% для любой степени.\nПочинка: "+mendingChance+" в III, без Прочности III.\nМакс. ранг обычного эффекта в III: "+MineGame.TopEnchantChance+"%.\nНовый материал снимает чары и чинит кирку.",44,686,392,96,17,Muted);
             ButtonAt(modal.transform,"Понятно",44,790,392,40,CloseModal,Hex("bad5ca"),Ink).name="Close enchantment guide";
         }
 
